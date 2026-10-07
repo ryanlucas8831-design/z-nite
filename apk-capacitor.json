@@ -1,0 +1,18 @@
+{
+  "appId": "app.zenit.jogo",
+  "appName": "Zenit",
+  "webDir": "www",
+  "server": {
+    "url": "__URL_DO_SITE__",
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_zenit",
+      "iconColor": "#58CC02"
+    }
+  }
+}
