@@ -3316,7 +3316,7 @@ function _welcomeHTML() {
     ${sel ? `<div class="card tint-water" style="text-align:center">${esc(sel.name)}: ${esc(sel.vibe)}.</div>` : ''}`; }
   if (ob.step === 3) body = `<div class="field"><span>Peso atual</span><div class="big-input"><input id="obW" type="number" inputmode="decimal" step="0.1" value="${ob.w || ''}" placeholder="85,0" aria-label="Peso atual em kg"><span>kg</span></div></div>
     <div class="field"><span>Meta de peso até 31/12</span><div class="big-input"><input id="obGoal" type="number" inputmode="decimal" step="0.1" value="${ob.goal || ''}" placeholder="78,0" aria-label="Meta de peso em kg"><span>kg</span></div></div>
-    <div class="hint">Esses números ficam só no seu celular. Uma meta realista fica perto de 0,5% a 1% do peso por semana, e até o Réveillon são umas 13 semanas.</div>`;
+    <div class="hint">Os quilos ficam só com você. Na sala, sua dupla vê apenas a % de peso perdido. Uma meta realista fica perto de 0,5% a 1% do peso por semana, e até o Réveillon são umas 13 semanas.</div>`;
   if (ob.step === 4) { const rec = Math.round(ob.w * 35 / 100) * 100; if (!ob.water) ob.water = rec; body = `<div class="card tint-water" style="margin-top:0">Recomendado pelo seu peso: <b>${fmtL(rec)}</b> por dia (35 ml por kg).</div>
     <div class="field"><span>Sua meta diária</span><div class="big-input"><input id="obWater" type="number" inputmode="decimal" step="0.1" value="${(ob.water / 1000).toFixed(1)}" aria-label="Meta de água em litros"><span>L</span></div></div>
     <div class="hint">Nos dias de treino, vale beber uns 500 ml a mais. Dá para mudar depois.</div>`; }
@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '1.4.1';
+const ZV = '2.0';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -4826,9 +4826,378 @@ async function z7AutoAsk() {
   const st = await z7Perm(); if (st === 'prompt' || st === 'prompt-with-rationale') zNotifEnable(); else if (st === 'granted') zScheduleNativeSoon();
 }
 setTimeout(z7AutoAsk, 3500);
+// Qualquer mudança salva (lembrete novo, apagado, cronograma, automáticos) reagenda os avisos do celular.
+const __z7Save = save;
+save = function () { const r = __z7Save.apply(this, arguments); try { if (zLN() && S && session.pid) zScheduleNativeSoon(); } catch (e) { } return r; };
+// Ao sair do app, garante que tudo já está agendado.
+document.addEventListener('visibilitychange', () => { if (document.hidden && zLN()) { clearTimeout(zNatT); zScheduleNative(); } });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && $('#overlay')) z7FixRemSheet(); });
 ZNEWS.unshift(['🔔', 'Permissão de lembretes', 'No app instalado, o Zenit agora pede a permissão de notificação logo ao abrir, e a tela de Lembretes tem um botão de teste.']);
 </script>
+<script>
+'use strict';
+/* =========================================================
+   Zenit 2.0: conta, backup na nuvem e sala online (Firebase)
+   ========================================================= */
+const ZFB_CONFIG = {
+  apiKey: 'AIzaSyDeEywSRfAqBJlC4C4zBhyNjDAuCXk5dF8',
+  authDomain: 'zenit-8ab7e.firebaseapp.com',
+  projectId: 'zenit-8ab7e',
+  storageBucket: 'zenit-8ab7e.firebasestorage.app',
+  messagingSenderId: '204859290335',
+  appId: '1:204859290335:web:57b85076836b2bd439af6a'
+};
+const ZFB_SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
+const ZFB = { ready: null, m: null, auth: null, db: null, user: null, offRoom: null, offPlayers: null, linked: null, pushT: null, backT: null, lastPush: '', lastBack: '', dirty: false, busy: false, err: '' };
+
+function zfbLoad() {
+  if (ZFB.ready) return ZFB.ready;
+  ZFB.ready = Promise.all(['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js'].map(f => import(ZFB_SDK + f)))
+    .then(([a, au, fs]) => {
+      ZFB.m = Object.assign({}, a, au, fs);
+      const app = a.initializeApp(ZFB_CONFIG);
+      try { ZFB.auth = au.initializeAuth(app, { persistence: [au.indexedDBLocalPersistence, au.browserLocalPersistence] }); } catch (e) { ZFB.auth = au.getAuth(app); }
+      try { ZFB.db = fs.initializeFirestore(app, { localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) }); } catch (e) { ZFB.db = fs.getFirestore(app); }
+      return new Promise(res => {
+        let first = true;
+        au.onAuthStateChanged(ZFB.auth, u => {
+          ZFB.user = u || null;
+          if (first) { first = false; res(ZFB); return; }
+          if (!u) zfbStop();
+        });
+      });
+    })
+    .catch(e => { ZFB.ready = null; throw e; });
+  return ZFB.ready;
+}
+const zfbOn = () => !!(S && S.mode !== 'demo' && S.cloud && ZFB.user && S.cloud.uid === ZFB.user.uid);
+const zfbMine = () => S && S.cloud ? S.players.find(p => p.id === S.cloud.pid) : null;
+
+/* ---------- O que vai para a nuvem ---------- */
+function zfbBackupJSON() {
+  const o = Object.assign({}, S, { players: S.players.filter(p => !p.remote) });
+  let s = JSON.stringify(o);
+  if (s.length > 850000) { o.players = o.players.map(p => Object.assign({}, p, { photos: [] })); s = JSON.stringify(o); }
+  return s;
+}
+// A dupla vê XP, nível, sequência e a % de peso perdido. Os quilos viram um índice (início = 100).
+function zfbPublicJSON(p) {
+  const q = JSON.parse(JSON.stringify(p)); const f = 100 / (startW(p) || p.startWeight || 100);
+  const r = v => Math.round(v * f * 10000) / 10000;
+  q.weighins = (q.weighins || []).map(w => ({ date: w.date, w: r(w.w) }));
+  q.startWeight = r(q.startWeight || 0); q.goalWeight = r(q.goalWeight || 0);
+  q.pin = ''; q.photos = []; q.wScaled = true; delete q.remote; delete q.uid;
+  return JSON.stringify(q);
+}
+function zfbSchedule() {
+  if (!zfbOn()) return;
+  clearTimeout(ZFB.pushT); ZFB.pushT = setTimeout(zfbPushMe, 2500);
+  clearTimeout(ZFB.backT); ZFB.backT = setTimeout(zfbPushBackup, 6000);
+}
+function zfbPushMe() {
+  const p = zfbMine(); if (!zfbOn() || !p || !ZFB.linked) return;
+  const s = zfbPublicJSON(p); if (s === ZFB.lastPush) return; ZFB.lastPush = s;
+  const { doc, setDoc, serverTimestamp } = ZFB.m;
+  setDoc(doc(ZFB.db, 'rooms', ZFB.linked, 'players', ZFB.user.uid), { p: s, name: p.name, pet: p.pet, updatedAt: serverTimestamp() }).catch(e => { ZFB.lastPush = ''; ZFB.err = String(e && e.code || e); });
+}
+function zfbPushBackup() {
+  if (!zfbOn()) return;
+  const s = zfbBackupJSON(); if (s === ZFB.lastBack) return; ZFB.lastBack = s;
+  const { doc, setDoc, serverTimestamp } = ZFB.m;
+  S.cloud.at = Date.now(); zfbSilentSave();
+  setDoc(doc(ZFB.db, 'users', ZFB.user.uid), { s, at: Date.now(), email: ZFB.user.email || '', updatedAt: serverTimestamp() }).catch(e => { ZFB.lastBack = ''; ZFB.err = String(e && e.code || e); });
+}
+function zfbFlush() { if (!zfbOn()) return; clearTimeout(ZFB.pushT); clearTimeout(ZFB.backT); zfbPushMe(); zfbPushBackup(); }
+
+/* ---------- Sala online ---------- */
+function zfbStop() {
+  if (ZFB.offRoom) ZFB.offRoom(); if (ZFB.offPlayers) ZFB.offPlayers();
+  ZFB.offRoom = ZFB.offPlayers = null; ZFB.linked = null; ZFB.lastPush = ''; ZFB.lastBack = '';
+}
+function zfbSilentSave() { CACHE = new Map(); try { const raw = JSON.stringify(S); memCopy = raw; localStorage.setItem(KEY, raw); } catch (e) { } }
+function zfbRerender() {
+  if (!S || !session.pid) return;
+  if ($('#overlay') || $('#story') || $('#ckBody') || $('#sun') || session.ob) { ZFB.dirty = true; return; }
+  if ($('#main')) renderMain(true);
+}
+async function zfbLinkRoom() {
+  if (!zfbOn()) return;
+  const { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, onSnapshot, collection } = ZFB.m;
+  const uid = ZFB.user.uid; const code = String(S.room.code || '').toUpperCase(); const p = zfbMine(); if (!code || !p) return;
+  const ref = doc(ZFB.db, 'rooms', code);
+  let snap;
+  try { snap = await getDoc(ref); } catch (e) { ZFB.err = 'offline'; return; }
+  if (!snap.exists()) {
+    if (S.room.wantJoin) return zfbRoomMissing(code);
+    await setDoc(ref, { code, start: S.room.start, end: S.room.end, prize: S.room.prize, members: [uid], names: { [uid]: p.name }, cw: S.challengeWeeks || {}, rr: S.rerolled || {}, createdAt: serverTimestamp() });
+  } else {
+    const d = snap.data() || {}; const mem = d.members || [];
+    if (!mem.includes(uid)) {
+      if (mem.length >= 2) return zfbRoomFull(code);
+      await updateDoc(ref, { members: arrayUnion(uid), ['names.' + uid]: p.name });
+    }
+    zfbAdoptRoom(d);
+  }
+  S.room.wantJoin = false; S.cloud.room = code; zfbSilentSave();
+  ZFB.linked = code;
+  ZFB.offRoom = onSnapshot(ref, s => { if (s.exists()) { zfbAdoptRoom(s.data()); zfbSilentSave(); zfbRerender(); } }, () => { });
+  ZFB.offPlayers = onSnapshot(collection(ref, 'players'), qs => {
+    let changed = false;
+    qs.forEach(d => {
+      if (d.id === uid) return;
+      let o; try { o = JSON.parse(d.data().p); } catch (e) { return; }
+      o.remote = true; o.uid = d.id; o.pin = '';
+      const i = S.players.findIndex(x => x.remote && (x.uid === d.id || x.id === o.id));
+      if (i > -1) S.players[i] = o; else S.players.push(o);
+      changed = true;
+    });
+    if (changed) { zfbSilentSave(); zfbRerender(); }
+  }, () => { });
+  zfbPushMe(); zfbPushBackup();
+}
+function zfbAdoptRoom(d) {
+  if (!d) return;
+  if (d.start) S.room.start = d.start; if (d.end) S.room.end = d.end; if (d.prize) S.room.prize = d.prize;
+  S.challengeWeeks = Object.assign(S.challengeWeeks || {}, d.cw || {});
+  S.rerolled = Object.assign(S.rerolled || {}, d.rr || {});
+}
+function zfbRoomUpdate(fields) {
+  if (!zfbOn() || !ZFB.linked) return;
+  const { doc, updateDoc } = ZFB.m; updateDoc(doc(ZFB.db, 'rooms', ZFB.linked), fields).catch(() => { });
+}
+function zfbRoomMissing(code) {
+  openSheet(`<h2>Não achei essa sala</h2><div class="sub">A sala <b>${esc(code)}</b> ainda não existe na nuvem. Confira o código com a sua dupla.</div>
+    <label class="field"><span>Código da sala</span><input class="input" id="zfbCode" value="${esc(code)}" autocapitalize="characters" style="text-transform:uppercase"></label>
+    <div style="margin-top:12px"><button class="btn" data-act="zfb-code">Entrar nessa sala</button></div>
+    <div style="margin-top:10px"><button class="btn sec" data-act="zfb-newroom">Criar uma sala minha</button></div>`, {});
+}
+function zfbRoomFull(code) {
+  openSheet(`<h2>Sala cheia</h2><div class="sub">A sala <b>${esc(code)}</b> já tem duas pessoas. Digite outro código ou crie uma sala sua.</div>
+    <label class="field"><span>Código da sala</span><input class="input" id="zfbCode" value="" placeholder="SHAPE-XXX" autocapitalize="characters" style="text-transform:uppercase"></label>
+    <div style="margin-top:12px"><button class="btn" data-act="zfb-code">Entrar nessa sala</button></div>
+    <div style="margin-top:10px"><button class="btn sec" data-act="zfb-newroom">Criar uma sala minha</button></div>`, {});
+}
+function zfbNewCode() { const ch = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c = ''; for (let i = 0; i < 3; i++) c += ch[Math.floor(Math.random() * ch.length)]; return 'SHAPE-' + c; }
+function zfbSwitchRoom(code, join) {
+  zfbStop(); S.players = S.players.filter(p => !p.remote);
+  S.room.code = code; S.room.wantJoin = !!join; save(); closeSheet(true);
+  zfbLinkRoom().then(() => { if (ZFB.linked) toast(join ? 'Você entrou na sala ' + code + '!' : 'Sala ' + code + ' criada!', 'green', '🤝'); renderMain(true); });
+}
+
+/* ---------- Entrar, criar conta e restaurar ---------- */
+const ZFB_ERR = {
+  'auth/email-already-in-use': 'Esse e-mail já tem conta. Toque em "Já tenho conta".',
+  'auth/invalid-email': 'Esse e-mail não parece certo.',
+  'auth/weak-password': 'A senha precisa ter pelo menos 6 caracteres.',
+  'auth/missing-password': 'Digite a senha.',
+  'auth/invalid-credential': 'E-mail ou senha errados.',
+  'auth/wrong-password': 'E-mail ou senha errados.',
+  'auth/user-not-found': 'Não existe conta com esse e-mail.',
+  'auth/too-many-requests': 'Muitas tentativas. Espere alguns minutos.',
+  'auth/network-request-failed': 'Sem internet agora. Conecte e tente de novo.'
+};
+const zfbMsg = e => ZFB_ERR[e && e.code] || 'Não deu certo. Confira a internet e tente de novo.';
+
+function zfbAccountHTML(mode) {
+  const u = ZFB.user;
+  if (u) {
+    const on = zfbOn(); const mates = S ? S.players.filter(p => p.remote) : [];
+    const when = S && S.cloud && S.cloud.at ? new Date(S.cloud.at) : null;
+    return `<h2>Sua conta</h2><div class="sub">${esc(u.email || '')}</div>
+      <div class="card"><div class="zrow"><div class="grow"><b>☁️ Backup na nuvem</b><span>${on ? (when ? 'Salvo em ' + fmtDay(localToday()) + ' às ' + String(when.getHours()).padStart(2, '0') + 'h' + String(when.getMinutes()).padStart(2, '0') : 'Ligado. Salva sozinho a cada mudança.') : 'Desligado neste aparelho.'}</span></div></div>
+        <div class="zrow"><div class="grow"><b>🤝 Sala online ${S && S.room ? esc(S.room.code) : ''}</b><span>${ZFB.linked ? (mates.length ? 'Com ' + mates.map(m => esc(m.name)).join(', ') + '. O placar atualiza sozinho.' : 'Esperando sua dupla entrar com o código.') : 'Conectando…'}</span></div></div>
+        <div class="hint">Sem internet, o Zenit continua funcionando. Tudo sobe para a nuvem quando a conexão voltar.</div></div>
+      <div style="margin-top:12px"><button class="btn sec" data-act="zfb-sync">Salvar agora</button></div>
+      <div style="margin-top:10px"><button class="btn gray" data-act="zfb-out">Sair da conta</button></div>`;
+  }
+  const up = mode !== 'in';
+  return `<h2>${up ? 'Criar sua conta' : 'Entrar na sua conta'}</h2>
+    <div class="sub">${up ? 'Com a conta, seu progresso fica salvo na nuvem e você joga na sala online com a sua dupla.' : 'Entre com o e-mail e a senha que você criou no Zenit.'}</div>
+    <div class="zseg"><button class="${up ? 'on' : ''}" data-act="zfb-mode" data-m="up">Criar conta</button><button class="${up ? '' : 'on'}" data-act="zfb-mode" data-m="in">Já tenho conta</button></div>
+    <label class="field"><span>E-mail</span><input class="input" id="zfbEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" placeholder="voce@email.com"></label>
+    <label class="field"><span>Senha${up ? ' (mínimo 6 caracteres)' : ''}</span><input class="input" id="zfbPass" type="password" autocomplete="${up ? 'new-password' : 'current-password'}" placeholder="••••••"></label>
+    <div style="margin-top:14px"><button class="btn" data-act="zfb-go" data-m="${up ? 'up' : 'in'}" id="zfbGo">${up ? 'Criar conta' : 'Entrar'}</button></div>
+    ${up ? '' : `<button class="link-btn" data-act="zfb-forgot" style="margin-top:10px">Esqueci minha senha</button>`}
+    <div class="hint">Os quilos continuam só com você. Na sala, sua dupla vê XP, nível, sequência e a % de peso perdido.</div>`;
+}
+function zfbOpenAccount(mode) {
+  openSheet(`<div id="zfbSheet"><div class="sub" style="text-align:center;padding:24px 0">Conectando…</div></div>`, {});
+  zfbLoad().then(() => { const el = $('#zfbSheet'); if (el) el.innerHTML = zfbAccountHTML(mode); })
+    .catch(() => { const el = $('#zfbSheet'); if (el) el.innerHTML = `<h2>Sem internet</h2><div class="sub">Para criar a conta ou entrar, o Zenit precisa de internet. O resto do app continua funcionando offline.</div><div style="margin-top:14px"><button class="btn sec" data-act="zfb-open">Tentar de novo</button></div>`; });
+}
+async function zfbGo(mode) {
+  if (ZFB.busy) return;
+  const email = String(($('#zfbEmail') || {}).value || '').trim(); const pass = String(($('#zfbPass') || {}).value || '');
+  if (!email) return toast('Digite seu e-mail.', 'red', '✉️');
+  if (pass.length < 6) return toast('A senha precisa ter pelo menos 6 caracteres.', 'red', '🔒');
+  const b = $('#zfbGo'); ZFB.busy = true; if (b) { b.disabled = true; b.textContent = 'Aguarde…'; }
+  try {
+    await zfbLoad(); const m = ZFB.m;
+    const cred = mode === 'up' ? await m.createUserWithEmailAndPassword(ZFB.auth, email, pass) : await m.signInWithEmailAndPassword(ZFB.auth, email, pass);
+    ZFB.user = cred.user;
+    await zfbAfterLogin(mode === 'up');
+  } catch (e) { toast(zfbMsg(e), 'red', '⚠️'); }
+  finally { ZFB.busy = false; const b2 = $('#zfbGo'); if (b2) { b2.disabled = false; b2.textContent = mode === 'up' ? 'Criar conta' : 'Entrar'; } }
+}
+async function zfbAfterLogin(isNew) {
+  const { doc, getDoc } = ZFB.m; const uid = ZFB.user.uid;
+  let cloud = null;
+  if (!isNew) { try { const s = await getDoc(doc(ZFB.db, 'users', uid)); if (s.exists()) cloud = s.data(); } catch (e) { } }
+  if (S && S.mode === 'demo') { S = null; session.pid = null; }
+  if (!S) {
+    closeSheet(true);
+    if (cloud && cloud.s) return zfbRestore(cloud);
+    session.ob = { step: 1 }; render();
+    return toast(isNew ? 'Conta criada! Agora monte o seu perfil.' : 'Sua conta ainda não tem dados. Vamos montar o seu perfil.', 'green', '☁️');
+  }
+  if (cloud && cloud.s && !(S.cloud && S.cloud.uid === uid)) return zfbConflict(cloud);
+  zfbAttach(); closeSheet(true);
+  toast(isNew ? 'Conta criada! Seu progresso agora fica salvo na nuvem.' : 'Pronto, conectado na sua conta!', 'green', '☁️');
+}
+function zfbAttach() {
+  if (!S || !ZFB.user) return;
+  const pid = (S.cloud && S.cloud.uid === ZFB.user.uid && S.cloud.pid) || session.pid || (S.players.find(p => !p.remote) || {}).id;
+  S.cloud = { uid: ZFB.user.uid, pid, email: ZFB.user.email || '', at: (S.cloud && S.cloud.at) || 0 };
+  zfbSilentSave(); zfbStop(); zfbLinkRoom().then(() => renderMain && $('#main') && renderMain(true));
+}
+function zfbRestore(cloud) {
+  let o; try { o = JSON.parse(cloud.s); } catch (e) { return toast('Não consegui ler o backup da nuvem.', 'red', '⚠️'); }
+  S = o; S.settings = S.settings || { levelTheme: 'A', sound: true }; S.seen = S.seen || { week: {}, month: {} }; S.challengeWeeks = S.challengeWeeks || {}; S.rerolled = S.rerolled || {};
+  S.players = S.players.filter(p => !p.remote);
+  const pid = (S.cloud && S.cloud.pid && S.players.some(p => p.id === S.cloud.pid)) ? S.cloud.pid : S.players[0].id;
+  S.cloud = { uid: ZFB.user.uid, pid, email: ZFB.user.email || '', at: cloud.at || Date.now() };
+  session.ob = null; session.pid = pid; session.pinFor = pid; save();
+  ZFB.lastBack = zfbBackupJSON(); onLogin(); zfbStop(); zfbLinkRoom();
+  setTimeout(() => toast('Tudo de volta! Seus dados vieram da nuvem.', 'green', '☁️'), 500);
+}
+function zfbConflict(cloud) {
+  ZFB.conflict = cloud; const when = cloud.at ? new Date(cloud.at) : null;
+  const wtxt = when ? fmtDay(when.getFullYear() + '-' + String(when.getMonth() + 1).padStart(2, '0') + '-' + String(when.getDate()).padStart(2, '0')) : 'antes';
+  const el = $('#zfbSheet'); const html = `<h2>Qual progresso usar?</h2><div class="sub">Essa conta já tem um backup na nuvem (salvo em ${wtxt}) e este aparelho também tem dados. Escolha qual fica.</div>
+    <div style="margin-top:14px"><button class="btn" data-act="zfb-pick" data-v="cloud">Usar o da nuvem</button></div>
+    <div style="margin-top:10px"><button class="btn sec" data-act="zfb-pick" data-v="local">Manter o deste aparelho</button></div>
+    <div class="hint">O que não for escolhido é substituído.</div>`;
+  if (el) el.innerHTML = html; else openSheet(html, {});
+}
+
+/* ---------- Ações ---------- */
+Object.assign(ACT, {
+  'zfb-open': () => { closeSheet(true); zfbOpenAccount(ZFB.user ? '' : (S ? 'up' : 'in')); },
+  'zfb-mode': el => { const s = $('#zfbSheet'); if (s) s.innerHTML = zfbAccountHTML(el.dataset.m); },
+  'zfb-go': el => zfbGo(el.dataset.m),
+  'zfb-forgot': async () => {
+    const email = String(($('#zfbEmail') || {}).value || '').trim(); if (!email) return toast('Digite seu e-mail no campo acima.', 'red', '✉️');
+    try { await zfbLoad(); await ZFB.m.sendPasswordResetEmail(ZFB.auth, email); toast('Mandei um link para ' + email + ' criar uma senha nova.', 'green', '✉️'); } catch (e) { toast(zfbMsg(e), 'red', '⚠️'); }
+  },
+  'zfb-pick': el => {
+    const c = ZFB.conflict; ZFB.conflict = null; closeSheet(true);
+    if (el.dataset.v === 'cloud' && c) { zfbStop(); S = null; return zfbRestore(c); }
+    zfbAttach(); ZFB.lastBack = ''; setTimeout(zfbPushBackup, 1500); toast('Mantive os dados deste aparelho e salvei na nuvem.', 'green', '☁️');
+  },
+  'zfb-sync': () => { if (!zfbOn()) return toast('Entre na conta para salvar na nuvem.', 'red', '☁️'); ZFB.lastBack = ''; ZFB.lastPush = ''; zfbFlush(); if (!ZFB.linked) zfbLinkRoom(); toast(navigator.onLine === false ? 'Sem internet. Salvo no aparelho e sobe quando a conexão voltar.' : 'Salvo na nuvem!', 'green', '☁️'); closeSheet(true); },
+  'zfb-out': async () => {
+    zfbFlush(); zfbStop();
+    try { await ZFB.m.signOut(ZFB.auth); } catch (e) { }
+    ZFB.user = null; if (S) { S.cloud = null; S.players = S.players.filter(p => !p.remote); save(); }
+    closeSheet(true); if ($('#main')) renderMain(true); toast('Você saiu da conta. Os dados continuam neste aparelho.', 'violet', '👋');
+  },
+  'zfb-code': () => { const c = String(($('#zfbCode') || {}).value || '').trim().toUpperCase(); if (c.length < 4) return toast('Digite o código da sala.', 'red', '🔑'); zfbSwitchRoom(c, true); },
+  'zfb-newroom': () => zfbSwitchRoom(zfbNewCode(), false)
+});
+
+/* ---------- Ganchos no app ---------- */
+const __z8Save = save;
+save = function () { const r = __z8Save.apply(this, arguments); try { zfbSchedule(); } catch (e) { } return r; };
+const __z8Close = closeSheet;
+closeSheet = function () { const r = __z8Close.apply(this, arguments); if (ZFB.dirty) { ZFB.dirty = false; setTimeout(() => { if (!$('#overlay')) zfbRerender(); }, 350); } return r; };
+document.addEventListener('visibilitychange', () => { if (document.hidden) zfbFlush(); });
+window.addEventListener('online', () => { if (S && S.cloud) zfbBoot(); });
+
+// A dupla não aparece na tela de PIN deste aparelho
+const __z8Pin = pinHTML;
+pinHTML = function () { const all = S.players; S.players = all.filter(p => !p.remote); try { return __z8Pin.apply(this, arguments); } finally { S.players = all; } };
+
+const __z8Set = openSettings;
+openSettings = function () { const all = S.players; S.players = all.filter(p => !p.remote); try { return __z8Set.apply(this, arguments); } finally { S.players = all; } };
+
+// Entrar com o código da dupla
+const __z8Room = ACT['ob-room'];
+ACT['ob-room'] = function (el) { session.zJoin = el && el.dataset && el.dataset.v === 'join'; return __z8Room.apply(this, arguments); };
+const __z8Finish = obFinish;
+obFinish = function (code) {
+  const r = __z8Finish.apply(this, arguments);
+  if (S) { S.room.wantJoin = !!session.zJoin; session.zJoin = false; zfbSilentSave(); }
+  setTimeout(() => { if (ZFB.user) zfbAttach(); else zfbPromptWhenFree(0); }, 1400);
+  return r;
+};
+
+// Pede a conta só depois do tour guiado, para não atropelar nada
+function zfbPromptWhenFree(n) {
+  if (!S || !session.pid || zfbOn() || S.mode === 'demo') return; const p = me();
+  const busy = document.getElementById('zcoach') || $('#overlay') || $('#sun') || $('#story') || (p && !p.coachDone);
+  if (busy && n < 600) return setTimeout(() => zfbPromptWhenFree(n + 1), 1000);
+  zfbOpenAccount('up');
+}
+
+// Desafio da semana e prêmio iguais para os dois
+const __z8Reroll = ACT['challenge-reroll'];
+ACT['challenge-reroll'] = function () { const r = __z8Reroll.apply(this, arguments); const wk = weekKey(T()); zfbRoomUpdate({ ['cw.' + wk]: S.challengeWeeks[wk], ['rr.' + wk]: true }); return r; };
+const __z8Prize = ACT['prize-save'];
+ACT['prize-save'] = function () { const r = __z8Prize.apply(this, arguments); if (S && S.room) zfbRoomUpdate({ prize: S.room.prize }); return r; };
+
+// Telas: capa, início e perfil
+const __z8Cover = zCoverHTML;
+zCoverHTML = function () { const h = __z8Cover.apply(this, arguments); const i = h.lastIndexOf('</div></div>'); return i > -1 ? h.slice(0, i) + `<button class="zc-acc" data-act="zfb-open">Já tenho conta · entrar</button>` + h.slice(i) : h; };
+function zfbBanner() {
+  if (!S || S.mode === 'demo') return '';
+  if (zfbOn()) return '';
+  const was = S.cloud && S.cloud.email;
+  return `<button class="zfb-ban" data-act="zfb-open"><span class="zfb-ic">☁️</span><span class="grow"><b>${was ? 'Entre de novo na sua conta' : S.room.wantJoin ? 'Falta pouco para entrar na sala ' + esc(S.room.code) : 'Salve na nuvem e jogue online'}</b><span>${was ? 'O backup e a sala online estão pausados.' : S.room.wantJoin ? 'Crie sua conta para ver o placar ao vivo com a sua dupla.' : 'Crie sua conta: backup automático e sala ao vivo com a sua dupla.'}</span></span><span class="zfb-go">${was ? 'Entrar' : 'Criar'}</span></button>`;
+}
+const __z8Dash = dashHTML;
+dashHTML = function () { return zfbBanner() + __z8Dash.apply(this, arguments); };
+const __z8Prof = profileHTML;
+profileHTML = function () {
+  const h = __z8Prof.apply(this, arguments);
+  if (!S || S.mode === 'demo') return h;
+  const card = zfbOn()
+    ? `<button class="zfb-ban ok" data-act="zfb-open"><span class="zfb-ic">☁️</span><span class="grow"><b>Conta e nuvem</b><span>${esc(S.cloud.email || '')} · backup automático ligado</span></span><span class="zfb-go">Ver</span></button>`
+    : zfbBanner();
+  return card + h;
+};
+
+/* ---------- Ao abrir o app ---------- */
+function zfbBoot() {
+  if (!S || S.mode === 'demo' || !S.cloud) return;
+  zfbLoad().then(() => {
+    if (!ZFB.user || ZFB.user.uid !== S.cloud.uid) { if ($('#main')) renderMain(true); return; }
+    if (!ZFB.linked) zfbLinkRoom();
+  }).catch(() => { });
+}
+setTimeout(zfbBoot, 1200);
+// A primeira tela foi desenhada antes deste trecho carregar: redesenha com os botões novos.
+try { if (!S) { if (!session.ob && $('.zcover')) render(); } else if (session.pid && $('#main')) renderMain(true); } catch (e) { }
+
+ZNEWS.splice(0, ZNEWS.length,
+  ['☁️', 'Conta e backup na nuvem', 'Crie sua conta com e-mail e senha. Tudo que você marca fica salvo sozinho, e dá para recuperar em qualquer celular.'],
+  ['🤝', 'Sala online de verdade', 'Você e sua dupla veem o progresso uma da outra ao vivo, cada uma no seu celular. O desafio da semana e o prêmio são os mesmos para as duas.'],
+  ['🔒', 'Seus quilos continuam seus', 'Na sala aparece só XP, nível, sequência e a % de peso perdido.']);
+</script>
+<style>
+.zfb-ban{display:flex;gap:12px;align-items:center;width:100%;text-align:left;border:0;background:linear-gradient(135deg,#DDF4FF,#C9ECFF);box-shadow:0 4px 0 #84D8FF;border-radius:20px;padding:13px 15px;margin:0 0 16px;font:inherit;color:#0B4F71;cursor:pointer}
+.zfb-ban:active{transform:translateY(3px);box-shadow:0 1px 0 #84D8FF}
+.zfb-ban.ok{background:linear-gradient(135deg,#E8F9D9,#D7F5BE);box-shadow:0 4px 0 #A5E26B;color:#2B5A06}
+.zfb-ban .zfb-ic{font-size:30px;line-height:1}
+.zfb-ban b{display:block;font-size:15.5px;font-weight:800}
+.zfb-ban .grow span{display:block;font-size:12.5px;opacity:.8;margin-top:2px}
+.zfb-ban .zfb-go{background:#1CB0F6;color:#fff;font-weight:800;font-size:13px;border-radius:12px;padding:8px 12px;box-shadow:0 3px 0 #1899D6}
+.zfb-ban.ok .zfb-go{background:#58CC02;box-shadow:0 3px 0 #46A302}
+.zseg{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--line,#E5E5E5);border-radius:14px;padding:4px;margin:14px 0 4px}
+.zseg button{border:0;background:transparent;border-radius:11px;padding:10px;font:inherit;font-weight:800;font-size:14px;color:var(--ink-2,#555);cursor:pointer}
+.zseg button.on{background:#fff;color:var(--ink,#222);box-shadow:0 2px 0 rgba(0,0,0,.08)}
+.zc-acc{display:block;margin:12px auto 0;background:none;border:0;color:#fff;font:inherit;font-weight:800;font-size:15px;text-decoration:underline;text-underline-offset:3px;opacity:.95;cursor:pointer}
+</style>
+
 </body>
 </html>
 

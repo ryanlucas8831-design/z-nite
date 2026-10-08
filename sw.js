@@ -1,5 +1,5 @@
 // Zenit: guarda o app no celular para abrir mesmo sem internet e cuida dos avisos.
-const CACHE = 'zenit-v1-4-1';
+const CACHE = 'zenit-v2-0';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -13,6 +13,8 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
+  // Login e banco de dados da sala online: sempre direto pela internet, nunca do cache.
+  if (/googleapis\.com|firebaseio\.com|firebaseapp\.com/.test(new URL(req.url).hostname)) return;
   // Página: tenta a versão nova primeiro; sem internet, usa a guardada.
   if (req.mode === 'navigate') {
     e.respondWith(fetch(req).then(res => {
