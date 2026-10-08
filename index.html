@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '2.0';
+const ZV = '2.1';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -5197,6 +5197,104 @@ ZNEWS.splice(0, ZNEWS.length,
 .zseg button.on{background:#fff;color:var(--ink,#222);box-shadow:0 2px 0 rgba(0,0,0,.08)}
 .zc-acc{display:block;margin:12px auto 0;background:none;border:0;color:#fff;font:inherit;font-weight:800;font-size:15px;text-decoration:underline;text-underline-offset:3px;opacity:.95;cursor:pointer}
 </style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 2.1: nome do mascote, trocar PIN, esqueci o PIN e abrir sem PIN
+   ========================================================= */
+const __z9PetOf = petOf;
+petOf = function (p) { const b = __z9PetOf.apply(this, arguments); return p && p.petName ? Object.assign({}, b, { name: p.petName }) : b; };
+
+const __z9Set = openSettings;
+openSettings = function () {
+  const r = __z9Set.apply(this, arguments);
+  const ov = $('#overlay'); if (!ov || !S || S.mode === 'demo') return r; const p = me();
+  const nm = ov.querySelector('#sName'); const lab = nm && nm.closest('label');
+  if (lab) lab.insertAdjacentHTML('afterend', `<label class="field"><span>Nome do mascote</span><input class="input" id="sPet" maxlength="16" value="${esc(p.petName || '')}" placeholder="${esc(__z9PetOf(p).name)}"></label>`);
+  const cards = ov.querySelectorAll('.card');
+  cards.forEach(c => { const h = c.querySelector('h3'); if (h && h.textContent.trim() === 'Backup') c.innerHTML = `<h3>Backup</h3><div class="sub">${zfbOn() ? 'Com a sua conta, tudo é salvo sozinho na nuvem. O arquivo de backup é só uma cópia extra.' : 'Crie uma conta para salvar tudo sozinho na nuvem. O arquivo de backup é uma cópia manual.'}</div>
+      <div style="margin-top:10px"><button class="btn sm" data-act="zfb-open">${zfbOn() ? 'Conta e nuvem' : 'Criar conta'}</button></div>
+      <div class="grid2" style="margin-top:10px"><button class="btn sm blue" data-act="backup-save">Baixar arquivo</button><button class="btn sec sm" data-act="backup-load">Restaurar arquivo</button></div>`; });
+  const conta = [...cards].find(c => { const h = c.querySelector('h3'); return h && h.textContent.trim() === 'Conta'; });
+  if (conta) conta.insertAdjacentHTML('beforebegin', `<div class="card"><h3>PIN</h3>
+      <div class="kv" style="align-items:center"><span>Pedir o PIN ao abrir o app</span><button class="switch ${S.settings.askPin === false ? '' : 'on'}" data-act="z9-askpin" aria-label="Pedir PIN"><i></i></button></div>
+      <label class="field"><span>PIN atual</span><input class="input" id="z9Old" inputmode="numeric" maxlength="4" type="password" placeholder="••••" style="letter-spacing:10px;text-align:center"></label>
+      <label class="field"><span>Novo PIN</span><input class="input" id="z9New" inputmode="numeric" maxlength="4" type="password" placeholder="••••" style="letter-spacing:10px;text-align:center"></label>
+      <div style="margin-top:12px"><button class="btn sec sm" data-act="z9-pin">Trocar PIN</button></div></div>`);
+  ov.querySelectorAll('.hint').forEach(h => { if (/versão de teste/.test(h.textContent)) h.textContent = 'Zenit ' + ZV; });
+  return r;
+};
+const __z9SaveSet = saveSettings;
+saveSettings = function () {
+  const el = $('#sPet'); const pn = el ? el.value.trim() : null;
+  const r = __z9SaveSet.apply(this, arguments);
+  if (pn != null && S && me()) { const p = me(); const v = pn && pn !== __z9PetOf(p).name ? pn : ''; if ((p.petName || '') !== v) { if (v) p.petName = v; else delete p.petName; save(); if ($('#main')) renderMain(true); } }
+  return r;
+};
+function z9NewPinSheet(title, sub) {
+  openSheet(`<h2>${title}</h2><div class="sub">${sub}</div>
+    <label class="field"><span>Novo PIN (4 números)</span><input class="input" id="z9New" inputmode="numeric" maxlength="4" type="password" placeholder="••••" style="letter-spacing:12px;font-size:26px;text-align:center"></label>
+    <label class="field"><span>Repita o novo PIN</span><input class="input" id="z9New2" inputmode="numeric" maxlength="4" type="password" placeholder="••••" style="letter-spacing:12px;font-size:26px;text-align:center"></label>
+    <div style="margin-top:14px"><button class="btn" data-act="z9-setpin">Salvar novo PIN</button></div>`, {});
+}
+Object.assign(ACT, {
+  'z9-askpin': el => { S.settings.askPin = S.settings.askPin === false ? true : false; save(); el.classList.toggle('on', S.settings.askPin !== false); toast(S.settings.askPin === false ? 'O app vai abrir direto, sem pedir o PIN.' : 'O app vai pedir o PIN ao abrir.', 'violet', '🔒'); },
+  'z9-pin': () => {
+    const p = me(); const o = String(($('#z9Old') || {}).value || '').trim(); const n = String(($('#z9New') || {}).value || '').trim();
+    if (o !== p.pin) return toast('O PIN atual está errado.', 'red', '🔒');
+    if (!/^\d{4}$/.test(n)) return toast('O novo PIN precisa ter 4 números.', 'red', '🔒');
+    p.pin = n; save(); closeSheet(true); toast('PIN trocado!', 'green', '🔒');
+  },
+  'z9-forgot': () => {
+    const p = S.players.find(x => x.id === session.pinFor) || S.players.find(x => !x.remote);
+    if (S.cloud && S.cloud.email && (!S.cloud.pid || S.cloud.pid === p.id)) {
+      openSheet(`<h2>Esqueceu o PIN?</h2><div class="sub">Sem problema. Confirme a senha da sua conta Zenit (<b>${esc(S.cloud.email)}</b>) e crie um PIN novo.</div>
+        <label class="field"><span>Senha da conta</span><input class="input" id="z9Pass" type="password" autocomplete="current-password" placeholder="••••••"></label>
+        <div style="margin-top:14px"><button class="btn" data-act="z9-verify" id="z9Go">Confirmar</button></div>
+        <button class="link-btn" data-act="z9-mail" style="margin-top:10px">Esqueci a senha da conta também</button>`, {});
+    } else {
+      openSheet(`<h2>Esqueceu o PIN?</h2><div class="sub">Para recuperar o PIN, o perfil precisa estar ligado a uma conta Zenit, e esse ainda não está.</div>
+        <div class="hint">Se você souber o e-mail e a senha de uma conta com backup deste perfil, use "Já tenho conta" na tela inicial depois de apagar os dados deste aparelho. Sem conta, não tem como recuperar.</div>
+        <div style="margin-top:14px"><button class="btn gray" data-act="z9-close">Entendi</button></div>`, {});
+    }
+  },
+  'z9-close': () => closeSheet(true),
+  'z9-verify': async () => {
+    const pass = String(($('#z9Pass') || {}).value || ''); if (!pass) return toast('Digite a senha da conta.', 'red', '🔒');
+    const b = $('#z9Go'); if (b) { b.disabled = true; b.textContent = 'Conferindo…'; }
+    try {
+      await zfbLoad(); const cred = await ZFB.m.signInWithEmailAndPassword(ZFB.auth, S.cloud.email, pass);
+      if (cred.user.uid !== S.cloud.uid) throw { code: 'auth/invalid-credential' };
+      ZFB.user = cred.user; session.z9reset = true; closeSheet(true);
+      setTimeout(() => z9NewPinSheet('Crie um PIN novo', 'Senha conferida! Agora escolha o seu novo PIN.'), 250);
+    } catch (e) { toast(zfbMsg(e), 'red', '⚠️'); if (b) { b.disabled = false; b.textContent = 'Confirmar'; } }
+  },
+  'z9-mail': async () => { try { await zfbLoad(); await ZFB.m.sendPasswordResetEmail(ZFB.auth, S.cloud.email); toast('Mandei um link para ' + S.cloud.email + ' criar uma senha nova.', 'green', '✉️'); } catch (e) { toast(zfbMsg(e), 'red', '⚠️'); } },
+  'z9-setpin': () => {
+    if (!session.z9reset) return; const a = String(($('#z9New') || {}).value || '').trim(); const c = String(($('#z9New2') || {}).value || '').trim();
+    if (!/^\d{4}$/.test(a)) return toast('O PIN precisa ter 4 números.', 'red', '🔒');
+    if (a !== c) return toast('Os dois PINs estão diferentes.', 'red', '🔒');
+    const p = S.players.find(x => x.id === S.cloud.pid) || S.players.find(x => !x.remote);
+    p.pin = a; session.z9reset = false; save(); closeSheet(true);
+    session.pid = p.id; session.pinBuf = ''; onLogin(); toast('PIN novo salvo! Bem-vindo de volta.', 'green', '🔓');
+  }
+});
+// "Esqueci meu PIN" na tela do PIN
+const __z9Pin = pinHTML;
+pinHTML = function () { const h = __z9Pin.apply(this, arguments); const i = h.lastIndexOf('</div></div>'); return i > -1 ? h.slice(0, i) + `<button class="link-btn z9-forgot" data-act="z9-forgot">Esqueci meu PIN</button>` + h.slice(i) : h; };
+// Abrir direto, sem PIN, quando a pessoa escolheu assim
+function z9AutoEnter() {
+  if (!S || session.pid || S.mode === 'demo' || S.settings.askPin !== false) return;
+  const mine = S.players.filter(p => !p.remote); const p = (S.cloud && mine.find(x => x.id === S.cloud.pid)) || (mine.length === 1 ? mine[0] : null);
+  if (!p) return; session.pid = p.id; session.pinFor = p.id; onLogin();
+}
+const __z9Lock = ACT.lock;
+ACT.lock = function () { session.z9locked = true; return __z9Lock.apply(this, arguments); };
+try { if (!session.z9locked) z9AutoEnter(); } catch (e) { }
+ZNEWS.unshift(['🐾', 'Dê um nome ao seu mascote', 'Em Configurações, escolha o nome do seu mascote, troque o PIN ou desligue o PIN ao abrir. Esqueceu o PIN? Dá para criar outro com a senha da sua conta.']);
+</script>
+<style>.z9-forgot{display:block;margin:14px auto 0;color:#1CB0F6}</style>
 
 </body>
 </html>
