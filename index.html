@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '1.4';
+const ZV = '1.4.1';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -4556,7 +4556,7 @@ async function zScheduleNative() {
   const LN = zLN(); if (!LN || !S || !session.pid) return;
   try {
     const perm = await LN.checkPermissions(); if (!perm || perm.display !== 'granted') return;
-    const pend = await LN.getPending(); if (pend && pend.notifications && pend.notifications.length) await LN.cancel({ notifications: pend.notifications.map(n => ({ id: n.id })) });
+    const pend = await LN.getPending(); { const cx = ((pend && pend.notifications) || []).filter(n => n.id !== 9999).map(n => ({ id: n.id })); if (cx.length) await LN.cancel({ notifications: cx }); }
     const p = me(); const t = T(); const now = Date.now(); const list = [];
     for (let k = 0; k < 7; k++) {
       const day = zAddDays(t, k); let items = [];
@@ -4720,7 +4720,7 @@ zScheduleNative = async function () {
   const LN = zLN(); if (!LN || !S || !session.pid) return;
   try {
     const perm = await LN.checkPermissions(); if (!perm || perm.display !== 'granted') return;
-    const pend = await LN.getPending(); if (pend && pend.notifications && pend.notifications.length) await LN.cancel({ notifications: pend.notifications.map(n => ({ id: n.id })) });
+    const pend = await LN.getPending(); { const cx = ((pend && pend.notifications) || []).filter(n => n.id !== 9999).map(n => ({ id: n.id })); if (cx.length) await LN.cancel({ notifications: cx }); }
     const p = me(); const t = T(); const now = new Date(); const r = zRoutine(p); const list = []; let once = 0;
     for (let k = 0; k < 7; k++) {
       const day = zAddDays(t, k); const wd = dow(day);
@@ -4792,6 +4792,43 @@ zScheduleNativeSoon();
 @media (prefers-reduced-motion: reduce){.z6p-ic{animation:none}}
 </style>
 
+<script>
+'use strict';
+/* ---------- Zenit 1.4.1: pedir a permissão de notificação no app instalado ---------- */
+async function z7Perm() { const LN = zLN(); if (!LN) return null; try { const r = await LN.checkPermissions(); return (r && r.display) || null; } catch (e) { return null; } }
+async function z7Exact() { const LN = zLN(); if (!LN || typeof LN.checkExactNotificationSetting !== 'function') return 'granted'; try { const r = await LN.checkExactNotificationSetting(); return (r && r.exact_alarm) || 'granted'; } catch (e) { return 'granted'; } }
+async function z7Pending() { const LN = zLN(); if (!LN) return 0; try { const r = await LN.getPending(); return ((r && r.notifications) || []).filter(n => n.id !== 9999).length; } catch (e) { return 0; } }
+async function z7FixRemSheet() {
+  const ov = $('#overlay'); if (!ov) return; const card = ov.querySelector('.card'); if (!card) return;
+  const st = await z7Perm(); const ex = st === 'granted' ? await z7Exact() : 'granted'; const n = st === 'granted' ? await z7Pending() : 0;
+  let line, btn;
+  if (st === 'granted' && ex !== 'granted') { line = 'Ligadas, mas falta liberar o horário exato. Sem isso o Android pode atrasar os avisos.'; btn = `<button class="btn xs" data-act="z7-exact">Liberar</button>`; }
+  else if (st === 'granted') { line = 'Ligadas. ' + (n ? n + ' avisos agendados neste aparelho.' : 'Os avisos estão sendo agendados.'); btn = `<button class="btn xs sec" data-act="z-notif-test">Testar</button>`; }
+  else if (st === 'denied') { line = 'Bloqueadas. Abra Configurações › Apps › Zenit › Notificações e ligue.'; btn = `<button class="btn xs" data-act="z-notif">Tentar</button>`; }
+  else { line = 'Toque em Permitir para os lembretes chegarem com o app fechado.'; btn = `<button class="btn xs" data-act="z-notif">Permitir</button>`; }
+  if (!document.body.contains(card)) return;
+  card.innerHTML = `<div class="zrow"><div class="grow"><b>Notificações</b><span>${line}</span></div>${btn}</div>
+    <div class="hint">No app instalado, os lembretes chegam mesmo com o Zenit fechado e se repetem toda semana. Se algum não chegar, vá em Configurações › Apps › Zenit › Bateria e escolha <b>Sem restrições</b>.</div>`;
+}
+const __z7OpenRem = zOpenRem;
+zOpenRem = function () { const r = __z7OpenRem.apply(this, arguments); if (zLN()) z7FixRemSheet(); return r; };
+const __z7Test = ACT['z-notif-test'];
+ACT['z-notif-test'] = function () {
+  const LN = zLN(); if (!LN) return __z7Test && __z7Test.apply(this, arguments);
+  LN.schedule({ notifications: [{ id: 9999, title: 'Teste do Zenit 🔔', body: 'Funcionou! Os seus lembretes vão chegar assim.', schedule: { at: new Date(Date.now() + 20000), allowWhileIdle: true } }] })
+    .then(() => toast('Pode fechar o app. O aviso de teste chega em 20 segundos.', 'green', '🔔'))
+    .catch(() => toast('Não consegui agendar o teste. Confira se as notificações estão ligadas.', 'red', '🔔'));
+};
+ACT['z7-exact'] = async () => { const LN = zLN(); try { if (LN && typeof LN.changeExactNotificationSetting === 'function') await LN.changeExactNotificationSetting(); } catch (e) { } setTimeout(() => { if ($('#overlay')) z7FixRemSheet(); zScheduleNativeSoon(); }, 800); };
+// Na primeira vez que o app instalado abre, já pede a permissão.
+async function z7AutoAsk() {
+  if (!zLN() || !S || !session.pid || session.z7asked) return; session.z7asked = 1;
+  const st = await z7Perm(); if (st === 'prompt' || st === 'prompt-with-rationale') zNotifEnable(); else if (st === 'granted') zScheduleNativeSoon();
+}
+setTimeout(z7AutoAsk, 3500);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && $('#overlay')) z7FixRemSheet(); });
+ZNEWS.unshift(['🔔', 'Permissão de lembretes', 'No app instalado, o Zenit agora pede a permissão de notificação logo ao abrir, e a tela de Lembretes tem um botão de teste.']);
+</script>
 </body>
 </html>
 
