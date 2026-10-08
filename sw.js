@@ -1,5 +1,5 @@
 // Zenit: guarda o app no celular para abrir mesmo sem internet e cuida dos avisos.
-const CACHE = 'zenit-v2-2';
+const CACHE = 'zenit-v2-3';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

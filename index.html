@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '2.2';
+const ZV = '2.3';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -4808,7 +4808,7 @@ async function z7FixRemSheet() {
   else { line = 'Toque em Permitir para os lembretes chegarem com o app fechado.'; btn = `<button class="btn xs" data-act="z-notif">Permitir</button>`; }
   if (!document.body.contains(card)) return;
   card.innerHTML = `<div class="zrow"><div class="grow"><b>Notificações</b><span>${line}</span></div>${btn}</div>
-    <div class="hint">No app instalado, os lembretes chegam mesmo com o Zenit fechado e se repetem toda semana. Se algum não chegar, vá em Configurações › Apps › Zenit › Bateria e escolha <b>Sem restrições</b>.</div>`;
+    <div class="hint">No app instalado, os lembretes chegam mesmo com o Zenit fechado e ficam agendados para as próximas 3 semanas. Se algum não chegar, vá em Configurações › Apps › Zenit › Bateria e escolha <b>Sem restrições</b>.</div>`;
 }
 const __z7OpenRem = zOpenRem;
 zOpenRem = function () { const r = __z7OpenRem.apply(this, arguments); if (zLN()) z7FixRemSheet(); return r; };
@@ -5871,7 +5871,7 @@ function z10SmartList(p) {
   const t = T(); const now = nowMin(); const out = []; const nm = p.name || '';
   const at = (s, m) => { const d = new Date(s + 'T00:00:00'); d.setHours(Math.floor(m / 60), m % 60, 0, 0); return d; };
   const st = streakInfo(p, t).current;
-  for (let k = 0; k < 14; k++) {
+  for (let k = 0; k < 21; k++) {
     const s = addDays(t, k); if (s < S.room.start || s > S.room.end) continue;
     const today = k === 0; const d = today ? dget(p, s) : {}; const free = zIsFree(p, s); const day = []; const id0 = 6000 + k * 20;
     const push = (slot, m, title, body, pri, go) => { if (today && m <= now + 1) return; day.push({ id: id0 + slot, title, body, schedule: { at: at(s, m), allowWhileIdle: true }, extra: { go: go || '' }, pri, m }); };
@@ -5894,7 +5894,7 @@ function z10SmartList(p) {
     if (cd.includes(diffDays(weekKey(s), s))) { const c = ZCARE[hashStr(s + p.id) % ZCARE.length]; push(11, 990, c[0], c[1], 4); }
     if (dow(s) === 1 && !(p.wgoal || {})[weekKey(s)]) push(12, 570, '🎯 Meta da semana', 'Escolha a sua meta pessoal. Cumpriu, ganha um baú especial no domingo.', 2);
     if (dow(s) === 0 && today) { const gs = z10GoalState(p, weekKey(s)); if (gs && gs.met && !gs.claimed) push(13, 1080, '🎁 Seu baú especial chegou!', 'Você cumpriu a meta da semana. Abra o baú no Zenit.', 1); }
-    day.sort((a, b) => a.pri - b.pri); const keep = day.slice(0, today ? 6 : (k <= 2 ? 5 : 3));
+    day.sort((a, b) => a.pri - b.pri); const keep = day.slice(0, today ? 6 : (k <= 2 ? 5 : k <= 6 ? 3 : 2));
     keep.forEach(n => { delete n.pri; delete n.m; out.push(n); });
   }
   return out;
@@ -6078,6 +6078,109 @@ html.zdark .zk-ic[style*="#E8F9D9"]{background:#1F3A12 !important}
 html.zdark .zk-ic[style*="#FFE6F4"]{background:#44203A !important}
 html.zdark .zk-bolt{background:#432E12}
 html.zdark .zstep button{color:var(--ink)}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 2.3: lembretes reformulados
+   Tudo vira aviso com dia e hora exatos para as próximas 3 semanas
+   (o mesmo tipo do botão Testar, que funciona), reagendado a cada uso.
+   E um painel para ver o que está agendado e testar com o app fechado.
+   ========================================================= */
+const Z11_KEY = 'zenit-avisos';
+function z11At(s, m) { const d = new Date(s + 'T00:00:00'); d.setHours(Math.floor(m / 60), m % 60, 0, 0); return d; }
+function z11Build(p) {
+  const r = zRoutine(p); const t = T(); const now = nowMin(); const out = []; const taken = new Set();
+  const add = (id, s, m, title, body, go) => {
+    if (s === t && m <= now + 1) return; const key = s + '|' + m; if (taken.has(key)) return; taken.add(key);
+    out.push({ id, title, body, schedule: { at: z11At(s, m), allowWhileIdle: true }, extra: { go: go || '' } });
+  };
+  for (let k = 0; k < 21; k++) {
+    const s = addDays(t, k); if (S.room.end && s > S.room.end) break;
+    let items = []; try { items = zReminders(p, s); } catch (e) { items = []; }
+    items.forEach((it, j) => {
+      if (it.info || !it.h || it.id === 'agua' || it.done) return;
+      if (it.id === 'backup' && typeof zfbOn === 'function' && zfbOn()) return;
+      const body = Z6_BODY[it.id] || (it.custom != null ? 'Seu lembrete do Zenit' : (it.s || 'Zenit'));
+      add(8000 + k * 40 + Math.min(j, 19), s, zMin(it.h), it.t, body, it.act);
+    });
+    if (r.auto.agua && r.auto.smart === false) Z6_WATER.forEach(([h, ti, bo], i) => { if (k === 0 && waterOk(p, dget(p, s))) return; add(8000 + k * 40 + 30 + i, s, zMin(h), '💧 ' + ti, bo, 'water-quick'); });
+  }
+  let smart = []; try { smart = z10SmartList(p); } catch (e) { smart = []; }
+  for (const n of smart) { const d = n.schedule.at; const s = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); const m = d.getHours() * 60 + d.getMinutes(); const key = s + '|' + m; if (taken.has(key)) continue; taken.add(key); out.push(n); }
+  const nm = p.name ? p.name + ', ' : '';
+  [[2, 'Seu foguinho sente a sua falta 🔥', nm + 'faz dois dias que você não aparece. Um copo de água já conta.'], [5, 'A disputa continua sem você', 'Abra o Zenit e faça o check-in de hoje. Ainda dá para virar o jogo.']]
+    .forEach(([n, ti, bo], i) => add(4001 + i, addDays(t, n), 1170, ti, bo));
+  return out;
+}
+async function z11Run() {
+  const LN = zLN(); if (!LN || !S || !session.pid || !S.room) return;
+  const perm = await LN.checkPermissions(); if (!perm || perm.display !== 'granted') return;
+  const pend = await LN.getPending(); const cx = ((pend && pend.notifications) || []).filter(n => n.id !== 9999 && n.id !== 9998).map(n => ({ id: n.id }));
+  for (let i = 0; i < cx.length; i += 100) await LN.cancel({ notifications: cx.slice(i, i + 100) });
+  const list = z11Build(me());
+  for (let i = 0; i < list.length; i += 40) await LN.schedule({ notifications: list.slice(i, i + 40) });
+  try { localStorage.setItem(Z11_KEY, JSON.stringify({ at: Date.now(), n: list.length, v: ZV })); } catch (e) { }
+}
+let z11Q = Promise.resolve();
+zScheduleNative = function () { z11Q = z11Q.then(() => z11Run()).catch(e => { try { localStorage.setItem(Z11_KEY + '-erro', String(e && e.message || e)); } catch (x) { } }); return z11Q; };
+
+/* ---------- Painel "Seus avisos" na tela de Lembretes ---------- */
+const Z11_BAT = `<ol class="z11-steps"><li>Abra <b>Configurações</b> do tablet › <b>Apps</b> › <b>Zenit</b> › <b>Bateria</b> e escolha <b>Sem restrições</b>.</li>
+  <li>Em <b>Configurações</b> › <b>Assistência do aparelho e bateria</b> › <b>Bateria</b> › <b>Limites de uso em segundo plano</b>: tire o Zenit de <b>Apps em suspensão</b> e de <b>Apps em suspensão profunda</b>, e coloque em <b>Apps que nunca são suspensos</b>.</li>
+  <li>Em <b>Configurações</b> › <b>Apps</b> › <b>Zenit</b> › <b>Notificações</b>: deixe tudo ligado.</li>
+  <li>Volte aqui e toque em <b>Testar com o app fechado</b>.</li></ol>`;
+function z11When(d) {
+  const t = localToday(); const s = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const day = s === t ? 'Hoje' : s === addDays(t, 1) ? 'Amanhã' : capWord(DOW[dow(s)]) + ' ' + fmtDay(s);
+  return day + ', ' + String(d.getHours()).padStart(2, '0') + 'h' + String(d.getMinutes()).padStart(2, '0');
+}
+async function z11Panel() {
+  const ov = $('#overlay'); if (!ov) return; const box = ov.querySelector('#z11Box'); if (!box) return; const LN = zLN(); if (!LN) return;
+  let list = []; try { const r = await LN.getPending(); list = ((r && r.notifications) || []).filter(n => n.id !== 9999 && n.id !== 9998); } catch (e) { }
+  const when = n => { const a = n.schedule && n.schedule.at; return a ? new Date(a) : null; };
+  const next = list.map(n => ({ n, d: when(n) })).filter(x => x.d && x.d > new Date()).sort((a, b) => a.d - b.d).slice(0, 5);
+  let info = {}; try { info = JSON.parse(localStorage.getItem(Z11_KEY) || '{}'); } catch (e) { }
+  if (!document.body.contains(box)) return;
+  box.innerHTML = `<div class="sub">${list.length ? `<b>${list.length} avisos</b> agendados para as próximas 3 semanas.` : '<b>Nenhum aviso agendado.</b> Toque em Reagendar.'}${info.at ? ` Atualizado às ${String(new Date(info.at).getHours()).padStart(2, '0')}h${String(new Date(info.at).getMinutes()).padStart(2, '0')}.` : ''}</div>
+    ${next.length ? `<div class="z11-next">${next.map(x => `<div><span>${z11When(x.d)}</span><b>${esc(x.n.title || '')}</b></div>`).join('')}</div>` : ''}`;
+}
+const __z11Rem = zOpenRem;
+zOpenRem = function () {
+  const r = __z11Rem.apply(this, arguments);
+  if (zLN()) {
+    const ov = $('#overlay'); const first = ov && ov.querySelector('.card');
+    if (first) first.insertAdjacentHTML('afterend', `<div class="card z11"><h3>Seus avisos neste aparelho</h3><div id="z11Box"><div class="sub">Conferindo…</div></div>
+      <div class="grid2" style="margin-top:12px"><button class="btn sm" data-act="z11-test">Testar com o app fechado</button><button class="btn sec sm" data-act="z11-resched">Reagendar</button></div>
+      <details class="z11-bat"><summary>Os avisos não chegaram? Ajuste a bateria</summary><div class="hint" style="margin-top:8px">A Samsung costuma "adormecer" apps que não vieram da Play Store, e aí os avisos não chegam. Faça uma vez:</div>${Z11_BAT}</details></div>`);
+    setTimeout(z11Panel, 50);
+  }
+  return r;
+};
+Object.assign(ACT, {
+  'z11-test': async () => {
+    const LN = zLN(); if (!LN) return;
+    try {
+      await LN.schedule({ notifications: [{ id: 9998, title: 'Teste do Zenit ⏰', body: 'Chegou com o app fechado! Seus lembretes vão funcionar.', schedule: { at: new Date(Date.now() + 60000), allowWhileIdle: true } }] });
+      toast('Agora feche o app e bloqueie a tela. Em 1 minuto o aviso tem que chegar.', 'green', '⏰');
+    } catch (e) { toast('Não consegui agendar o teste. Confira se as notificações estão ligadas.', 'red', '⏰'); }
+  },
+  'z11-resched': async () => { toast('Reagendando seus avisos…', 'violet', '🔔'); await zScheduleNative(); setTimeout(z11Panel, 200); toast('Pronto! Avisos das próximas 3 semanas agendados.', 'green', '🔔'); }
+});
+// Agenda tudo de novo agora, com o jeito novo
+setTimeout(() => { try { if (zLN() && S && session.pid) zScheduleNative(); } catch (e) { } }, 2500);
+ZNEWS.unshift(['🔔', 'Lembretes reformulados', 'Os avisos agora são agendados com dia e hora exatos para as próximas 3 semanas. Em Lembretes dá para ver os próximos avisos e testar com o app fechado.']);
+</script>
+<style>
+.z11-next{margin-top:10px;display:grid;gap:6px}
+.z11-next div{display:flex;gap:10px;align-items:baseline;background:var(--surface-2);border-radius:12px;padding:8px 10px;font-size:13.5px}
+.z11-next span{flex:none;width:120px;color:var(--ink-2);font-weight:800;font-size:12.5px}
+.z11-next b{font-weight:800}
+.z11-bat{margin-top:12px}
+.z11-bat summary{font-weight:900;color:var(--blue);cursor:pointer;font-size:14.5px}
+.z11-steps{margin:10px 0 0 18px;display:grid;gap:8px;font-size:14px;color:var(--ink-2)}
+.z11-steps b{color:var(--ink)}
 </style>
 
 </body>
