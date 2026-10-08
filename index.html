@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '2.1';
+const ZV = '2.2';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -5295,6 +5295,790 @@ try { if (!session.z9locked) z9AutoEnter(); } catch (e) { }
 ZNEWS.unshift(['🐾', 'Dê um nome ao seu mascote', 'Em Configurações, escolha o nome do seu mascote, troque o PIN ou desligue o PIN ao abrir. Esqueceu o PIN? Dá para criar outro com a senha da sua conta.']);
 </script>
 <style>.z9-forgot{display:block;margin:14px auto 0;color:#1CB0F6}</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 2.2
+   Desafios surpresa, X1, prêmio no Início, meta da semana, sono,
+   lembretes inteligentes, novidades da dupla, conquistas secretas,
+   modo escuro e olhinho na senha.
+   ========================================================= */
+const Z10_START = '2026-10-08'; // os recursos novos contam a partir da atualização
+const zFrom = () => (S.room.start > Z10_START ? S.room.start : Z10_START);
+const zRoomKey = () => (S && S.room && S.room.code) || 'ZENIT';
+const zSeed = s => mulberry32(hashStr(s));
+const zMateOf = p => (S && p) ? S.players.find(q => q.id !== p.id) || null : null;
+const zUL = v => fmt1(v).replace(',0', '');
+const zHr = v => { const h = Math.floor(v), m = Math.round((v - h) * 60); return h + 'h' + (m ? String(m).padStart(2, '0') : ''); };
+const zTrainDay = (p, s) => { const k = zPlan(p, s).k; return !!k && k !== 'rest' && !zIsFree(p, s); };
+const zOkMeals = d => MEALS.filter(k => (d.meals || {})[k.id] === 'ok').length;
+const zMin2 = (a, b) => a < b ? a : b;
+
+/* ---------- Horário de cada coisa que você registra ---------- */
+function z10Track(p, t) {
+  if (!p || !p.days || !p.days[t]) return;
+  const d = p.days[t]; const zt = Object.assign({}, d.zt || {}); const now = nowMin(); let ch = false;
+  const set = (k, ok) => { if (ok && zt[k] == null) { zt[k] = now; ch = true; } else if (!ok && zt[k] != null) { delete zt[k]; ch = true; } };
+  const w = d.water || 0; const g = p.waterGoal || 2000; const m = d.meals || {};
+  set('w500', w >= 500); set('w1000', w >= 1000); set('wHalf', w >= g / 2); set('wGoal', w >= g); set('wPlus', w >= g + 500);
+  for (const k of MEALS) { set('m_' + k.id, !!m[k.id]); set('o_' + k.id, m[k.id] === 'ok'); }
+  set('mAll', mealsDone(d)); set('plan', planDay(d)); set('wo', !!d.workout); set('tr', trainDone(d)); set('all3', missionsDone(p, d) === 3);
+  set('first', !!(w || d.workout || d.rest || mealsCount(d) || d.sleep != null));
+  if (ch) d.zt = zt;
+}
+const __z10Add = addWater;
+addWater = function (ml) {
+  const p = session.pid ? me() : null; const t = T(); const before = p ? (dget(p, t).water || 0) : 0;
+  const r = __z10Add.apply(this, arguments);
+  if (p && p.days[t] && (p.days[t].water || 0) > before) { const d = p.days[t]; d.wt = (d.wt || []).concat([[nowMin(), (d.water || 0) - before]]); save(); }
+  return r;
+};
+const __z10Undo = undoWater;
+undoWater = function () {
+  const p = session.pid ? me() : null; const t = T(); const n = p ? ((dget(p, t).waterLog || []).length) : 0;
+  const r = __z10Undo.apply(this, arguments);
+  if (p && p.days[t] && (p.days[t].waterLog || []).length < n && (p.days[t].wt || []).length) { p.days[t].wt = p.days[t].wt.slice(0, -1); save(); }
+  return r;
+};
+
+/* ---------- Desafio do dia (um para cada pessoa) ---------- */
+const zWat = d => (d.water || 0);
+const ZDAY = [
+  { id: 'manha', ic: '💧', t: 'Manhã hidratada', d: 'Beba 1 L de água até o meio-dia.', mk: 'w1000', dl: 720, cur: (p, d) => zWat(d) / 1000, goal: () => 1, u: 'L' },
+  { id: 'meia', ic: '🌗', t: 'Meio caminho', d: 'Chegue à metade da sua meta de água até as 14h.', mk: 'wHalf', dl: 840, cur: (p, d) => zWat(d) / 1000, goal: p => p.waterGoal / 2000, u: 'L' },
+  { id: 'garrafa', ic: '🍶', t: 'Garrafa cheia cedo', d: 'Bata a sua meta de água até as 18h.', mk: 'wGoal', dl: 1080, cur: (p, d) => zWat(d) / 1000, goal: p => p.waterGoal / 1000, u: 'L' },
+  { id: 'extra', ic: '💦', t: 'Hidratação extra', d: 'Beba 500 ml além da sua meta hoje.', mk: 'wPlus', cur: (p, d) => zWat(d) / 1000, goal: p => (p.waterGoal + 500) / 1000, u: 'L' },
+  { id: 'prato', ic: '🥗', t: 'Prato perfeito', d: 'As 4 refeições de hoje dentro do plano.', mk: 'plan', cur: (p, d) => zOkMeals(d), goal: () => 4 },
+  { id: 'cafe', ic: '☕', t: 'Café de campeão', d: 'Café da manhã no plano, registrado até as 10h.', mk: 'o_cafe', dl: 600, cur: (p, d) => (d.meals || {}).cafe === 'ok' ? 1 : 0, goal: () => 1 },
+  { id: 'almoco', ic: '🍛', t: 'Almoço no capricho', d: 'Almoço dentro do plano, registrado até as 14h.', mk: 'o_almoco', dl: 840, cur: (p, d) => (d.meals || {}).almoco === 'ok' ? 1 : 0, goal: () => 1 },
+  { id: 'jantar', ic: '🌙', t: 'Jantar no plano', d: 'Jantar dentro do plano hoje.', mk: 'o_jantar', cur: (p, d) => (d.meals || {}).jantar === 'ok' ? 1 : 0, goal: () => 1 },
+  { id: 'completo', ic: '✅', t: 'Dia completo', d: 'Complete as 3 missões: água, refeições e treino.', mk: 'all3', cur: (p, d) => missionsDone(p, d), goal: () => 3 },
+  { id: 'cedo19', ic: '⏰', t: 'Tudo antes das 19h', d: 'Complete as 3 missões do dia até as 19h.', mk: 'all3', dl: 1140, cur: (p, d) => missionsDone(p, d), goal: () => 3 },
+  { id: 'treino20', ic: '🏋️', t: 'Treino em dia', d: 'Registre o treino de hoje até as 20h.', mk: 'wo', dl: 1200, cur: (p, d) => d.workout ? 1 : 0, goal: () => 1, when: zTrainDay },
+  { id: 'inteiro', ic: '💪', t: 'Treino completo', d: 'Faça o treino inteiro hoje, sem cortar nada.', ok: (p, d) => !!(d.workout && d.workout.full), cur: (p, d) => d.workout && d.workout.full ? 1 : 0, goal: () => 1, when: zTrainDay },
+  { id: 'sono', ic: '😴', t: 'Noite bem dormida', d: 'Registre 7 horas ou mais de sono.', ok: (p, d) => (d.sleep || 0) >= 7, cur: (p, d) => d.sleep || 0, goal: () => 7, u: 'h' },
+  { id: 'cedo', ic: '🌅', t: 'Começo com tudo', d: 'Faça o primeiro registro do dia antes das 9h.', mk: 'first', dl: 540, cur: (p, d) => d.zt && d.zt.first != null ? 1 : 0, goal: () => 1 },
+  { id: 'copos', ic: '🥤', t: 'Copo a copo', d: 'Beba água em 6 momentos diferentes hoje.', ok: (p, d) => (d.wt || []).length >= 6, cur: (p, d) => (d.wt || []).length, goal: () => 6 }
+];
+function z10DayPool(p, s) { return ZDAY.filter(c => !c.when || c.when(p, s)); }
+function z10DayCh(p, s) {
+  return memo('zdc|' + p.id + '|' + s, () => {
+    const pool = z10DayPool(p, s); let i = hashStr(zRoomKey() + '|dia|' + p.id + '|' + s) % pool.length;
+    const m = zMateOf(p);
+    if (m && p.id > m.id) { const pm = z10DayPool(m, s); const cm = pm[hashStr(zRoomKey() + '|dia|' + m.id + '|' + s) % pm.length]; if (pool[i].id === cm.id) i = (i + 1) % pool.length; }
+    return pool[i];
+  });
+}
+function z10DayState(p, s) {
+  const c = z10DayCh(p, s); const d = dget(p, s); const cur = c.cur(p, d); const goal = c.goal(p, d);
+  let done; if (c.ok) done = c.ok(p, d); else { const tm = (d.zt || {})[c.mk]; done = tm != null && (c.dl == null || tm <= c.dl); }
+  const t = T(); const past = s < t || (s === t && c.dl != null && nowMin() > c.dl);
+  return { c, cur, goal, done, failed: !done && past, rec: !!(p.zch || {})['dia|' + s] };
+}
+const zFmtProg = (c, v) => c.u === 'L' ? zUL(v) + ' L' : c.u === 'h' ? zHr(v) : String(Math.round(v));
+
+/* ---------- Desafio-surpresa ⚡ (aparece do nada, 2 ou 3 vezes por semana) ---------- */
+const ZFLASH = [
+  { id: 'agua500', ic: '💧', t: 'Beba 500 ml', d: 'Beba 500 ml de água antes do tempo acabar.', need: 500, kind: 'water' },
+  { id: 'agua750', ic: '💦', t: 'Beba 750 ml', d: 'Beba 750 ml de água antes do tempo acabar.', need: 750, kind: 'water', minDur: 180 },
+  { id: 'refeicao', ic: '🍽️', t: 'Refeição no plano', d: 'Registre uma refeição dentro do plano antes do tempo acabar.', kind: 'meal' },
+  { id: 'treino', ic: '🏋️', t: 'Treino relâmpago', d: 'Registre um treino antes do tempo acabar.', kind: 'wo', minStart: 15 * 60 }
+];
+function z10FlashWeek(wk) {
+  return memo('zfw|' + wk + '|' + zRoomKey(), () => {
+    const r = zSeed(zRoomKey() + '|surpresa|' + wk); const n = r() < 0.5 ? 2 : 3;
+    const offs = [0, 1, 2, 3, 4, 5, 6]; for (let i = 6; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [offs[i], offs[j]] = [offs[j], offs[i]]; }
+    return offs.slice(0, n).map(o => {
+      const start = 9 * 60 + Math.floor(r() * 37) * 15; const dur = r() < 0.5 ? 120 : 180;
+      let ty = ZFLASH[Math.floor(r() * ZFLASH.length)];
+      if ((ty.minStart && start < ty.minStart) || (ty.minDur && dur < ty.minDur)) ty = ZFLASH[0];
+      return { day: addDays(wk, o), start, end: Math.min(start + dur, 22 * 60), ty };
+    });
+  });
+}
+function z10FlashFor(s) { if (!S || !S.room || s < S.room.start) return null; return z10FlashWeek(weekKey(s)).find(f => f.day === s) || null; }
+function z10FlashProg(p, f) {
+  const d = dget(p, f.day); const ty = f.ty; const inW = m => m != null && m >= f.start && m <= f.end;
+  if (ty.kind === 'water') { const got = (d.wt || []).filter(e => inW(e[0])).reduce((a, e) => a + e[1], 0); return { cur: got, goal: ty.need, done: got >= ty.need }; }
+  if (ty.kind === 'meal') { const ok = MEALS.some(k => inW((d.zt || {})['o_' + k.id])); return { cur: ok ? 1 : 0, goal: 1, done: ok }; }
+  const ok = !!(d.workout && inW(d.workout.at)) || inW((d.zt || {}).wo); return { cur: ok ? 1 : 0, goal: 1, done: ok };
+}
+function z10FlashState(p, s) {
+  const f = z10FlashFor(s); if (!f) return null; const t = T(); const now = nowMin();
+  const pr = z10FlashProg(p, f); const rec = !!(p.zch || {})['surpresa|' + s];
+  let phase; if (s < t) phase = 'over'; else if (s > t || now < f.start) phase = 'soon'; else if (now <= f.end) phase = 'live'; else phase = 'over';
+  return Object.assign({ f, phase, rec }, pr);
+}
+
+/* ---------- Desafio da dupla 🤝 (um por semana, juntos) ---------- */
+const ZTEAM = [
+  { id: 'agua', ic: '💧', t: n => `Juntos, ${zUL(n)} L de água`, per: p => Math.round(p.waterGoal * 5 / 1000), val: (p, d) => (d.water || 0) / 1000, u: 'L' },
+  { id: 'treinos', ic: '🏋️', t: n => `Juntos, ${n} treinos`, per: () => 4, val: (p, d) => d.workout ? 1 : 0 },
+  { id: 'plano', ic: '🥗', t: n => `Juntos, ${n} dias no plano`, per: () => 4, val: (p, d) => planDay(d) ? 1 : 0 },
+  { id: 'completos', ic: '✅', t: n => `Juntos, ${n} dias completos`, per: () => 4, val: (p, d) => missionsDone(p, d) === 3 ? 1 : 0 },
+  { id: 'refeicoes', ic: '🍽️', t: n => `Juntos, ${n} refeições no plano`, per: () => 18, val: (p, d) => zOkMeals(d) },
+  { id: 'sono', ic: '😴', t: n => `Juntos, ${n} noites de 7h ou mais`, per: () => 4, val: (p, d) => (d.sleep || 0) >= 7 ? 1 : 0 }
+];
+function z10Team(wk) {
+  return memo('ztm|' + wk, () => {
+    const def = ZTEAM[hashStr(zRoomKey() + '|dupla|' + wk) % ZTEAM.length]; const ps = S.players;
+    const target = ps.reduce((a, p) => a + def.per(p), 0); const per = {}; ps.forEach(p => { per[p.id] = 0; });
+    let sum = 0, doneAt = null; const a = wk < S.room.start ? S.room.start : wk; const b = zMin2(addDays(wk, 6), T());
+    for (const s of range(a, b)) { for (const p of ps) { const v = def.val(p, dget(p, s)); per[p.id] += v; sum += v; } if (doneAt == null && sum >= target - 1e-9) doneAt = s; }
+    return { def, target, sum, per, doneAt };
+  });
+}
+
+/* ---------- X1 ⚔️ ---------- */
+const ZX1 = [
+  { id: 'agua1', ic: '💧', t: 'Quem bater a meta de água primeiro', how: 'Vence quem encher a garrafa mais cedo.', cmp: 'first', val: (p, d) => d.waterGoalAt, f: v => fmtTime(v) },
+  { id: 'treino1', ic: '🏋️', t: 'Quem registrar o treino primeiro', how: 'Vale o horário do check-in do treino.', cmp: 'first', val: (p, d) => d.workout ? d.workout.at : null, f: v => fmtTime(v) },
+  { id: 'completo1', ic: '✅', t: 'Quem completar as 3 missões primeiro', how: 'Água, refeições e treino. Vence quem fechar o dia antes.', cmp: 'first', val: (p, d) => (d.zt || {}).all3, f: v => fmtTime(v) },
+  { id: 'plano', ic: '🥗', t: 'Mais refeições no plano', how: 'Conta quantas das 4 refeições ficaram dentro do plano.', cmp: 'max', val: (p, d) => zOkMeals(d), f: v => v + ' de 4' },
+  { id: 'aguapct', ic: '💦', t: 'Quem beber mais água', how: 'Em % da meta de cada um, para ser justo.', cmp: 'max', val: (p, d) => Math.round((d.water || 0) / p.waterGoal * 100), f: v => v + '%' },
+  { id: 'xp', ic: '⚡', t: 'Quem fizer mais XP no dia', how: 'Soma tudo: água, refeições, treino, roleta e o resto.', cmp: 'max', val: (p, d, s) => (__z10XP(p, s).byDate[s] || 0), f: v => v + ' XP' },
+  { id: 'sono', ic: '😴', t: 'Quem dormir mais', how: 'Vale o sono registrado de manhã.', cmp: 'max', val: (p, d) => d.sleep || 0, f: v => v ? zHr(v) : '—' }
+];
+const ZX1W = [
+  { id: 'plano', ic: '🥗', t: 'Mais refeições no plano no fim de semana', val: (p, ds) => ds.reduce((a, d) => a + zOkMeals(d), 0), f: v => v + ' refeições' },
+  { id: 'aguapct', ic: '💦', t: 'Mais água no fim de semana (em % da meta)', val: (p, ds) => Math.round(ds.reduce((a, d) => a + (d.water || 0), 0) / (p.waterGoal * ds.length) * 100), f: v => v + '%' },
+  { id: 'xp', ic: '⚡', t: 'Mais XP no fim de semana', val: (p, ds, ss) => ss.reduce((a, s) => a + (__z10XP(p, s).byDate[s] || 0), 0), f: v => v + ' XP' },
+  { id: 'completos', ic: '✅', t: 'Mais dias completos no fim de semana', val: (p, ds) => ds.filter(d => missionsDone(p, d) === 3).length, f: v => v + ' de 2' }
+];
+const z10X1All = () => Object.values((S && S.room && S.room.x1) || {}).sort((a, b) => (b.at || 0) - (a.at || 0));
+function z10X1Eval(x) {
+  const t = T();
+  if (x.status === 'declined') return { state: 'declined' };
+  if (x.status === 'pending') return { state: t > x.made ? 'expired' : 'pending' };
+  const A = S.players.find(p => p.id === x.from), B = S.players.find(p => p.id === x.to); if (!A || !B) return { state: 'gone' };
+  if (t < x.day) return { state: 'scheduled', A, B };
+  const ty = ZX1.find(y => y.id === x.type) || ZX1[0];
+  const va = ty.val(A, dget(A, x.day), x.day), vb = ty.val(B, dget(B, x.day), x.day); let w = null;
+  if (ty.cmp === 'first') { if (va != null && (vb == null || va < vb)) w = A; else if (vb != null && (va == null || vb < va)) w = B; }
+  else { if (va > vb) w = A; else if (vb > va) w = B; }
+  return { state: t > x.day ? 'done' : 'live', A, B, va, vb, ty, winner: w ? w.id : null, loser: w ? (w === A ? B.id : A.id) : null };
+}
+function z10X1Results() {
+  return memo('zx1r', () => z10X1All().map(x => ({ x, r: z10X1Eval(x) })).filter(o => o.r.state === 'done' && o.r.winner).map(o => ({ day: o.x.day, stake: o.x.stake, winner: o.r.winner, loser: o.r.loser })));
+}
+// Sexta do X1: o app sorteia um X1 automático para o fim de semana. Quem vence ganha +30 XP do próprio app.
+function z10AutoX1(fri) {
+  const ty = ZX1W[hashStr(zRoomKey() + '|sexta|' + fri) % ZX1W.length]; const ss = [addDays(fri, 1), addDays(fri, 2)];
+  if (S.players.length < 2) return { fri, ty, ss, state: 'solo' };
+  const [A, B] = S.players.slice().sort((a, b) => a.id < b.id ? -1 : 1);
+  const upto = ss.filter(s => s <= T()); const va = ty.val(A, upto.map(s => dget(A, s)), upto), vb = ty.val(B, upto.map(s => dget(B, s)), upto);
+  const final = T() > ss[1]; const w = va > vb ? A : vb > va ? B : null;
+  return { fri, ty, ss, A, B, va, vb, final, winner: w ? w.id : null, state: T() < ss[0] ? 'soon' : final ? 'done' : 'live' };
+}
+function z10Fridays(a, b) { const out = []; if (!a || !b) return out; let s = a; while (dow(s) !== 5) s = addDays(s, 1); for (; s <= b; s = addDays(s, 7)) out.push(s); return out; }
+
+/* ---------- Meta pessoal da semana 🎯 ---------- */
+const ZGOAL = [
+  { k: 'agua', ic: '💧', t: n => `Bater a meta de água em ${n} ${plural(n, 'dia', 'dias')}`, val: (p, d) => waterOk(p, d) ? 1 : 0 },
+  { k: 'treinos', ic: '🏋️', t: n => `${n} ${plural(n, 'treino', 'treinos')} na semana`, val: (p, d) => d.workout ? 1 : 0 },
+  { k: 'plano', ic: '🥗', t: n => `${n} ${plural(n, 'dia', 'dias')} com as 4 refeições no plano`, val: (p, d) => planDay(d) ? 1 : 0 },
+  { k: 'completos', ic: '✅', t: n => `${n} ${plural(n, 'dia completo', 'dias completos')} (3 missões)`, val: (p, d) => missionsDone(p, d) === 3 ? 1 : 0 },
+  { k: 'sono', ic: '😴', t: n => `${n} ${plural(n, 'noite', 'noites')} com 7h ou mais de sono`, val: (p, d) => (d.sleep || 0) >= 7 ? 1 : 0 }
+];
+function z10GoalCount(p, wk, k) { const g = ZGOAL.find(x => x.k === k) || ZGOAL[0]; let c = 0; for (const s of range(wk, zMin2(addDays(wk, 6), T()))) c += g.val(p, dget(p, s)); return c; }
+function z10GoalRec(p, wk) {
+  const prev = addDays(wk, -7); if (prev < weekKey(S.room.start)) return { k: 'agua', n: 4 };
+  let best = null; const slept = range(prev, addDays(prev, 6)).some(s => dget(p, s).sleep != null);
+  for (const g of ZGOAL) { if (g.k === 'sono' && !slept) continue; const c = z10GoalCount(p, prev, g.k); if (!best || c < best.c) best = { k: g.k, c }; }
+  return { k: best.k, n: clamp(best.c + 1, 2, 7) };
+}
+function z10GoalState(p, wk) {
+  const g = (p.wgoal || {})[wk]; if (!g) return null; const def = ZGOAL.find(x => x.k === g.k) || ZGOAL[0];
+  const c = z10GoalCount(p, wk, g.k); const met = c >= g.n; const claimed = !!(p.zch || {})['meta|' + wk];
+  const open = met && (dow(T()) === 0 || T() > addDays(wk, 6));
+  return { g, def, c, met, claimed, open };
+}
+
+/* ---------- Conquistas secretas 🕵️ ---------- */
+function zDays(p, a) { return range(S.room.start, a).map(s => [s, dget(p, s)]); }
+const ZSECRET = [
+  { id: 'madrugador', icon: '🌅', t: 'Madrugador', d: 'Água e café da manhã registrados antes das 9h.', hint: 'Acordou com tudo…', xp: 25, test: (p, a) => zDays(p, a).some(([s, d]) => (d.wt || []).length && d.wt[0][0] <= 540 && (d.zt || {}).m_cafe != null && d.zt.m_cafe <= 540) },
+  { id: 'coruja', icon: '🦉', t: 'Coruja', d: 'Treino registrado depois das 22h.', hint: 'A noite é uma criança…', xp: 25, test: (p, a) => zDays(p, a).some(([s, d]) => d.workout && d.workout.at >= 1320) },
+  { id: 'camelo', icon: '🐫', t: 'Camelo', d: 'Bater 150% da meta de água num dia.', hint: 'Sede de vitória…', xp: 25, test: (p, a) => zDays(p, a).some(([s, d]) => (d.water || 0) >= p.waterGoal * 1.5) },
+  { id: 'suico', icon: '⏰', t: 'Relógio suíço', d: 'As 3 missões completas antes das 18h.', hint: 'Pontualidade é tudo…', xp: 30, test: (p, a) => zDays(p, a).some(([s, d]) => (d.zt || {}).all3 != null && d.zt.all3 <= 1080) },
+  { id: 'blindado', icon: '🛡️', t: 'Fim de semana blindado', d: 'Sábado e domingo com as 3 missões completas.', hint: 'Nem o sábado te para…', xp: 35, test: (p, a) => zDays(p, a).some(([s, d]) => dow(s) === 0 && addDays(s, -1) >= S.room.start && missionsDone(p, d) === 3 && missionsDone(p, dget(p, addDays(s, -1))) === 3) },
+  { id: 'perfeita', icon: '💎', t: 'Semana perfeita', d: '7 dias seguidos com as 3 missões.', hint: 'Sete de sete…', xp: 40, test: (p, a) => { let r = 0; for (const [s, d] of zDays(p, a)) { r = missionsDone(p, d) === 3 ? r + 1 : 0; if (r >= 7) return true; } return false; } },
+  { id: 'dorminhoco', icon: '😴', t: 'Bela adormecida', d: '7 noites seguidas com 7h ou mais de sono.', hint: 'Dormir também é treino…', xp: 30, test: (p, a) => { let r = 0; for (const [s, d] of zDays(p, a)) { r = (d.sleep || 0) >= 7 ? r + 1 : 0; if (r >= 7) return true; } return false; } },
+  { id: 'foco', icon: '🎯', t: 'Foco total', d: 'Cumprir 5 desafios do dia.', hint: 'Missão dada…', xp: 30, test: p => Object.keys(p.zch || {}).filter(k => k.startsWith('dia|')).length >= 5 },
+  { id: 'raio', icon: '⚡', t: 'Raio', d: 'Vencer 3 desafios-surpresa.', hint: 'Mais rápido que a luz…', xp: 30, test: p => Object.keys(p.zch || {}).filter(k => k.startsWith('surpresa|')).length >= 3 },
+  { id: 'duelista', icon: '⚔️', t: 'Duelista', d: 'Vencer um X1.', hint: 'Topa um mano a mano?…', xp: 30, heavy: true, test: p => z10X1Results().some(r => r.winner === p.id) },
+  { id: 'ferro', icon: '🤝', t: 'Dupla de ferro', d: 'Cumprir um desafio da dupla.', hint: 'Junto vai mais longe…', xp: 30, heavy: true, test: (p, a) => { if (S.players.length < 2) return false; for (let wk = weekKey(zFrom()); wk <= weekKey(a); wk = addDays(wk, 7)) { const tm = z10Team(wk); if (tm.doneAt && tm.doneAt <= a) return true; } return false; } },
+  { id: 'virada', icon: '🔄', t: 'Virada', d: 'Passar a dupla no placar geral num domingo.', hint: 'Quem ri por último…', xp: 40, heavy: true, test: (p, a) => { const m = zMateOf(p); if (!m) return false; for (const [s] of zDays(p, a)) { if (dow(s) !== 0 || addDays(s, -1) < S.room.start) continue; const y = addDays(s, -1); if (xpInfo(p, s).total > xpInfo(m, s).total && xpInfo(p, y).total <= xpInfo(m, y).total) return true; } return false; } }
+];
+
+/* ---------- XP: tudo o que é novo entra aqui ---------- */
+const __z10XP = xpInfo;
+xpInfo = function (p, asOf) {
+  return memo('xp10|' + p.id + '|' + asOf, () => {
+    const r = __z10XP(p, asOf); const byDate = Object.assign({}, r.byDate); const cat = Object.assign({}, r.cat); let total = r.total;
+    if (!S.room || asOf < S.room.start) return r;
+    const add = (s, c, v) => { if (!v || !s || s > asOf || s < S.room.start) return; byDate[s] = (byDate[s] || 0) + v; cat[c] = (cat[c] || 0) + v; total += v; };
+    for (const v of Object.values(p.zch || {})) add(v.date, v.cat || 'desafio', v.xp);
+    for (const [id, dt] of Object.entries(p.sach || {})) { const a = ZSECRET.find(x => x.id === id); if (a) add(dt, 'conquistas', a.xp); }
+    for (const [s, d] of Object.entries(p.days || {})) if (d && (d.sleep || 0) >= 7) add(s, 'sono', 5);
+    if (S.players.some(q => q.id === p.id)) {
+      for (let wk = weekKey(zFrom()); wk <= weekKey(asOf); wk = addDays(wk, 7)) { const tm = z10Team(wk); if (tm.doneAt) add(tm.doneAt, 'desafio', 40); }
+      for (const x of z10X1Results()) { if (x.winner === p.id) add(x.day, 'x1', x.stake); else if (x.loser === p.id) add(x.day, 'x1', -x.stake); }
+      for (const fri of z10Fridays(zFrom(), asOf)) { const ax = z10AutoX1(fri); if (ax.state === 'done' && ax.winner === p.id) add(ax.ss[1], 'x1', 30); }
+    }
+    return { total: Math.max(0, total), byDate, cat };
+  });
+};
+
+/* ---------- Conferências automáticas a cada registro ---------- */
+const Z10Q = [];
+function z10Settle() {
+  const p = me(); if (!p) return; const t = T(); p.zch = p.zch || {}; p.sach = p.sach || {};
+  for (const s of [addDays(t, -1), t]) {
+    if (s < zFrom() || p.zch['dia|' + s]) continue;
+    const st = z10DayState(p, s); if (st.done) { p.zch['dia|' + s] = { date: s, xp: 15 }; p.coins += 5; if (s === t) Z10Q.push(['toast', `Desafio do dia cumprido: ${st.c.t}! +15 XP`, 'gold', '🎯']); }
+    const fs = z10FlashState(p, s); if (fs && fs.done && !p.zch['surpresa|' + s]) { p.zch['surpresa|' + s] = { date: s, xp: 25 }; p.coins += 5; if (s === t) Z10Q.push(['big', '⚡', 'Desafio-surpresa vencido!', `${fs.f.ty.t} a tempo. +25 XP e +5 moedas.`]); }
+  }
+  CACHE = new Map();
+  const hv = Date.now() - (session.z10hv || 0) > 600000; if (hv) session.z10hv = Date.now();
+  for (const a of ZSECRET) {
+    if (p.sach[a.id] || (a.heavy && !hv)) continue;
+    let ok = false; try { ok = a.test(p, t); } catch (e) { ok = false; }
+    if (ok) { p.sach[a.id] = t; p.coins += 10; CACHE = new Map(); Z10Q.push(['secret', a]); }
+  }
+  if (Z10Q.length) setTimeout(z10Flush, 700);
+}
+function z10Flush() {
+  const q = Z10Q.splice(0, Z10Q.length); let delay = 0;
+  for (const it of q) {
+    if (it[0] === 'toast') { setTimeout(() => { toast(it[1], it[2], it[3]); confetti(50); sfx('level'); }, delay); delay += 900; }
+    else if (it[0] === 'big') { setTimeout(() => { toast(`${it[2]} ${it[3]}`, 'fire', it[1]); confetti(90); sfx('level'); }, delay); delay += 900; }
+    else if (it[0] === 'secret') { const a = it[1]; setTimeout(() => z10SecretModal(a), delay + 400); delay += 1200; }
+  }
+  if ($('#main') && !$('#overlay')) setTimeout(() => renderMain(true), 200);
+}
+function z10SecretModal(a) {
+  const show = () => { openSheet(`<div class="zsec-pop"><div class="zsec-badge">${a.icon}</div><small>🕵️ Conquista secreta desbloqueada!</small><h2>${esc(a.t)}</h2><div class="sub">${esc(a.d)}</div><div class="zsec-xp">+${a.xp} XP · +10 moedas</div></div>
+    <div style="margin-top:16px"><button class="btn gold" data-act="close">Que demais!</button></div>`, { center: true }); confetti(140); sfx('level'); };
+  if ($('#overlay') || $('#ck')) session.afterClose = show; else show();
+}
+let z10In = false;
+const __z10Save = save;
+save = function () {
+  if (!z10In && S && session.pid && S.room) {
+    z10In = true;
+    try { const p = me(); if (p) { z10Track(p, T()); z10Settle(); } } catch (e) { console.warn('z10', e); }
+    z10In = false;
+  }
+  return __z10Save.apply(this, arguments);
+};
+
+/* ---------- Sono 😴 ---------- */
+const ZSLEEP = [[4, '-5h'], [5, '5h'], [6, '6h'], [6.5, '6h30'], [7, '7h'], [7.5, '7h30'], [8, '8h'], [8.5, '8h30'], [9, '9h+']];
+function z10SleepChips(cur) { return `<div class="zk-chips">${ZSLEEP.map(([v, l]) => `<button class="${cur === v ? 'on' : ''}" data-act="z10-sleep" data-v="${v}">${l}</button>`).join('')}</div>`; }
+function z10SleepAvg(p, t) { const vs = range(addDays(t, -6), t).map(s => dget(p, s).sleep).filter(v => v != null); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null; }
+function z10SleepHTML(p, t, compact) {
+  const d = dget(p, t); const avg = z10SleepAvg(p, t);
+  if (d.sleep != null) return `<button class="zk-mini" data-act="z10-sleep-open"><span class="zk-ic" style="background:#EDE7FF">😴</span><span class="grow"><b>Você dormiu ${zHr(d.sleep)}</b><span>${d.sleep >= 7 ? '+5 XP de sono' : 'Hoje vale deitar mais cedo'}${avg != null ? ` · média da semana ${zHr(Math.round(avg * 2) / 2)}` : ''}</span></span><em>Alterar</em></button>`;
+  if (compact) return '';
+  return `<section class="zk-card zk-sleep"><div class="zk-h"><span class="zk-ic" style="background:#EDE7FF">😴</span><div class="grow"><b>Como você dormiu?</b><span>7 horas ou mais valem +5 XP</span></div></div>${z10SleepChips(null)}</section>`;
+}
+
+/* ---------- Cartões ---------- */
+function z10DayCardHTML(p, t, big) {
+  const st = z10DayState(p, t); const c = st.c; const pct = clamp(st.cur / st.goal * 100, 0, 100);
+  const tag = st.done ? `<span class="zk-tag ok">Cumprido · +15 XP</span>` : st.failed ? `<span class="zk-tag no">Não deu desta vez</span>` : `<span class="zk-tag">${c.dl != null ? 'Até ' + fmtTime(c.dl) : 'Até o fim do dia'} · +15 XP</span>`;
+  return `<section class="zk-card zk-day ${st.done ? 'done' : ''}"><div class="zk-h"><span class="zk-ic" style="background:#FFF5D3">${c.ic}</span><div class="grow"><small>Desafio do dia · só seu</small><b>${esc(c.t)}</b><span>${esc(c.d)}</span></div></div>
+    <div class="qbar ${st.done ? 'done' : ''}"><i data-w="${pct.toFixed(1)}%" style="width:0"></i><span>${zFmtProg(c, Math.min(st.cur, st.goal))} / ${zFmtProg(c, st.goal)}</span></div>${tag}</section>`;
+}
+function z10FlashCardHTML(p, t) {
+  const fs = z10FlashState(p, t); if (!fs || fs.phase === 'soon') return '';
+  const f = fs.f; const left = f.end - nowMin(); const pct = clamp(fs.cur / fs.goal * 100, 0, 100);
+  const prog = f.ty.kind === 'water' ? `${fmtInt(Math.min(fs.cur, fs.goal))} / ${fmtInt(fs.goal)} ml` : (fs.done ? 'Feito!' : 'Ainda não');
+  if (fs.phase === 'live' && !fs.done) return `<section class="zk-card zk-flash live"><div class="zk-h"><span class="zk-ic zk-bolt">⚡</span><div class="grow"><small>Desafio-surpresa · valendo agora</small><b>${esc(f.ty.t)}</b><span>${esc(f.ty.d)}</span></div></div>
+    <div class="qbar"><i data-w="${pct.toFixed(1)}%" style="width:0"></i><span>${prog}</span></div><div class="zk-timer">⏱️ Faltam ${left >= 60 ? Math.floor(left / 60) + 'h' + String(left % 60).padStart(2, '0') : left + ' min'} · termina às ${fmtTime(f.end)} · +25 XP</div>
+    ${f.ty.kind === 'water' ? `<button class="btn blue sm" data-act="water-quick" style="margin-top:10px">+ 1 copo agora</button>` : `<button class="btn sm" data-act="checkin" style="margin-top:10px">Registrar agora</button>`}</section>`;
+  return `<section class="zk-card zk-flash ${fs.done ? 'done' : 'missed'}"><div class="zk-h"><span class="zk-ic zk-bolt">⚡</span><div class="grow"><small>Desafio-surpresa de hoje</small><b>${esc(f.ty.t)}</b><span>${fs.done ? 'Vencido a tempo! +25 XP' : `Era das ${fmtTime(f.start)} às ${fmtTime(f.end)}. O próximo aparece do nada.`}</span></div></div></section>`;
+}
+function z10TeamCardHTML(p, t) {
+  const wk = weekKey(t); const tm = z10Team(wk); const def = tm.def; const m = zMateOf(p); if (weekKey(t) < weekKey(zFrom())) return '';
+  const fmtv = v => def.u === 'L' ? zUL(v) : fmtInt(v);
+  const pa = clamp(tm.per[p.id] / tm.target * 100, 0, 100); const pb = m ? clamp((tm.per[m.id] || 0) / tm.target * 100, 0, 100 - pa) : 0;
+  const left = Math.max(0, diffDays(t, addDays(wk, 6)));
+  return `<section class="zk-card zk-team ${tm.doneAt ? 'done' : ''}"><div class="zk-h"><span class="zk-ic" style="background:#FFE6F4">🤝</span><div class="grow"><small>Desafio da dupla · semana</small><b>${esc(def.t(tm.target))}</b><span>${tm.doneAt ? 'Conseguiram! +40 XP para cada um 🎉' : (m ? `Somando os dois. Faltam ${left} ${plural(left, 'dia', 'dias')}.` : 'Enquanto sua dupla não entra, a meta é só sua.')}</span></div></div>
+    <div class="zk-dbar"><i class="a" style="width:${pa.toFixed(1)}%"></i><i class="b" style="width:${pb.toFixed(1)}%;left:${pa.toFixed(1)}%"></i></div>
+    <div class="zk-dlab"><span class="a">${esc(p.name)} ${fmtv(tm.per[p.id])}</span><b>${fmtv(Math.min(tm.sum, tm.target))} / ${fmtv(tm.target)}${def.u === 'L' ? ' L' : ''}</b>${m ? `<span class="b">${fmtv(tm.per[m.id] || 0)} ${esc(m.name)}</span>` : '<span></span>'}</div></section>`;
+}
+function z10GoalCardHTML(p, t, home) {
+  const wk = weekKey(t); const st = z10GoalState(p, wk);
+  const lw = addDays(wk, -7); const pst = lw >= weekKey(S.room.start) ? z10GoalState(p, lw) : null;
+  if (pst && pst.met && !pst.claimed) return z10ChestCard(lw, pst);
+  if (!st) {
+    if (home && dow(t) !== 1 && dow(t) !== 2 && dow(t) !== 3) return '';
+    const rec = z10GoalRec(p, wk); const def = ZGOAL.find(x => x.k === rec.k);
+    return `<section class="zk-card zk-goal"><div class="zk-h"><span class="zk-ic" style="background:#E8F9D9">🎯</span><div class="grow"><small>Meta pessoal da semana</small><b>Escolha a sua meta</b><span>Sugestão pra você: ${esc(def.t(rec.n))}. Cumpriu, ganha um baú especial no domingo.</span></div></div>
+      <button class="btn sm" data-act="z10-goal" style="margin-top:12px">Escolher minha meta</button></section>`;
+  }
+  if (st.met && !st.claimed) { if (st.open) return z10ChestCard(wk, st); }
+  if (home && !st.met) return '';
+  const pct = clamp(st.c / st.g.n * 100, 0, 100);
+  return `<section class="zk-card zk-goal ${st.met ? 'done' : ''}"><div class="zk-h"><span class="zk-ic" style="background:#E8F9D9">${st.def.ic}</span><div class="grow"><small>Meta pessoal da semana</small><b>${esc(st.def.t(st.g.n))}</b><span>${st.claimed ? 'Baú aberto. Meta da semana cumprida! 🏅' : st.met ? 'Cumprida! O baú especial abre no domingo 🔒' : 'Cumpriu, ganha um baú especial no domingo.'}</span></div></div>
+    <div class="qbar ${st.met ? 'done' : ''}"><i data-w="${pct.toFixed(1)}%" style="width:0"></i><span>${Math.min(st.c, st.g.n)} / ${st.g.n}</span></div>
+    ${!st.met && !st.claimed ? `<button class="link-btn" data-act="z10-goal" style="margin-top:6px">Trocar meta</button>` : ''}</section>`;
+}
+function z10ChestCard(wk, st) {
+  return `<section class="zk-card zk-chest"><div class="zk-h"><span class="zk-ic zk-gift">🎁</span><div class="grow"><small>Meta da semana cumprida!</small><b>Seu baú especial chegou</b><span>${esc(st.def.t(st.g.n))} ✅</span></div></div>
+    <button class="btn gold sm" data-act="z10-chest" data-wk="${wk}" style="margin-top:12px">Abrir baú especial</button></section>`;
+}
+function z10X1IncomingHTML(p) {
+  const x = z10X1All().find(x => x.to === p.id && z10X1Eval(x).state === 'pending'); if (!x) return '';
+  return z10X1Item(x, p, true);
+}
+function z10PrizeHTML(p, t) {
+  const end = S.room.end; const left = Math.max(0, diffDays(t, end)); const total = Math.max(1, diffDays(S.room.start, end)); const pct = clamp(100 - left / total * 100, 2, 100);
+  const m = zMateOf(p); const prize = typeof z6Prize === 'function' ? z6Prize() : S.room.prize; let rows = '';
+  if (!m) rows = `<div class="zkp-row"><span>🤝</span><b>Chame sua dupla com o código ${esc(S.room.code)}</b></div>`;
+  else {
+    const a = xpInfo(p, t).total, b = xpInfo(m, t).total; const wk = weekKey(t); const wa = xpBetween(p, wk, t), wb = xpBetween(m, wk, t);
+    const who = (x, y, me1, other) => x === y ? 'Empate' : x > y ? me1 : other;
+    rows += `<div class="zkp-row"><span>No geral</span><b>${who(a, b, 'Você está levando', esc(m.name) + ' está levando')}</b><em>${a === b ? '' : '+' + fmtInt(Math.abs(a - b)) + ' XP'}</em></div>`;
+    rows += `<div class="zkp-row"><span>Nesta semana</span><b>${who(wa, wb, 'Você na frente', esc(m.name) + ' na frente')}</b><em>${wa === wb ? '' : '+' + fmtInt(Math.abs(wa - wb)) + ' XP'}</em></div>`;
+    const lw = addDays(wk, -7);
+    if (lw >= weekKey(S.room.start)) { const la = xpBetween(p, lw, addDays(lw, 6)), lb = xpBetween(m, lw, addDays(lw, 6)); rows += `<div class="zkp-row"><span>Semana passada</span><b>${who(la, lb, 'Você venceu 🏆', esc(m.name) + ' venceu')}</b><em></em></div>`; }
+  }
+  return `<button class="zk-prize" data-act="tab" data-tab="rank"><div class="zkp-top"><div class="zkp-trophy">🏆</div><div class="grow"><small>Prêmio do Réveillon</small><b>${esc(prize)}</b></div><div class="zkp-days"><b>${left}</b><span>${plural(left, 'dia', 'dias')}</span></div></div>
+    <div class="zkp-bar"><i data-w="${pct.toFixed(1)}%" style="width:0"></i></div><div class="zkp-rows">${rows}</div></button>`;
+}
+
+/* ---------- X1: cartões e telas ---------- */
+const zX1Day = s => s === T() ? 'hoje' : s === addDays(T(), 1) ? 'amanhã' : `${DOW[dow(s)]}, ${fmtDay(s)}`;
+function z10X1Item(x, p, home) {
+  const r = z10X1Eval(x); const ty = ZX1.find(y => y.id === x.type) || ZX1[0]; const mine = x.from === p.id;
+  const other = S.players.find(q => q.id === (mine ? x.to : x.from)); const on = other ? esc(other.name) : (mine ? esc(x.toName || 'sua dupla') : esc(x.fromName || 'sua dupla'));
+  let body = '', btns = '', cls = '';
+  if (r.state === 'pending' && !mine) { cls = 'in'; body = `<b>${on} te desafiou! ⚔️</b><span>${ty.ic} ${esc(ty.t)} · ${zX1Day(x.day)}</span><span>Aposta: <b>${x.stake} XP</b>. Quem vencer leva o XP do outro.</span>`; btns = `<div class="grid2" style="margin-top:12px"><button class="btn sm" data-act="z10-x1-ok" data-id="${x.id}">Aceitar</button><button class="btn gray sm" data-act="z10-x1-no" data-id="${x.id}">Recusar</button></div><div class="zk-note">Se não responder até o fim do dia, o desafio expira sem perda.</div>`; }
+  else if (r.state === 'pending') { cls = 'wait'; body = `<b>Esperando ${on} aceitar…</b><span>${ty.ic} ${esc(ty.t)} · ${zX1Day(x.day)} · ${x.stake} XP</span><span class="zk-note">Expira à meia-noite se não houver resposta.</span>`; }
+  else if (r.state === 'expired') { cls = 'off'; body = `<b>X1 expirou</b><span>${ty.ic} ${esc(ty.t)} · ninguém perdeu nada</span>`; }
+  else if (r.state === 'declined') { cls = 'off'; body = `<b>${mine ? on + ' recusou' : 'Você recusou'}</b><span>${ty.ic} ${esc(ty.t)} · ${x.stake} XP</span>`; }
+  else if (r.state === 'scheduled') { cls = 'on'; body = `<b>X1 marcado para ${zX1Day(x.day)}! ⚔️</b><span>${ty.ic} ${esc(ty.t)} · valendo ${x.stake} XP</span><span class="zk-note">${esc(ty.how)}</span>`; }
+  else if (r.state === 'live' || r.state === 'done') {
+    const A = r.A, B = r.B; const fa = r.va == null ? '—' : ty.f(r.va), fb = r.vb == null ? '—' : ty.f(r.vb);
+    const head = r.state === 'live' ? `X1 valendo hoje! ${r.winner ? (r.winner === p.id ? 'Você na frente 😎' : esc(S.players.find(q => q.id === r.winner).name) + ' na frente 👀') : 'Empatado por enquanto'}` : (r.winner ? (r.winner === p.id ? `Você venceu o X1! +${x.stake} XP 🏆` : `${esc(S.players.find(q => q.id === r.winner).name)} venceu o X1 (−${x.stake} XP)`) : 'X1 terminou empatado. Ninguém perdeu.');
+    cls = r.state === 'live' ? 'on' : (r.winner === p.id ? 'win' : r.winner ? 'lose' : 'off');
+    body = `<b>${head}</b><span>${ty.ic} ${esc(ty.t)} · ${x.stake} XP</span><div class="zx1-score"><div><small>${esc(A.name)}</small><b>${fa}</b></div><i>×</i><div><small>${esc(B.name)}</small><b>${fb}</b></div></div>`;
+  } else return '';
+  return `<div class="zx1-item ${cls} ${home ? 'home' : ''}">${body}${btns}</div>`;
+}
+function z10X1CanLaunch(p) {
+  const m = zMateOf(p); if (!m) return 'Chame sua dupla para a sala para lançar um X1.';
+  const wk = weekKey(T()); const mineWk = z10X1All().filter(x => x.from === p.id && x.made >= wk && x.made <= addDays(wk, 6)).length;
+  if (mineWk >= 2) return 'Você já lançou 2 X1 nesta semana. Na segunda tem mais.';
+  const open = z10X1All().some(x => { const st = z10X1Eval(x).state; return st === 'pending' || st === 'scheduled' || st === 'live'; });
+  if (open) return 'Já tem um X1 em aberto. Termine esse primeiro.';
+  return '';
+}
+function z10X1SectionHTML(p, t) {
+  const m = zMateOf(p); const items = z10X1All().filter(x => { const r = z10X1Eval(x); return r.state !== 'gone' && (['pending', 'scheduled', 'live'].includes(r.state) || diffDays(x.day, t) <= 3); }).slice(0, 4);
+  const why = z10X1CanLaunch(p); const fri = dow(t) === 5 ? t : dow(t) === 6 ? addDays(t, -1) : dow(t) === 0 ? addDays(t, -2) : dow(t) === 1 ? addDays(t, -3) : null;
+  let sx = '';
+  if (fri && fri >= zFrom() && m) {
+    const ax = z10AutoX1(fri); const A = ax.A, B = ax.B;
+    const head = ax.state === 'done' ? (ax.winner ? (ax.winner === p.id ? 'Você venceu a Sexta do X1! +30 XP 🏆' : `${esc(S.players.find(q => q.id === ax.winner).name)} venceu a Sexta do X1`) : 'Sexta do X1 terminou empatada') : 'Sexta do X1 · sorteado pelo app';
+    sx = `<div class="zx1-item auto ${ax.state === 'done' ? (ax.winner === p.id ? 'win' : 'off') : 'on'}"><b>${head}</b><span>${ax.ty.ic} ${esc(ax.ty.t)} · sábado e domingo · vale +30 XP do app, ninguém perde nada</span>
+      ${ax.state !== 'soon' ? `<div class="zx1-score"><div><small>${esc(A.name)}</small><b>${ax.ty.f(ax.va)}</b></div><i>×</i><div><small>${esc(B.name)}</small><b>${ax.ty.f(ax.vb)}</b></div></div>` : '<span class="zk-note">Começa no sábado. Já vale para os dois.</span>'}</div>`;
+  }
+  return `<section class="zx1"><div class="zx1-head"><span class="zx1-sw">⚔️</span><div class="grow"><b>X1</b><small>${m ? `Desafie ${esc(m.name)} e aposte até 100 XP` : 'Desafie sua dupla e aposte XP'}</small></div></div>
+    ${items.map(x => z10X1Item(x, p)).join('')}${sx}
+    ${why ? `<div class="zk-note" style="margin-top:10px">${why}</div>` : `<button class="btn red" data-act="z10-x1-new" style="margin-top:12px">⚔️ Lançar um X1</button>`}</section>`;
+}
+function z10X1NewSheet() {
+  const p = me(); const m = zMateOf(p); const s = session.z10x1 || (session.z10x1 = { type: ZX1[0].id, stake: 25 });
+  openSheet(`<h2>Lançar X1 ⚔️</h2><div class="sub">Contra ${esc(m.name)} · vale para amanhã, ${DOW[dow(addDays(T(), 1))]} (${fmtDay(addDays(T(), 1))}). ${esc(m.name)} precisa aceitar até o fim de hoje.</div>
+    <div class="h2" style="margin-top:16px">Qual desafio?</div><div class="zx1-types">${ZX1.map(ty => `<button class="opt ${s.type === ty.id ? 'sel' : ''}" data-act="z10-x1-type" data-id="${ty.id}"><span class="oi">${ty.ic}</span><span class="grow">${esc(ty.t)}<br><span class="small muted">${esc(ty.how)}</span></span></button>`).join('')}</div>
+    <div class="h2">Quanto de XP?</div><div class="chips">${[10, 25, 50, 100].map(v => `<button class="chip ${s.stake === v ? 'on' : ''}" data-act="z10-x1-stake" data-v="${v}">${v} XP</button>`).join('')}</div>
+    <label class="field"><span>Ou digite um valor (de 5 a 100)</span><input class="input" id="zx1Stake" type="number" inputmode="numeric" min="5" max="100" value="${s.stake}"></label>
+    <div class="hint">Quem vencer leva o XP apostado do outro. Empate: ninguém perde.</div>
+    <div style="margin-top:14px"><button class="btn red" data-act="z10-x1-send">Lançar desafio</button></div>`, {});
+}
+function z10X1Write(x, fields) {
+  S.room.x1 = S.room.x1 || {}; S.room.x1[x.id] = x; save();
+  if (typeof zfbRoomUpdate === 'function') zfbRoomUpdate(fields || { ['x1.' + x.id]: x });
+}
+// A sala online traz os X1 da nuvem
+if (typeof zfbAdoptRoom === 'function') {
+  const __z10Adopt = zfbAdoptRoom;
+  zfbAdoptRoom = function (d) { const r = __z10Adopt.apply(this, arguments); if (d && d.x1 && S && S.room) { S.room.x1 = Object.assign({}, S.room.x1 || {}, d.x1); CACHE = new Map(); } return r; };
+}
+
+/* ---------- Novidades da dupla 👀 ---------- */
+function z10MateEvents(p, m) {
+  const t = T(); const ev = []; const nm = esc(m.name);
+  for (const s of [addDays(t, -1), t]) {
+    if (s < S.room.start) continue; const d = dget(m, s); const when = s === t ? '' : ' ontem';
+    if (missionsDone(m, d) === 3) ev.push(['completo|' + s, '✅', `${nm} fechou o dia completo${when}`]);
+    else {
+      if (waterOk(m, d)) ev.push(['agua|' + s, '💧', `${nm} bateu a meta de água${when}`]);
+      if (d.workout) ev.push(['treino|' + s, '💪', `${nm} treinou${when}${ZK[d.workout.type] ? ' (' + ZK[d.workout.type] + ')' : ''}`]);
+      if (planDay(d)) ev.push(['plano|' + s, '🥗', `${nm} fez as 4 refeições no plano${when}`]);
+    }
+    if ((m.zch || {})['dia|' + s]) ev.push(['dia|' + s, '🎯', `${nm} cumpriu o desafio do dia${when}`]);
+    if ((m.zch || {})['surpresa|' + s]) ev.push(['surpresa|' + s, '⚡', `${nm} venceu o desafio-surpresa${when}`]);
+  }
+  const lv = levelOf(xpInfo(m, t).total); if (lv > 0) ev.push(['nivel|' + lv, '⭐', `${nm} chegou ao nível ${lv + 1}`]);
+  for (const [id, dt] of Object.entries(m.ach || {})) if (dt >= addDays(t, -2)) { const a = ACH.find(x => x.id === id); if (a) ev.push(['ach|' + id, '🏅', `${nm} desbloqueou a conquista ${a.icon} ${esc(a.t)}`]); }
+  for (const [id, dt] of Object.entries(m.sach || {})) if (dt >= addDays(t, -2)) ev.push(['sach|' + id, '🕵️', `${nm} desbloqueou uma conquista secreta`]);
+  for (const k of Object.keys(m.zch || {})) if (k.startsWith('meta|')) ev.push([k, '🎁', `${nm} cumpriu a meta da semana e abriu o baú`]);
+  for (const x of z10X1All()) { if (x.from !== p.id) continue; if (x.status === 'accepted') ev.push(['x1ok|' + x.id, '⚔️', `${nm} aceitou o seu X1. Valendo ${zX1Day(x.day)}!`]); if (x.status === 'declined') ev.push(['x1no|' + x.id, '🙅', `${nm} recusou o seu X1`]); }
+  return ev;
+}
+function z10Digest(force) {
+  if (!S || !session.pid || S.mode === 'demo' && !force) return;
+  const p = me(); const m = zMateOf(p); if (!p || !m) return;
+  if ($('#overlay') || $('#ck') || $('#story') || $('#sun') || $('#zcoach') || session.ob) return;
+  S.zseen = S.zseen || {}; const seen = S.zseen[p.id] || (S.zseen[p.id] = { keys: [], lead: null, init: false });
+  const ev = z10MateEvents(p, m); const t = T();
+  const a = xpInfo(p, t).total, b = xpInfo(m, t).total; const lead = a > b ? p.id : b > a ? m.id : seen.lead;
+  if (!seen.init) { seen.keys = ev.filter(e => !e[0].endsWith('|' + t) && !e[0].startsWith('x1')).map(e => e[0]); seen.init = true; seen.lead = lead; }
+  const fresh = ev.filter(e => !seen.keys.includes(e[0]));
+  if (seen.lead && lead && lead !== seen.lead) fresh.unshift(lead === m.id ? ['lead|' + t, '👀', `${esc(m.name)} passou você no placar geral!`] : ['lead|' + t, '😎', `Você passou ${esc(m.name)} no placar geral!`]);
+  seen.lead = lead;
+  if (!fresh.length) { __z10Save(); return; }
+  seen.keys = seen.keys.concat(fresh.map(e => e[0])).slice(-400); __z10Save();
+  openSheet(`<div class="zdg-top"><div class="zdg-av">${petSVG(m.pet, { mood: 'feliz', stage: 1, equip: m.equip })}</div><div><small>Enquanto você estava fora</small><h2>Novidades de ${esc(m.name)}</h2></div></div>
+    <div class="zdg-list">${fresh.slice(0, 8).map(e => `<div class="zdg-it"><span>${e[1]}</span><b>${e[2]}</b></div>`).join('')}</div>
+    <div style="margin-top:16px"><button class="btn" data-act="close">Bora!</button></div>`, {});
+}
+
+/* ---------- Telas: Início, Missões, Placar e Perfil ---------- */
+const __z10Ban = bannersHTML;
+bannersHTML = function (p, t) {
+  let h = '';
+  try {
+    if (S.room && t >= S.room.start) {
+      h += z10X1IncomingHTML(p);
+      h += z10FlashCardHTML(p, t).replace('zk-card zk-flash missed', 'zk-card zk-flash missed hide');
+      const hr = new Date().getHours(); const d = dget(p, t);
+      if (d.sleep == null && hr >= 4 && hr < 16) h += z10SleepHTML(p, t);
+      const ds = z10DayState(p, t); if (!ds.done || hr < 20) h += z10DayCardHTML(p, t);
+      h += z10GoalCardHTML(p, t, true);
+    }
+  } catch (e) { console.warn('z10 home', e); }
+  return h + __z10Ban.apply(this, arguments);
+};
+const __z10Strip = weekStripHTML;
+weekStripHTML = function (p, t) { let h = ''; try { if (S.room) h = z10PrizeHTML(p, t); } catch (e) { console.warn('z10 prize', e); } return h + __z10Strip.apply(this, arguments); };
+const __z10Quest = questHTML;
+questHTML = function () {
+  const h = __z10Quest.apply(this, arguments); const p = me(), t = T(); if (!S.room || t < S.room.start) return h;
+  let x = '';
+  try {
+    const fs = z10FlashState(p, t);
+    x = `<div class="qhead"><h2>Desafios</h2></div>${z10DayCardHTML(p, t, true)}
+      ${fs && fs.phase !== 'soon' ? z10FlashCardHTML(p, t) : `<div class="zk-card zk-flash soon"><div class="zk-h"><span class="zk-ic zk-bolt">⚡</span><div class="grow"><small>Desafio-surpresa</small><b>Fique de olho!</b><span>Ele aparece do nada, 2 ou 3 vezes por semana, e dura poucas horas. Vale +25 XP.</span></div></div></div>`}
+      ${z10TeamCardHTML(p, t)}
+      <div class="qhead"><h2>Meta da semana</h2></div>${z10GoalCardHTML(p, t, false)}
+      <div class="qhead"><h2>Sono</h2></div>${z10SleepHTML(p, t) || ''}`;
+  } catch (e) { console.warn('z10 quest', e); }
+  const i = h.indexOf('<div class="qhead"><h2>Missão da semana</h2></div>');
+  return i > -1 ? h.slice(0, i) + x + h.slice(i) : h + x;
+};
+const __z10Rank = rankHTML;
+rankHTML = function () {
+  const h = __z10Rank.apply(this, arguments); let x = '';
+  try { x = z10X1SectionHTML(me(), T()); } catch (e) { console.warn('z10 x1', e); }
+  const i = h.indexOf('</button>'); const j = h.indexOf('z6prize');
+  return j > -1 && i > j ? h.slice(0, i + 9) + x + h.slice(i + 9) : x + h;
+};
+const __z10Prof = profileHTML;
+profileHTML = function () {
+  const h = __z10Prof.apply(this, arguments); const p = me(); if (!p || !S.room) return h;
+  const got = ZSECRET.filter(a => (p.sach || {})[a.id]).length;
+  const sec = `<div class="h2">Conquistas secretas <span class="pill gold" style="vertical-align:middle">${got} de ${ZSECRET.length}</span></div><div class="card zsec-list" style="margin-top:0">
+    ${ZSECRET.map(a => { const dt = (p.sach || {})[a.id]; return dt ? `<div class="zsec-it on"><div class="zsec-b">${a.icon}</div><div class="grow"><b>${esc(a.t)}</b><span>${esc(a.d)}</span><em>Desbloqueada em ${fmtDay(dt)} · +${a.xp} XP</em></div></div>` : `<div class="zsec-it"><div class="zsec-b">?</div><div class="grow"><b>???</b><span>${esc(a.hint)}</span></div></div>`; }).join('')}</div>`;
+  const k = h.indexOf('<div style="margin-top:22px"><button class="btn gold" data-act="retro">');
+  return k > -1 ? h.slice(0, k) + sec + h.slice(k) : h + sec;
+};
+
+/* ---------- Ações ---------- */
+Object.assign(ACT, {
+  'z10-sleep': el => { const p = me(); const d = dmut(p, T()); d.sleep = +el.dataset.v; closeSheet(true); commit({}); toast(d.sleep >= 7 ? `Boa noite de sono! ${zHr(d.sleep)} · +5 XP` : `Anotado: ${zHr(d.sleep)}. Hoje vale deitar mais cedo 💤`, d.sleep >= 7 ? 'green' : 'violet', '😴'); },
+  'z10-sleep-open': () => { const d = dget(me(), T()); openSheet(`<h2>Quanto você dormiu?</h2><div class="sub">Conta a noite passada. 7 horas ou mais valem +5 XP.</div>${z10SleepChips(d.sleep)}${d.sleep != null ? `<button class="link-btn" data-act="z10-sleep-del" style="margin-top:10px">Apagar registro</button>` : ''}`, {}); },
+  'z10-sleep-del': () => { const d = dmut(me(), T()); delete d.sleep; closeSheet(true); commit({}); },
+  'z10-goal': () => {
+    const p = me(); const wk = weekKey(T()); const rec = z10GoalRec(p, wk); const cur = (p.wgoal || {})[wk];
+    session.z10g = session.z10g || (cur ? { k: cur.k, n: cur.n } : { k: rec.k, n: rec.n });
+    const g = session.z10g;
+    openSheet(`<h2>Sua meta da semana 🎯</h2><div class="sub">Escolha um objetivo para esta semana. Cumpriu, ganha um baú especial no domingo com +40 XP e +30 moedas.</div>
+      <div class="zgoal-list">${ZGOAL.map(def => { const isRec = def.k === rec.k; const n = g.k === def.k ? g.n : (isRec ? rec.n : 4); return `<div class="opt zgoal-opt ${g.k === def.k ? 'sel' : ''}"><button class="zgoal-pick" data-act="z10-goal-k" data-k="${def.k}" data-n="${n}"><span class="oi">${def.ic}</span><span class="grow">${esc(def.t(n))}${isRec ? '<br><span class="zrec">Recomendada pra você</span>' : ''}</span></button>${g.k === def.k ? `<div class="zstep"><button data-act="z10-goal-n" data-d="-1">−</button><b>${g.n}</b><button data-act="z10-goal-n" data-d="1">+</button></div>` : ''}</div>`; }).join('')}</div>
+      <div style="margin-top:14px"><button class="btn" data-act="z10-goal-save">Salvar meta</button></div>`, {});
+  },
+  'z10-goal-k': el => { session.z10g = { k: el.dataset.k, n: +el.dataset.n }; ACT['z10-goal'](); },
+  'z10-goal-n': el => { const g = session.z10g; g.n = clamp(g.n + (+el.dataset.d), 1, 7); ACT['z10-goal'](); },
+  'z10-goal-save': () => { const p = me(); const wk = weekKey(T()); const g = session.z10g; p.wgoal = p.wgoal || {}; p.wgoal[wk] = { k: g.k, n: g.n, set: T() }; session.z10g = null; save(); closeSheet(true); renderMain(true); toast('Meta da semana definida! Bora cumprir 🎯', 'green', '🎯'); },
+  'z10-chest': el => {
+    const p = me(); const wk = el.dataset.wk; const st = z10GoalState(p, wk); if (!st || !st.met || st.claimed) return;
+    openSheet(`<div id="zchBox" class="shake" style="width:150px;margin:6px auto 0">${chestSVG('ready')}</div><h2 style="text-align:center;margin-top:8px">Baú especial</h2><div class="sub" id="zchTxt" style="text-align:center">Abrindo…</div><div id="zchBtn" style="margin-top:16px"></div>`, { center: true, sticky: true });
+    setTimeout(() => {
+      p.zch = p.zch || {}; p.zch['meta|' + wk] = { date: T(), xp: 40, cat: 'meta' }; p.coins += 30;
+      const box = $('#zchBox'); if (box) { box.classList.remove('shake'); box.innerHTML = chestSVG('open'); box.style.animation = 'pop .5s'; }
+      const tx = $('#zchTxt'); if (tx) tx.innerHTML = `<div class="big-num" style="color:var(--gold-text);margin:8px 0">+40 XP · +30 🪙</div>Meta cumprida: ${esc(st.def.t(st.g.n))}.`;
+      const bt = $('#zchBtn'); if (bt) bt.innerHTML = '<button class="btn gold" data-act="close">Pegar prêmio</button>';
+      confetti(120); sfx('level'); commit({ rerender: true });
+    }, 900);
+  },
+  'z10-x1-new': () => { const why = z10X1CanLaunch(me()); if (why) return toast(why, 'red', '⚔️'); z10X1NewSheet(); },
+  'z10-x1-type': el => { session.z10x1.type = el.dataset.id; z10X1NewSheet(); },
+  'z10-x1-stake': el => { session.z10x1.stake = +el.dataset.v; z10X1NewSheet(); },
+  'z10-x1-send': () => {
+    const p = me(); const m = zMateOf(p); const why = z10X1CanLaunch(p); if (why) return toast(why, 'red', '⚔️');
+    const v = Math.round(+(($('#zx1Stake') || {}).value || session.z10x1.stake));
+    if (!(v >= 5 && v <= 100)) return toast('A aposta precisa ser de 5 a 100 XP.', 'red', '⚔️');
+    const x = { id: 'x' + Date.now().toString(36), from: p.id, to: m.id, fromName: p.name, toName: m.name, type: session.z10x1.type, stake: v, made: T(), day: addDays(T(), 1), at: Date.now(), status: 'pending' };
+    z10X1Write(x); closeSheet(true); renderMain(true); confetti(40); toast(`X1 lançado! Agora ${m.name} precisa aceitar.`, 'fire', '⚔️');
+  },
+  'z10-x1-ok': el => { const x = (S.room.x1 || {})[el.dataset.id]; if (!x || z10X1Eval(x).state !== 'pending') return; x.status = 'accepted'; x.resp = T(); z10X1Write(x, { ['x1.' + x.id + '.status']: 'accepted', ['x1.' + x.id + '.resp']: x.resp }); closeSheet(true); renderMain(true); confetti(60); sfx('level'); toast(`X1 aceito! Valendo ${zX1Day(x.day)} ⚔️`, 'fire', '⚔️'); },
+  'z10-x1-no': el => { const x = (S.room.x1 || {})[el.dataset.id]; if (!x || z10X1Eval(x).state !== 'pending') return; x.status = 'declined'; x.resp = T(); z10X1Write(x, { ['x1.' + x.id + '.status']: 'declined', ['x1.' + x.id + '.resp']: x.resp }); closeSheet(true); renderMain(true); toast('X1 recusado. Ninguém perdeu nada.', 'violet', '🙅'); }
+});
+
+/* ---------- Pop-up de X1 recebido e verificação periódica ---------- */
+function z10Incoming() {
+  if (!S || !session.pid || $('#overlay') || $('#ck') || $('#story') || $('#sun') || $('#zcoach') || session.ob) return false;
+  const p = me(); const x = z10X1All().find(x => x.to === p.id && z10X1Eval(x).state === 'pending' && !(session.z10asked || {})[x.id]); if (!x) return false;
+  session.z10asked = Object.assign(session.z10asked || {}, { [x.id]: 1 });
+  openSheet(`<div class="zx1-pop"><div class="zx1-swb">⚔️</div><h2>Você foi desafiado!</h2></div>${z10X1Item(x, p)}`, { center: true }); sfx('level');
+  return true;
+}
+let z10Live = '';
+function z10Tick() {
+  if (!S || !session.pid || document.hidden || !S.room) return;
+  try {
+    const p = me(); const fs = z10FlashState(p, T()); const sig = (fs ? fs.phase + (fs.done ? 1 : 0) : '') + '|' + T();
+    if (sig !== z10Live) { const first = !z10Live; z10Live = sig; if (!first && session.tab === 'home' && $('#main') && !$('#overlay')) renderMain(true); if (fs && fs.phase === 'live' && !fs.done && !first) { toast('⚡ Desafio-surpresa começou! Veja no Início.', 'fire', '⚡'); sfx('level'); } }
+    if (!z10Incoming()) z10Digest();
+  } catch (e) { console.warn('z10 tick', e); }
+}
+setInterval(z10Tick, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(z10Tick, 1800); });
+setTimeout(z10Tick, 4000);
+
+/* ---------- Lembretes inteligentes 🧠 ---------- */
+const ZHELLO = ['Como você está hoje?', 'Dormiu bem? Marque suas horas de sono.', 'Um copo de água para começar?', 'Hoje é dia de subir mais um degrau.', 'Bora fazer um dia bonito?', 'Respira fundo. Um passo de cada vez.', 'Seu mascote já acordou e está te esperando.'];
+const ZCARE = [['💙 Como você está?', 'Lembra de pausar, respirar fundo e beber um copo de água.'], ['🌿 Pausa rápida', 'Como está o seu dia? Se cuidar também é treino.'], ['😊 Passando pra lembrar', 'Você está indo bem. Constância vale mais que perfeição.'], ['🫶 E aí, tudo certo?', 'Se o dia estiver corrido, um copo de água já conta.']];
+const ZEVEN = ['Como foi o seu dia, {n}? Conta pro Zenit 😊', 'Ei, {n}! O Zenit sentiu sua falta hoje 👀', 'Ainda dá tempo de marcar o dia, {n}. Bora?'];
+function z10SmartList(p) {
+  const r = zRoutine(p); if (r.auto.smart === false) return [];
+  const t = T(); const now = nowMin(); const out = []; const nm = p.name || '';
+  const at = (s, m) => { const d = new Date(s + 'T00:00:00'); d.setHours(Math.floor(m / 60), m % 60, 0, 0); return d; };
+  const st = streakInfo(p, t).current;
+  for (let k = 0; k < 14; k++) {
+    const s = addDays(t, k); if (s < S.room.start || s > S.room.end) continue;
+    const today = k === 0; const d = today ? dget(p, s) : {}; const free = zIsFree(p, s); const day = []; const id0 = 6000 + k * 20;
+    const push = (slot, m, title, body, pri, go) => { if (today && m <= now + 1) return; day.push({ id: id0 + slot, title, body, schedule: { at: at(s, m), allowWhileIdle: true }, extra: { go: go || '' }, pri, m }); };
+    const ch = z10DayCh(p, s); const chDone = today ? z10DayState(p, s).done : false;
+    push(0, 465, `☀️ Bom dia, ${nm}!`, `${ZHELLO[hashStr(s + nm) % ZHELLO.length]} Desafio do dia: ${ch.t}.`, 3);
+    const fl = z10FlashFor(s); if (fl && !(today && (z10FlashState(p, s) || {}).done)) push(1, fl.start, '⚡ Desafio-surpresa!', `Você tem ${Math.round((fl.end - fl.start) / 60)}h: ${fl.ty.d.replace(' antes do tempo acabar', '').toLowerCase()} Vale +25 XP.`, 1, fl.ty.kind === 'water' ? 'water-quick' : 'checkin');
+    const x1 = z10X1All().find(x => x.status === 'accepted' && x.day === s && (x.from === p.id || x.to === p.id)); if (x1) { const ty = ZX1.find(y => y.id === x1.type) || ZX1[0]; const o = S.players.find(q => q.id === (x1.from === p.id ? x1.to : x1.from)); push(2, 510, `⚔️ Hoje tem X1${o ? ' contra ' + o.name : ''}!`, `${ty.t}. Valendo ${x1.stake} XP.`, 1); }
+    if (!free) {
+      if (r.auto.agua) for (const [slot, m, f] of [[3, 660, .25], [4, 900, .55], [5, 1140, .85]]) {
+        if (!today && slot !== 4) continue; const w = d.water || 0; if (w >= p.waterGoal * f || w >= p.waterGoal) continue;
+        push(slot, m, '💧 Hora da água', today ? `${Math.floor(m / 60)}h e você está em ${Math.round(w / p.waterGoal * 100)}% da meta. Bora um copo?` : 'Já bebeu água hoje? Um copo agora já conta.', slot === 4 ? 2 : 5, 'water-quick');
+      }
+      if (r.auto.refeicoes && k <= 1 && !(d.meals || {}).almoco) push(6, 840, '🍛 Almoço já foi?', 'Registre no Zenit e mantenha o prato no plano.', 4, 'checkin');
+      if (r.auto.treino && k <= 1 && zTrainDay(p, s) && !trainDone(d)) push(7, 1200, '🏋️ Treino de hoje', `Seu ${ZK[zPlan(p, s).k] || 'treino'} ainda não foi marcado. Bora?`, 2, 'checkin');
+      if (k <= 1 && st > 0 && missionsDone(p, d) < 2) push(8, 1290, `🔥 Seu foguinho de ${st} ${plural(st, 'dia', 'dias')} está em risco!`, `Faltam ${2 - missionsDone(p, d)} ${plural(2 - missionsDone(p, d), 'missão', 'missões')} para manter a sequência.`, 1, 'checkin');
+      if (today && !chDone && ch.dl == null || today && !chDone && ch.dl > 1020) push(9, 1020, '🎯 Ainda dá tempo!', `Desafio do dia: ${ch.t}. Vale +15 XP.`, 4);
+    }
+    if (k === 1) push(10, 1230, '👋 Zenit', ZEVEN[hashStr(s) % ZEVEN.length].replace('{n}', nm), 3);
+    const care = zSeed(zRoomKey() + '|carinho|' + weekKey(s) + p.id); const cd = [Math.floor(care() * 7), Math.floor(care() * 7)];
+    if (cd.includes(diffDays(weekKey(s), s))) { const c = ZCARE[hashStr(s + p.id) % ZCARE.length]; push(11, 990, c[0], c[1], 4); }
+    if (dow(s) === 1 && !(p.wgoal || {})[weekKey(s)]) push(12, 570, '🎯 Meta da semana', 'Escolha a sua meta pessoal. Cumpriu, ganha um baú especial no domingo.', 2);
+    if (dow(s) === 0 && today) { const gs = z10GoalState(p, weekKey(s)); if (gs && gs.met && !gs.claimed) push(13, 1080, '🎁 Seu baú especial chegou!', 'Você cumpriu a meta da semana. Abra o baú no Zenit.', 1); }
+    day.sort((a, b) => a.pri - b.pri); const keep = day.slice(0, today ? 6 : (k <= 2 ? 5 : 3));
+    keep.forEach(n => { delete n.pri; delete n.m; out.push(n); });
+  }
+  return out;
+}
+const __z10Sched = zScheduleNative;
+let z10SchedQ = Promise.resolve();
+zScheduleNative = function () { z10SchedQ = z10SchedQ.then(() => z10SchedRun()).catch(() => { }); return z10SchedQ; };
+async function z10SchedRun() {
+  await __z10Sched();
+  const LN = zLN(); if (!LN || !S || !session.pid || !S.room) return;
+  try {
+    const perm = await LN.checkPermissions(); if (!perm || perm.display !== 'granted') return;
+    const p = me(); const r = zRoutine(p);
+    if (r.auto.smart !== false) { const ids = []; for (let wd = 0; wd < 7; wd++) for (let sl = 0; sl < 3; sl++) ids.push({ id: 3000 + wd * 10 + sl }); await LN.cancel({ notifications: ids }); }
+    const list = z10SmartList(p); if (list.length) await LN.schedule({ notifications: list });
+  } catch (e) { }
+}
+// chave nova na tela de Lembretes
+const __z10Rem = zOpenRem;
+zOpenRem = function () {
+  const r = __z10Rem.apply(this, arguments);
+  try {
+    const p = me(); const rt = zRoutine(p); if (rt.auto.smart == null) rt.auto.smart = true;
+    const tog = $('#overlay [data-act="zauto"][data-k="agua"]'); const row = tog && tog.closest('.zrow');
+    if (row && !$('#overlay [data-k="smart"]')) row.parentElement.insertAdjacentHTML('beforeend', `<div class="zrow"><div class="grow"><b>Mensagens inteligentes</b><span>Bom dia, desafios, água no ritmo, sequência em risco e "como você está". Só avisa quando falta algo.</span></div><button class="ztog ${rt.auto.smart ? 'on' : ''}" data-act="zauto" data-k="smart" aria-label="Mensagens inteligentes"></button></div>`);
+  } catch (e) { }
+  return r;
+};
+
+/* ---------- Modo escuro 🌙 ---------- */
+const zMQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+function z10Theme() {
+  const th = (S && S.settings && S.settings.theme) || 'light'; const dark = th === 'dark' || (th === 'auto' && zMQ && zMQ.matches);
+  document.documentElement.classList.toggle('zdark', !!dark);
+  const mt = document.querySelector('meta[name="theme-color"]'); if (mt) mt.setAttribute('content', dark ? '#131F24' : '#58CC02');
+}
+if (zMQ && zMQ.addEventListener) zMQ.addEventListener('change', z10Theme);
+const __z10Set = openSettings;
+openSettings = function () {
+  const r = __z10Set.apply(this, arguments);
+  try {
+    const ov = $('#overlay'); const th = (S.settings && S.settings.theme) || 'light';
+    const pref = [...ov.querySelectorAll('.card')].find(c => { const h = c.querySelector('h3'); return h && h.textContent.trim() === 'Preferências'; });
+    const html = `<div class="card"><h3>Aparência</h3><div class="sub">Escolha como o Zenit fica na tela.</div><div class="chips" style="margin-top:10px">${[['light', '☀️ Claro'], ['dark', '🌙 Escuro'], ['auto', '📱 Automático']].map(([k, l]) => `<button class="chip ${th === k ? 'on' : ''}" data-act="z10-theme" data-v="${k}">${l}</button>`).join('')}</div><div class="hint">No automático, segue o modo do celular.</div></div>`;
+    if (pref) pref.insertAdjacentHTML('afterend', html);
+  } catch (e) { }
+  return r;
+};
+ACT['z10-theme'] = el => { S.settings.theme = el.dataset.v; save(); z10Theme(); $$('#overlay [data-act="z10-theme"]').forEach(b => b.classList.toggle('on', b.dataset.v === el.dataset.v)); };
+z10Theme();
+const __z10Render = render;
+render = function () { const r = __z10Render.apply(this, arguments); z10Theme(); return r; };
+
+/* ---------- Olhinho na senha 👁️ ---------- */
+const ZEYE = { on: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>', off: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a10 10 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>' };
+function z10Eyes(root) {
+  (root || document).querySelectorAll('input[type="password"]:not([data-eye])').forEach(inp => {
+    inp.dataset.eye = '1'; const w = document.createElement('span'); w.className = 'zeye-w'; inp.parentNode.insertBefore(w, inp); w.appendChild(inp);
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'zeye'; b.setAttribute('aria-label', 'Mostrar senha'); b.innerHTML = ZEYE.on; w.appendChild(b);
+    b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); const show = inp.type === 'password'; inp.type = show ? 'text' : 'password'; b.innerHTML = show ? ZEYE.off : ZEYE.on; b.setAttribute('aria-label', show ? 'Esconder senha' : 'Mostrar senha'); inp.focus(); });
+  });
+}
+new MutationObserver(ms => { for (const m of ms) if (m.addedNodes.length) { z10Eyes(document); break; } }).observe(document.body, { childList: true, subtree: true });
+
+/* ---------- Início: garante as chaves novas ---------- */
+try { if (S && session.pid) { const p = me(); const rt = zRoutine(p); if (rt.auto.smart == null) rt.auto.smart = true; } } catch (e) { }
+ZNEWS.splice(0, ZNEWS.length,
+  ['🎯', 'Desafios surpresa', 'Todo dia chega um desafio só seu. E do nada aparece um desafio-surpresa ⚡ que dura poucas horas. Toda semana tem também o desafio da dupla 🤝.'],
+  ['⚔️', 'X1', 'No Placar, desafie sua dupla e aposte até 100 XP. Ela precisa aceitar. E toda sexta o app sorteia um X1 para o fim de semana.'],
+  ['🎁', 'Meta da semana e sono', 'Escolha uma meta pessoal toda segunda (o app recomenda uma). Cumpriu, ganha um baú especial. E marque quantas horas dormiu: 7h ou mais vale XP.'],
+  ['🏆', 'Prêmio no Início', 'Contagem até o Réveillon e quem está levando o kit Growth + livro, no geral e na semana.'],
+  ['🧠', 'Lembretes inteligentes', 'O Zenit só avisa quando falta algo, e ainda pergunta como você está.'],
+  ['🕵️', 'Conquistas secretas', 'Medalhas escondidas que aparecem do nada. Veja as dicas no Perfil.'],
+  ['🌙', 'Modo escuro', 'Em Configurações › Aparência: claro, escuro ou automático.']);
+try { if (S && session.pid && $('#main')) renderMain(true); } catch (e) { }
+</script>
+<style>
+.zk-card{background:var(--card);border:2px solid var(--line);border-radius:20px;padding:14px;margin:0 0 14px;box-shadow:0 4px 0 var(--line)}
+.zk-h{display:flex;gap:12px;align-items:flex-start}
+.zk-h b{display:block;font-size:16.5px;font-weight:900;line-height:1.25}
+.zk-h small{display:block;font-size:11.5px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);margin-bottom:2px}
+.zk-h span:not(.zk-ic){display:block;font-size:13.5px;color:var(--ink-2);margin-top:3px;line-height:1.35}
+.zk-ic{width:46px;height:46px;flex:none;border-radius:14px;display:grid;place-items:center;font-size:25px}
+.zk-tag{display:inline-block;margin-top:10px;font-size:12.5px;font-weight:900;padding:4px 10px;border-radius:99px;background:var(--gold-soft);color:var(--gold-text)}
+.zk-tag.ok{background:var(--green-soft);color:var(--green-d)}
+.zk-tag.no{background:var(--surface-2);color:var(--ink-3)}
+.zk-card .qbar{margin-top:12px}
+.zk-day.done{border-color:var(--green-line);box-shadow:0 4px 0 var(--green-line)}
+.zk-flash.live{border-color:#FF9600;box-shadow:0 4px 0 #E07F00;background:linear-gradient(135deg,var(--card),var(--orange-soft));animation:zkGlow 1.6s ease-in-out infinite}
+@keyframes zkGlow{50%{box-shadow:0 4px 0 #E07F00,0 0 0 6px rgba(255,150,0,.18)}}
+.zk-flash.done{border-color:var(--green-line)}
+.zk-flash.missed,.zk-flash.soon{opacity:.85}
+.zk-flash.hide{display:none}
+.zk-bolt{background:#FFE7C2;animation:zkBolt 1.2s ease-in-out infinite}
+@keyframes zkBolt{50%{transform:scale(1.12) rotate(-6deg)}}
+.zk-timer{margin-top:10px;font-size:13.5px;font-weight:900;color:#E07F00}
+.zk-note{display:block;font-size:12.5px;color:var(--ink-3);margin-top:8px;line-height:1.35}
+.zk-team.done{border-color:var(--green-line)}
+.zk-dbar{position:relative;height:18px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:12px}
+.zk-dbar i{position:absolute;top:0;bottom:0;left:0;transition:width .9s}
+.zk-dbar i.a{background:#1CB0F6}
+.zk-dbar i.b{background:#FF6FB5}
+.zk-dlab{display:flex;justify-content:space-between;align-items:center;margin-top:7px;font-size:12.5px;font-weight:900;gap:8px}
+.zk-dlab .a{color:#1899D6}.zk-dlab .b{color:#E0559A;text-align:right}.zk-dlab b{font-size:13.5px}
+.zk-goal.done{border-color:var(--green-line)}
+.zk-chest{border-color:var(--gold);box-shadow:0 4px 0 var(--gold-d);background:linear-gradient(135deg,var(--card),var(--gold-soft))}
+.zk-gift{background:var(--gold-soft);animation:zkBolt 1.4s ease-in-out infinite}
+.zk-chips{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:12px}
+.zk-chips button{border:2px solid var(--line);border-bottom-width:4px;background:var(--card);border-radius:12px;padding:9px 2px;font:inherit;font-weight:900;font-size:14px;color:var(--ink)}
+.zk-chips button.on{border-color:#A78BFA;background:#EDE7FF;color:#5B3FC4}
+.zk-mini{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:var(--card);border:2px solid var(--line);border-radius:18px;padding:10px 12px;margin:0 0 14px;font:inherit;color:inherit}
+.zk-mini b{display:block;font-size:15px;font-weight:900}.zk-mini .grow span{display:block;font-size:12.5px;color:var(--ink-2)}
+.zk-mini em{font-style:normal;font-size:12.5px;font-weight:900;color:var(--blue)}
+.zk-mini .zk-ic{width:40px;height:40px;font-size:22px}
+.zk-prize{display:block;width:100%;text-align:left;border:0;border-radius:22px;padding:16px;margin:0 0 14px;font:inherit;color:#fff;background:linear-gradient(140deg,#0E1438 0%,#2B2F86 60%,#5B3FC4 100%);box-shadow:0 5px 0 #0A0E2A;position:relative;overflow:hidden}
+.zk-prize::after{content:'';position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,rgba(255,200,0,.35),transparent 70%)}
+.zkp-top{display:flex;gap:12px;align-items:center;position:relative;z-index:1}
+.zkp-trophy{font-size:38px;animation:z6bob 2.6s ease-in-out infinite}
+.zkp-top small{display:block;font-size:11.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#FFC800}
+.zkp-top b{display:block;font-size:14.5px;font-weight:800;line-height:1.3;margin-top:2px}
+.zkp-days{text-align:center;background:rgba(255,255,255,.12);border-radius:14px;padding:6px 10px;flex:none}
+.zkp-days b{display:block;font-size:26px;font-weight:900;line-height:1;color:#FFC800}.zkp-days span{font-size:11px;font-weight:900;opacity:.85}
+.zkp-bar{height:10px;background:rgba(255,255,255,.14);border-radius:99px;overflow:hidden;margin:14px 0 10px;position:relative;z-index:1}
+.zkp-bar i{display:block;height:100%;background:linear-gradient(90deg,#FFC800,#FF9600);border-radius:99px;transition:width 1.2s cubic-bezier(.3,1.2,.5,1)}
+.zkp-rows{position:relative;z-index:1}
+.zkp-row{display:flex;gap:8px;align-items:baseline;font-size:13.5px;padding:4px 0;border-top:1px solid rgba(255,255,255,.1)}
+.zkp-row span{width:108px;flex:none;color:#C9CEFF;font-weight:800}.zkp-row b{flex:1;font-weight:900}.zkp-row em{font-style:normal;color:#FFC800;font-weight:900;font-size:12.5px}
+.zx1{background:var(--card);border:2px solid var(--line);border-radius:22px;padding:14px;margin:0 0 16px;box-shadow:0 4px 0 var(--line)}
+.zx1-head{display:flex;gap:12px;align-items:center}
+.zx1-head b{display:block;font-size:20px;font-weight:900}.zx1-head small{display:block;font-size:13px;color:var(--ink-2)}
+.zx1-sw{width:48px;height:48px;border-radius:14px;background:var(--red-soft);display:grid;place-items:center;font-size:26px}
+.zx1-item{border:2px solid var(--line);border-radius:16px;padding:12px;margin-top:12px;background:var(--surface-2)}
+.zx1-item > b{display:block;font-size:15px;font-weight:900}
+.zx1-item span b{display:inline;font-size:inherit}
+.zx1-item>span{display:block;font-size:13px;color:var(--ink-2);margin-top:3px}
+.zx1-item.in{border-color:#FF4B4B;background:var(--red-soft)}
+.zx1-item.in.home{margin:0 0 14px;box-shadow:0 4px 0 #EA2B2B}
+.zx1-item.on{border-color:#FF9600;background:var(--orange-soft)}
+.zx1-item.win{border-color:var(--green-line);background:var(--green-soft)}
+.zx1-item.lose{border-color:var(--red-line);background:var(--red-soft)}
+.zx1-item.off{opacity:.75}
+.zx1-item.auto{border-style:dashed}
+.zx1-score{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:10px;text-align:center}
+.zx1-score small{display:block;font-size:12px;color:var(--ink-2);font-weight:800}.zx1-score b{font-size:20px}.zx1-score i{font-style:normal;font-weight:900;color:var(--ink-3)}
+.zx1-types{display:grid;gap:8px}
+.zx1-types .opt{font-size:15px}.zx1-types .opt.sel{border-color:#FF4B4B;background:var(--red-soft)}
+.zx1-pop{text-align:center}.zx1-swb{font-size:64px;animation:zkBolt 1s ease-in-out infinite}
+.zgoal-list{display:grid;gap:8px;margin-top:14px}
+.zgoal-opt{flex-direction:column;align-items:stretch;padding:0}
+.zgoal-opt.sel{border-color:var(--green-line);background:var(--green-soft)}
+.zgoal-pick{display:flex;gap:12px;align-items:center;width:100%;background:none;border:0;padding:12px 14px;font:inherit;font-weight:800;font-size:15.5px;text-align:left;color:inherit}
+.zrec{display:inline-block;font-size:11.5px;font-weight:900;color:#fff;background:#58CC02;border-radius:99px;padding:2px 8px;margin-top:4px}
+.zstep{display:flex;align-items:center;justify-content:center;gap:18px;padding:0 0 12px}
+.zstep button{width:44px;height:44px;border-radius:12px;border:2px solid var(--line);border-bottom-width:4px;background:var(--card);font-size:24px;font-weight:900;color:var(--ink)}
+.zstep b{font-size:24px;min-width:26px;text-align:center}
+.zsec-it{display:flex;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.zsec-it:first-child{border-top:0}
+.zsec-b{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-size:24px;flex:none;background:var(--surface-2);color:var(--ink-3);font-weight:900;border:2px dashed var(--line)}
+.zsec-it.on .zsec-b{background:linear-gradient(135deg,#2B2F86,#5B3FC4);border:0;box-shadow:0 0 0 3px #FFC800}
+.zsec-it b{display:block;font-size:15px;font-weight:900}.zsec-it span{display:block;font-size:13px;color:var(--ink-2)}.zsec-it em{display:block;font-style:normal;font-size:12px;font-weight:900;color:var(--green-d);margin-top:3px}
+.zsec-pop{text-align:center}.zsec-pop small{display:block;font-weight:900;color:#7B4DFF;letter-spacing:.04em}
+.zsec-badge{width:120px;height:120px;margin:4px auto 10px;border-radius:50%;display:grid;place-items:center;font-size:62px;background:linear-gradient(135deg,#2B2F86,#5B3FC4);box-shadow:0 0 0 6px #FFC800,0 10px 40px rgba(91,63,196,.5);animation:pop .7s cubic-bezier(.2,1.4,.4,1)}
+.zsec-xp{display:inline-block;margin-top:12px;background:var(--gold-soft);color:var(--gold-text);font-weight:900;border-radius:99px;padding:6px 14px}
+.zdg-top{display:flex;gap:12px;align-items:center}.zdg-top small{font-weight:900;color:var(--ink-3);font-size:12px;text-transform:uppercase;letter-spacing:.06em}.zdg-top h2{margin:0}
+.zdg-av{width:64px;height:64px;flex:none}
+.zdg-list{margin-top:12px;display:grid;gap:8px}
+.zdg-it{display:flex;gap:12px;align-items:center;background:var(--surface-2);border-radius:14px;padding:10px 12px}
+.zdg-it span{font-size:24px}.zdg-it b{font-size:15px;font-weight:800}
+.zeye-w{position:relative;display:block}
+.field > .zeye-w{font-size:inherit;font-weight:inherit;margin-bottom:0;color:inherit}
+.zeye-w input{padding-right:52px !important;width:100%}
+.zeye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:42px;height:42px;border:0;background:none;color:var(--ink-3);display:grid;place-items:center;border-radius:10px}
+.zeye svg{width:22px;height:22px}
+/* modo escuro */
+html.zdark{color-scheme:dark;--bg:#131F24;--card:#1B2A31;--surface-2:#22333B;--line:#37464F;--ink:#EEF4F7;--ink-2:#A8B6BE;--ink-3:#71858F;--green-soft:#1F3A12;--green-line:#3E6B1B;--blue-soft:#0E3147;--blue-line:#1E5B7E;--red-soft:#47202A;--red-line:#7A3038;--gold-soft:#3B3212;--gold-text:#FFC800;--orange-soft:#432E12;--purple-soft:#33244A;--glass:#16313F;--qtext:#A8B6BE}
+html.zdark body{background:var(--bg);color:var(--ink)}
+html.zdark .zk-chips button.on{background:#33244A;border-color:#7B5CD6;color:#D9CCFF}
+html.zdark .zk-ic[style*="#EDE7FF"]{background:#33244A !important}
+html.zdark .zk-ic[style*="#FFF5D3"]{background:#3B3212 !important}
+html.zdark .zk-ic[style*="#E8F9D9"]{background:#1F3A12 !important}
+html.zdark .zk-ic[style*="#FFE6F4"]{background:#44203A !important}
+html.zdark .zk-bolt{background:#432E12}
+html.zdark .zstep button{color:var(--ink)}
+</style>
 
 </body>
 </html>
