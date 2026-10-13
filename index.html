@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '2.4';
+const ZV = '2.5';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -5018,7 +5018,7 @@ function zfbAccountHTML(mode) {
     <label class="field"><span>Senha${up ? ' (mínimo 6 caracteres)' : ''}</span><input class="input" id="zfbPass" type="password" autocomplete="${up ? 'new-password' : 'current-password'}" placeholder="••••••"></label>
     <div style="margin-top:14px"><button class="btn" data-act="zfb-go" data-m="${up ? 'up' : 'in'}" id="zfbGo">${up ? 'Criar conta' : 'Entrar'}</button></div>
     ${up ? '' : `<button class="link-btn" data-act="zfb-forgot" style="margin-top:10px">Esqueci minha senha</button>`}
-    <div class="hint">Os quilos continuam só com você. Na sala, sua dupla vê XP, nível, sequência e a % de peso perdido.</div>`;
+    <div class="hint">Os quilos continuam só com você. Na sala, sua dupla vê XP, nível, sequência e a sua % de progresso.</div>`;
 }
 function zfbOpenAccount(mode) {
   openSheet(`<div id="zfbSheet"><div class="sub" style="text-align:center;padding:24px 0">Conectando…</div></div>`, {});
@@ -6383,7 +6383,7 @@ function z12Climb() {
     { ic: '🥗', k: 'O prato no plano', big: `${A.plano} ${plural(A.plano, 'dia', 'dias')}`, s: `Dias com as 4 refeições dentro do plano${m ? `. ${mn}: ${B.plano}.` : '.'}` },
     { ic: '🔥', k: 'A tocha da sequência', big: `${A.best} ${plural(A.best, 'dia', 'dias')}`, s: `Sua maior sequência sem deixar o foguinho apagar${m ? `. ${mn}: ${B.best}.` : '.'}` },
     m ? { ic: '⚔️', k: 'A arena da dupla', big: `${wA} × ${wB}`, s: `Semanas vencidas: você ${wA}, ${mn} ${wB}.${x1w + x1l ? ` No X1: ${x1w} ${plural(x1w, 'vitória', 'vitórias')} e ${x1l} ${plural(x1l, 'derrota', 'derrotas')}.` : ''}` }
-      : { ic: '📉', k: 'A balança', big: fmt1(Math.max(0, pctLost(p, t))) + '%', s: 'Do seu peso inicial. Esse número é só seu.' }
+      : (typeof z13BalStop === 'function' ? z13BalStop(p, t) : { ic: '📉', k: 'A balança', big: fmt1(Math.max(0, pctLost(p, t))) + '%', s: 'Do seu peso inicial. Esse número é só seu.' })
   ];
   let st = ''; let a = 11; for (let i = 0; i < 80; i++) { a = (a * 9301 + 49297) % 233280; const x = a / 233280 * 400; a = (a * 9301 + 49297) % 233280; const y = a / 233280 * 360; st += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i % 6 ? .9 : 1.8}" fill="#fff" class="zc-tw" style="animation-delay:${(i % 9) * .3}s"/>`; }
   const ps = m ? [p, m] : [p];
@@ -6617,6 +6617,249 @@ try { if (S && session.pid && $('#main')) renderMain(true); } catch (e) { }
 .zesc-prize span{display:block;font-size:12.5px;font-weight:900;color:#FFC800}.zesc-prize b{display:block;font-size:14.5px;font-weight:800;margin-top:2px}.zesc-prize em{display:block;font-style:normal;font-size:12.5px;color:#C9CEFF;margin-top:4px}
 .zesc-chest{width:90px;margin:0 auto 4px;animation:pop .8s cubic-bezier(.2,1.4,.4,1)}
 .zesc-dip img{display:block;width:100%;max-height:52vh;object-fit:contain;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 2.5: objetivo de cada pessoa
+   🔥 Emagrecer (como sempre foi) · 💪 Ganhar massa · ⚖️ Manter e definir
+   Para quem emagrece, nenhuma conta muda.
+   ========================================================= */
+const ZOBJ = {
+  perder: { ic: '🔥', pill: '📉', t: 'Emagrecer', s: 'Perder gordura' },
+  ganhar: { ic: '💪', pill: '📈', t: 'Ganhar massa', s: 'Ganhar peso com músculo' },
+  manter: { ic: '⚖️', pill: '⚖️', t: 'Manter e definir', s: 'Foco nos hábitos' }
+};
+const Z13_BAND = 1.5; // manter: faixa de estabilidade, em % do peso inicial
+const zObj = p => (p && ZOBJ[p.obj]) ? p.obj : 'perder';
+function zObjAt(p, s) { for (const h of (p && p.objHist) || []) if (s < h.until) return ZOBJ[h.o] ? h.o : 'perder'; return zObj(p); }
+const zGain = (p, a) => { const s = startW(p); return s ? (latestW(p, a) - s) / s * 100 : 0; };
+const zDev = (p, a) => { const s = startW(p); return s ? Math.abs(latestW(p, a) - s) / s * 100 : 0; };
+const zInBand = (p, w) => { const s = startW(p); return s ? Math.abs(w - s) / s * 100 <= Z13_BAND + 1e-9 : false; };
+function zBandCount(p, a) { const ws = weighinsUpTo(p, a); if (ws.length < 2) return 0; const first = sortedW(p)[0]; return ws.filter(w => w.date > first.date && zInBand(p, w.w)).length; }
+
+/* ---------- Bônus mensal de XP (emagrecer: igual a antes) ---------- */
+const __z13Month = monthPct;
+monthPct = function (p, mk) {
+  const ld = lastDayOfMonth(mk); const o = zObjAt(p, ld > T() ? T() : ld);
+  if (o === 'perder') return __z13Month.apply(this, arguments);
+  const ws = sortedW(p); const before = ws.filter(w => w.date < mk + '-01'); const inM = ws.filter(w => monthKey(w.date) === mk);
+  if (!inM.length) return 0;
+  // ganhar massa é mais lento: cada 1% ganho vale como 2% (o bônus máximo chega com 2% no mês)
+  if (o === 'ganhar') { const base = before.length ? before[before.length - 1].w : inM[0].w; return (inM[inM.length - 1].w - base) / startW(p) * 100 * 2; }
+  // manter: se todas as pesagens do mês ficaram na faixa, cada uma vale 1 ponto (até 4)
+  const ok = inM.filter(w => zInBand(p, w.w)).length; return ok === inM.length ? Math.min(4, ok) : 0;
+};
+
+/* ---------- Conquistas de balança ---------- */
+const ZACHT = {
+  perder: [['📉', 'Primeiro 1%', 'Perca 1% do peso inicial'], ['🎯', 'Cinco por cento', 'Perca 5% do peso inicial']],
+  ganhar: [['📈', 'Primeiro meio por cento', 'Ganhe 0,5% do peso inicial'], ['🎯', 'Dois e meio', 'Ganhe 2,5% do peso inicial']],
+  manter: [['⚖️', 'Firme', '3 pesagens dentro da faixa de estabilidade'], ['🎯', 'Rocha', '10 pesagens dentro da faixa de estabilidade']]
+};
+let Z13_ACHP = null;
+const z13AchOwner = () => Z13_ACHP || (S && session.pid ? me() : null);
+[['pct1', 0], ['pct5', 1]].forEach(([id, i]) => {
+  const a = ACH.find(x => x.id === id); if (!a) return;
+  const lab = k => () => { const p = z13AchOwner(); return ZACHT[p ? zObj(p) : 'perder'][i][k]; };
+  Object.defineProperty(a, 'icon', { get: lab(0), configurable: true });
+  Object.defineProperty(a, 't', { get: lab(1), configurable: true });
+  Object.defineProperty(a, 'd', { get: lab(2), configurable: true });
+  const need = i === 0 ? { perder: 1, ganhar: .5, manter: 3 } : { perder: 5, ganhar: 2.5, manter: 10 };
+  a.test = (p, at) => { const o = zObj(p); if (o === 'perder') return pctLost(p, at) >= need.perder; if (o === 'ganhar') return zGain(p, at) >= need.ganhar; return zBandCount(p, at) >= need.manter; };
+  ACH_PROG[id] = (p, at) => { const o = zObj(p); if (o === 'perder') return [Math.max(0, Math.round(pctLost(p, at) * 10) / 10), need.perder]; if (o === 'ganhar') return [Math.max(0, Math.round(zGain(p, at) * 10) / 10), need.ganhar]; return [zBandCount(p, at), need.manter]; };
+});
+if (typeof z10MateEvents === 'function') { const __z13Ev = z10MateEvents; z10MateEvents = function (p, m) { Z13_ACHP = m; try { return __z13Ev.apply(this, arguments); } finally { Z13_ACHP = null; } }; }
+
+/* ---------- Caminho até a meta (vale para os três objetivos) ---------- */
+const __z13Pcts = zPcts;
+zPcts = function (p, a, b) {
+  const z = __z13Pcts.apply(this, arguments); const o = zObj(p);
+  if (o === 'ganhar') z.cam = z.sw && z.gw && z.gw > z.sw ? clamp((z.cw - z.sw) / (z.gw - z.sw) * 100, 0, 100) : null;
+  if (o === 'manter') { const dev = z.sw ? Math.abs(z.cw - z.sw) / z.sw * 100 : 0; z.cam = z.sw ? clamp(100 - Math.max(0, dev - Z13_BAND) / Z13_BAND * 100, 0, 100) : null; }
+  return z;
+};
+const __z13PctHTML = zPctHTML;
+zPctHTML = function (p, a, b) { const h = __z13PctHTML.apply(this, arguments); return zObj(p) === 'manter' ? h.replace('Caminho até a meta', 'Peso estável') : h; };
+const __z13PctInfo = zPctInfo;
+zPctInfo = function (k, a, b, pid) {
+  const p = S.players.find(q => q.id === pid) || me(); const o = zObj(p);
+  if (k !== 'cam' || o === 'perder') return __z13PctInfo.apply(this, arguments);
+  const z = zPcts(p, a, b);
+  if (o === 'ganhar') openSheet(`<h2>Caminho até a meta</h2><div class="sub">${z.cam == null ? 'Defina uma meta maior que o peso inicial nas configurações para ver este número.' : `Você já percorreu ${Math.round(z.cam)}% do caminho entre o peso inicial e a meta de ganho.`}</div>
+    <div class="zdl"><div>Peso inicial<em>${z.sw ? fmt1(z.sw) + ' kg' : '–'}</em></div><div>Peso mais recente<em>${z.cw ? fmt1(z.cw) + ' kg' : '–'}</em></div><div>Meta<em>${z.gw ? fmt1(z.gw) + ' kg' : '–'}</em></div></div>
+    <div class="hint" style="margin-top:10px">Ganhar massa com qualidade é devagar: perto de 0,25% a 0,5% do peso por semana.</div>`, {});
+  else { const lo = z.sw * (1 - Z13_BAND / 100), hi = z.sw * (1 + Z13_BAND / 100); openSheet(`<h2>Peso estável</h2><div class="sub">Seu objetivo é manter o peso e caprichar nos hábitos. A faixa boa vai de ${fmt1(lo)} kg a ${fmt1(hi)} kg.</div>
+    <div class="zdl"><div>Peso inicial<em>${fmt1(z.sw)} kg</em></div><div>Peso mais recente<em>${fmt1(z.cw)} kg</em></div><div>Situação<em class="${zInBand(p, z.cw) ? 'ok' : 'no'}">${zInBand(p, z.cw) ? 'Na faixa' : 'Fora da faixa'}</em></div></div>`, {}); }
+};
+
+/* ---------- Pesagem: avisos certos para cada objetivo ---------- */
+const __z13Rec = recordWeigh;
+recordWeigh = function (p, t, vals) {
+  const o = zObjAt(p, t); const prev = sortedW(p).filter(x => x.date < t).pop();
+  const r = __z13Rec.apply(this, arguments); if (o === 'perder') return r;
+  if (prev) {
+    const e = Math.round(vals.w * 10) / 10; const days = Math.max(7, diffDays(prev.date, t)); const wk = (e - prev.w) / startW(p) * 100 * 7 / days;
+    if (o === 'ganhar' && wk > 0.75) setTimeout(() => z13Rhythm(wk), 1300);
+    else if (o === 'ganhar' && e < prev.w) setTimeout(() => toast('A balança desceu um pouco. Normal! Capriche nas refeições e no descanso.', 'violet', '💜'), 900);
+    else if (o === 'manter' && !zInBand(p, e)) setTimeout(() => toast(`Seu peso saiu da faixa de estabilidade (±${fmt1(Z13_BAND)}%). Sem drama: olhe a tendência das próximas semanas.`, 'violet', '⚖️'), 900);
+  }
+  return { fast: 0, up: false, first: r.first };
+};
+function z13Rhythm(pct) {
+  if ($('#overlay')) return toast(`Você ganhou cerca de ${fmt1(pct)}% em uma semana. Vá com calma: o ritmo bom é 0,25% a 0,5%.`, 'violet', '🐢');
+  openSheet(`<div style="width:96px;margin:0 auto">${faiscaSVG('ok')}</div><h2 style="padding:0">Opa, devagar!</h2>
+    <p style="font-weight:700;margin:8px 0">Você ganhou cerca de <b>${fmt1(pct)}% do peso em uma semana</b>. Para ganhar massa com qualidade, o ritmo bom fica perto de 0,25% a 0,5% por semana.</p>
+    <p style="font-weight:700;margin:8px 0 14px" class="muted">Subir rápido demais costuma trazer mais gordura do que músculo. E o bônus mensal para de contar depois de 2% no mês, então correr não dá XP extra. Na dúvida, vale conversar com um nutricionista.</p>
+    <button class="btn" data-act="close">Entendi, vou com calma</button>`, { center: true });
+}
+
+/* ---------- Relatórios: setas e textos certos ---------- */
+let Z13_CUR = null;
+const __z13Delta = deltaHTML;
+deltaHTML = function (cur, prev, f, lowerIsGood) {
+  if (lowerIsGood === true && Z13_CUR) {
+    const o = zObj(Z13_CUR);
+    if (o === 'ganhar') return __z13Delta.call(this, cur, prev, f, false);
+    if (o === 'manter' && prev != null && cur != null && Math.abs(cur - prev) > 1e-9) return `<span class="delta eq">${ARW(cur - prev)} ${f(Math.abs(cur - prev))}</span>`;
+  }
+  return __z13Delta.apply(this, arguments);
+};
+const __z13Week = weekReportHTML;
+weekReportHTML = function (p) { Z13_CUR = p; try { return __z13Week.apply(this, arguments); } finally { Z13_CUR = null; } };
+const __z13MonthRep = monthReportHTML;
+monthReportHTML = function (p, mk) {
+  Z13_CUR = p; let h; try { h = __z13MonthRep.apply(this, arguments); } finally { Z13_CUR = null; }
+  const o = zObjAt(p, lastDayOfMonth(mk) > T() ? T() : lastDayOfMonth(mk)); if (o === 'perder') return h;
+  const ws = sortedW(p); const before = ws.filter(w => w.date < mk + '-01'); const inM = ws.filter(w => monthKey(w.date) === mk);
+  const bonus = Math.round(Math.min(clamp(monthPct(p, mk), 0, 99), 4) * 30); let lab = '';
+  if (inM.length) {
+    if (o === 'ganhar') { const base = before.length ? before[before.length - 1].w : inM[0].w; const g = (inM[inM.length - 1].w - base) / startW(p) * 100; lab = `${g >= 0 ? '+' : '−'}${fmt1(Math.abs(g))}% do peso inicial`; }
+    else lab = inM.every(w => zInBand(p, w.w)) ? 'Peso estável o mês todo ✓' : 'Saiu da faixa em alguma pesagem';
+  }
+  return h.replace(/<span class="pill green">[^<]*% do peso inicial<\/span><span class="pill gold">Bônus do mês: \+\d+ XP<\/span>/, `<span class="pill green">${lab}</span><span class="pill gold">Bônus do mês: +${bonus} XP</span>`);
+};
+
+/* ---------- Placar: cada um com a sua % ---------- */
+function z13Pill(q, t) {
+  const o = zObj(q);
+  if (o === 'ganhar') return `<span class="pill green">📈 +${fmt1(Math.max(0, zGain(q, t)))}%</span>`;
+  if (o === 'manter') { const ok = zInBand(q, latestW(q, t)); return ok ? `<span class="pill green">⚖️ estável</span>` : `<span class="pill">⚖️ ±${fmt1(zDev(q, t))}%</span>`; }
+  return `<span class="pill green">📉 ${fmt1(Math.max(0, pctLost(q, t)))}%</span>`;
+}
+const __z13Rank = rankHTML;
+rankHTML = function () {
+  let h = __z13Rank.apply(this, arguments); const t = T(); const mode = session.rankMode || 'geral';
+  const rows = rankRows(S.players, t, mode === 'semana'); let i = 0;
+  h = h.replace(/<span class="pill green">📉 [\d.,]+%<\/span>/g, m => { const r = rows[i++]; return r ? z13Pill(r.p, t) : m; });
+  return h.replace('Aqui aparecem apenas XP, nível, sequência e a % de peso perdido.', 'Aqui aparecem só XP, nível, sequência e a % de progresso de cada um: 📉 quem emagrece, 📈 quem ganha massa e ⚖️ quem mantém.');
+};
+
+/* ---------- Perfil ---------- */
+const __z13Prof = profileHTML;
+profileHTML = function () {
+  let h = __z13Prof.apply(this, arguments); const p = me(); if (!p || !S.room) return h; const t = T(); const o = zObj(p); const ob = ZOBJ[o];
+  h = h.replace(`desde ${fmtDay(S.room.start)}.</div>`, `desde ${fmtDay(S.room.start)}.</div><button class="zobj-tag" data-act="settings">${ob.ic} ${ob.t}</button>`);
+  if (o === 'ganhar') {
+    h = h.replace(/<div class="si">📉<\/div><div><div class="v">[\d.,]+%<\/div><div class="k">Do peso perdido<\/div>/, `<div class="si">📈</div><div><div class="v">+${fmt1(Math.max(0, zGain(p, t)))}%</div><div class="k">De peso ganho</div>`);
+    h = h.replace(/(<span class="muted">Até a meta<\/span><b>)[\d.,]+ kg(<\/b>)/, `$1${fmt1(Math.max(0, (+p.goalWeight || 0) - latestW(p, t)))} kg$2`);
+  } else if (o === 'manter') {
+    const ok = zInBand(p, latestW(p, t));
+    h = h.replace(/<div class="si">📉<\/div><div><div class="v">[\d.,]+%<\/div><div class="k">Do peso perdido<\/div>/, `<div class="si">⚖️</div><div><div class="v">${ok ? 'Estável' : '±' + fmt1(zDev(p, t)) + '%'}</div><div class="k">${ok ? 'Peso na faixa' : 'Fora da faixa'}</div>`);
+    h = h.replace(/(<span class="muted">)Até a meta(<\/span><b>)[\d.,]+ kg(<\/b>)/, `$1Faixa de estabilidade$2${fmt1(startW(p) * (1 - Z13_BAND / 100))} a ${fmt1(startW(p) * (1 + Z13_BAND / 100))} kg$3`);
+  }
+  return h;
+};
+function z13BalStop(p, t) {
+  const o = zObj(p);
+  if (o === 'ganhar') return { ic: '📈', k: 'A balança', big: '+' + fmt1(Math.max(0, zGain(p, t))) + '%', s: 'De peso ganho rumo à sua meta. Esse número é só seu.' };
+  if (o === 'manter') return { ic: '⚖️', k: 'A balança', big: zInBand(p, latestW(p, t)) ? 'Estável' : '±' + fmt1(zDev(p, t)) + '%', s: 'Seu peso em relação ao início. Constância é tudo.' };
+  return { ic: '📉', k: 'A balança', big: fmt1(Math.max(0, pctLost(p, t))) + '%', s: 'Do seu peso inicial. Esse número é só seu.' };
+}
+
+/* ---------- Cadastro: escolha do objetivo ---------- */
+function z13Step3(ob) {
+  const o = ob.obj || 'perder';
+  const chips = Object.entries(ZOBJ).map(([k, v]) => `<button class="zobj ${o === k ? 'on' : ''}" data-act="z13-obj" data-v="${k}"><span>${v.ic}</span><b>${v.t}</b><small>${v.s}</small></button>`).join('');
+  const goal = o === 'manter' ? '' : `<div class="field"><span>${o === 'ganhar' ? 'Meta de peso (ganho) até 31/12' : 'Meta de peso até 31/12'}</span><div class="big-input"><input id="obGoal" type="number" inputmode="decimal" step="0.1" value="${ob.goal || ''}" placeholder="${o === 'ganhar' ? '68,0' : '78,0'}" aria-label="Meta de peso em kg"><span>kg</span></div></div>`;
+  const hint = {
+    perder: 'Uma meta realista fica perto de 0,5% a 1% do peso por semana. Até o Réveillon são umas 13 semanas.',
+    ganhar: 'Para ganhar massa com qualidade, o ritmo bom é de 0,25% a 0,5% do peso por semana. Até o Réveillon, algo como 2 a 4 kg.',
+    manter: `O foco aqui são os hábitos. O peso de hoje vira a referência, e a ideia é ficar perto dele (${fmt1(Z13_BAND)}% para mais ou para menos).`
+  }[o];
+  return `<div class="zobj-row">${chips}</div>
+    <div class="field"><span>Peso atual</span><div class="big-input"><input id="obW" type="number" inputmode="decimal" step="0.1" value="${ob.w || ''}" placeholder="${o === 'ganhar' ? '62,0' : '85,0'}" aria-label="Peso atual em kg"><span>kg</span></div></div>
+    ${goal}<div class="hint">${hint} Os quilos ficam só com você: na sala, sua dupla vê só a sua % de progresso.</div>`;
+}
+const __z13Wel = _welcomeHTML;
+_welcomeHTML = function () {
+  const h = __z13Wel.apply(this, arguments); const ob = session.ob; if (!ob || ob.step !== 3) return h;
+  return h.replace('Qual é o seu ponto de partida?', 'Qual é o seu objetivo?').replace(/<div class="field"><span>Peso atual<\/span>[\s\S]*?<div class="hint">[\s\S]*?<\/div>/, z13Step3(ob));
+};
+const z13Num = id => { const el = document.getElementById(id); return el ? parseFloat(String(el.value || '').replace(',', '.')) : NaN; };
+ACT['z13-obj'] = el => {
+  const ob = session.ob; if (!ob) return; const w = z13Num('obW'), g = z13Num('obGoal');
+  if (w >= 30 && w <= 300) { if (ob.w !== w) ob.water = 0; ob.w = Math.round(w * 10) / 10; }
+  if (g >= 30 && g <= 300) ob.goal = Math.round(g * 10) / 10;
+  if ((ob.obj || 'perder') !== el.dataset.v) ob.goal = null;
+  ob.obj = el.dataset.v; render(); sfx('tap');
+};
+const __z13Next = obNext;
+obNext = function () {
+  const ob = session.ob; if (!ob || ob.step !== 3) return __z13Next.apply(this, arguments);
+  const o = ob.obj || 'perder'; const w = z13Num('obW');
+  if (!(w >= 30 && w <= 300)) return toast('Digite seu peso atual em kg.', 'red', '⚖️');
+  const g = o === 'manter' ? w : z13Num('obGoal');
+  if (o === 'perder' && !(g >= 30 && g < w)) return toast('Para emagrecer, a meta precisa ser menor que o peso atual.', 'red', '🎯');
+  if (o === 'ganhar' && !(g > w && g <= 300)) return toast('Para ganhar massa, a meta precisa ser maior que o peso atual.', 'red', '🎯');
+  if (o === 'ganhar' && g > w * 1.15) return toast('Essa meta é alta demais para até o Réveillon. Tente algo mais perto do seu peso atual.', 'red', '🎯');
+  if (ob.w !== w) ob.water = 0;
+  ob.w = Math.round(w * 10) / 10; ob.goal = Math.round(g * 10) / 10; ob.obj = o; ob.step++; render();
+};
+const __z13Fin = obFinish;
+obFinish = function () {
+  const o = session.ob && session.ob.obj; const r = __z13Fin.apply(this, arguments);
+  if (o && o !== 'perder' && S) { const p = me(); if (p) { p.obj = o; save(); if ($('#main')) renderMain(true); } }
+  return r;
+};
+
+/* ---------- Configurações: trocar o objetivo ---------- */
+const __z13Set = openSettings;
+openSettings = function () {
+  const r = __z13Set.apply(this, arguments);
+  try {
+    const p = me(); session.z13so = zObj(p); const g = $('#sGoal'); const lab = g && g.closest('label');
+    if (lab) lab.insertAdjacentHTML('beforebegin', `<div class="field"><span>Objetivo</span><div class="zobj-row sm">${Object.entries(ZOBJ).map(([k, v]) => `<button class="zobj ${session.z13so === k ? 'on' : ''}" data-act="z13-sobj" data-v="${k}"><span>${v.ic}</span><b>${v.t}</b></button>`).join('')}</div><div class="hint" id="z13Hint"></div></div>`);
+    z13SetHint();
+  } catch (e) { }
+  return r;
+};
+function z13SetHint() {
+  const el = $('#z13Hint'); if (!el) return; const p = me(); const o = session.z13so; const lw = fmt1(latestW(p, T()));
+  el.textContent = o === zObj(p) ? { perder: `Para emagrecer, a meta fica abaixo do seu peso mais recente (${lw} kg).`, ganhar: `Para ganhar massa, a meta fica acima do seu peso mais recente (${lw} kg).`, manter: 'No manter, a meta de peso não importa: vale ficar perto do peso inicial.' }[o]
+    : 'Mudar o objetivo não mexe no XP que você já ganhou. Daqui pra frente, a balança conta do jeito novo.';
+}
+ACT['z13-sobj'] = el => { session.z13so = el.dataset.v; $$('#overlay [data-act="z13-sobj"]').forEach(b => b.classList.toggle('on', b.dataset.v === el.dataset.v)); z13SetHint(); };
+const __z13Save = saveSettings;
+saveSettings = function () {
+  const p = me(); const o = session.z13so || zObj(p); const lw = latestW(p, T()); const g = z13Num('sGoal');
+  if (o === 'perder' && g >= 30 && g >= lw) return toast(`Para emagrecer, a meta precisa ser menor que ${fmt1(lw)} kg.`, 'red', '🎯');
+  if (o === 'ganhar' && g >= 30 && g <= lw) return toast(`Para ganhar massa, a meta precisa ser maior que ${fmt1(lw)} kg.`, 'red', '🎯');
+  const before = zObj(p); const r = __z13Save.apply(this, arguments);
+  if (o !== before && !$('#overlay')) { p.objHist = (p.objHist || []).concat([{ o: before, until: T() }]); p.obj = o; save(); renderMain(true); toast(`Objetivo agora: ${ZOBJ[o].ic} ${ZOBJ[o].t}`, 'green', ZOBJ[o].ic); }
+  return r;
+};
+ZNEWS.unshift(['💪', 'Cada um com o seu objetivo', 'Agora dá para escolher entre emagrecer, ganhar massa ou manter e definir. Na mesma sala, cada um é medido pelo próprio objetivo.']);
+try { if (S && session.pid && $('#main')) renderMain(true); } catch (e) { }
+</script>
+<style>
+.zobj-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 6px}
+.zobj{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;border:2px solid var(--line);border-bottom-width:4px;border-radius:16px;background:var(--card);padding:10px 4px;font:inherit;color:var(--ink)}
+.zobj span{font-size:26px;line-height:1.1}.zobj b{font-size:13.5px;font-weight:900;line-height:1.15}.zobj small{font-size:11px;color:var(--ink-2);font-weight:800;line-height:1.2}
+.zobj.on{border-color:var(--green-line);background:var(--green-soft);color:var(--green-d)}
+.zobj-row.sm .zobj{padding:8px 4px}.zobj-row.sm .zobj span{font-size:22px}
+.zobj-tag{display:inline-flex;align-items:center;gap:6px;margin-top:8px;border:0;border-radius:99px;padding:5px 12px;background:var(--card);color:var(--ink);font:inherit;font-size:13px;font-weight:900;box-shadow:0 2px 0 var(--line)}
 </style>
 
 </body>
