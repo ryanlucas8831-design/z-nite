@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '2.5';
+const ZV = '2.6';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -6127,7 +6127,7 @@ let z11Q = Promise.resolve();
 zScheduleNative = function () { z11Q = z11Q.then(() => z11Run()).catch(e => { try { localStorage.setItem(Z11_KEY + '-erro', String(e && e.message || e)); } catch (x) { } }); return z11Q; };
 
 /* ---------- Painel "Seus avisos" na tela de Lembretes ---------- */
-const Z11_BAT = `<ol class="z11-steps"><li>Abra <b>Configurações</b> do tablet › <b>Apps</b> › <b>Zenit</b> › <b>Bateria</b> e escolha <b>Sem restrições</b>.</li>
+const Z11_BAT = `<ol class="z11-steps"><li>Abra <b>Configurações</b> do aparelho › <b>Apps</b> › <b>Zenit</b> › <b>Bateria</b> e escolha <b>Sem restrições</b>.</li>
   <li>Em <b>Configurações</b> › <b>Assistência do aparelho e bateria</b> › <b>Bateria</b> › <b>Limites de uso em segundo plano</b>: tire o Zenit de <b>Apps em suspensão</b> e de <b>Apps em suspensão profunda</b>, e coloque em <b>Apps que nunca são suspensos</b>.</li>
   <li>Em <b>Configurações</b> › <b>Apps</b> › <b>Zenit</b> › <b>Notificações</b>: deixe tudo ligado.</li>
   <li>Volte aqui e toque em <b>Testar com o app fechado</b>.</li></ol>`;
@@ -6860,6 +6860,957 @@ try { if (S && session.pid && $('#main')) renderMain(true); } catch (e) { }
 .zobj.on{border-color:var(--green-line);background:var(--green-soft);color:var(--green-d)}
 .zobj-row.sm .zobj{padding:8px 4px}.zobj-row.sm .zobj span{font-size:22px}
 .zobj-tag{display:inline-flex;align-items:center;gap:6px;margin-top:8px;border:0;border-radius:99px;padding:5px 12px;background:var(--card);color:var(--ink);font:inherit;font-size:13px;font-weight:900;box-shadow:0 2px 0 var(--line)}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 2.6 · Salas
+   Minha sala, sair com confirmação, entrar vendo a sala antes,
+   salas anteriores, limite de 2 a 10, poderes do dono, link de
+   convite, ícone da sala e modo grupo automático (3 ou mais).
+   Com 2 pessoas tudo continua exatamente como antes.
+   ========================================================= */
+const Z14_ICONS = ['🏆', '💪', '🔥', '🏋️', '🌴', '⚡', '🥇', '🚀', '🌟', '🍉', '🦁', '🎯'];
+const Z14_MAXDEF = 10;
+const zGroup = () => !!(S && S.players && S.players.length > 2);
+const z14Uid = () => (ZFB.user && ZFB.user.uid) || '';
+const z14Max = () => (S && S.room && S.room.max) || 2;
+const z14Owner = () => (S && S.room && (S.room.owner || (S.room.members || [])[0])) || '';
+const z14IsOwner = () => !!z14Uid() && z14Owner() === z14Uid();
+const z14Title = r => (r && r.name) ? r.name : 'Sala ' + ((r && r.code) || '');
+const z14Icon = r => (r && r.icon) || '🏆';
+const z14Code = c => String(c || '').trim().toUpperCase().replace(/\s+/g, '');
+const z14Ord = n => n + 'º';
+function z14Link(code) { let base = location.origin + location.pathname; if (!/^https?:/.test(base)) base = 'https://ryanlucas8831-design.github.io/z-nite/'; return base + '?sala=' + encodeURIComponent(code); }
+function z14Wait(pr, ms) { return Promise.race([pr, new Promise((_, no) => setTimeout(() => no(new Error('timeout')), ms || 9000))]); }
+
+/* ---------- Quem entrou depois não mexe no passado da sala ---------- */
+// Cada pessoa conta nos desafios em grupo, duelos, Sexta do X1 e chefão a partir do dia em que entrou.
+let z14Full = null;
+function z14With(list, fn) { const prev = S.players; const top = z14Full == null; if (top) z14Full = prev; S.players = list; try { return fn(); } finally { S.players = prev; if (top) z14Full = null; } }
+const z14AllP = () => z14Full || S.players;
+function z14Eff(q) {
+  const J = S.room && S.room.joined; if (!J) return null; const u = q.remote ? q.uid : (S.cloud && S.cloud.uid); const j = u && J[u]; if (!j) return null;
+  return j <= addDays(weekKey(S.room.start), 6) ? S.room.start : j;
+}
+function z14ActiveOn(s) { const all = z14AllP(); const l = all.filter(q => { const e = z14Eff(q); return !e || e <= s; }); return l.length === all.length || !l.length ? null : l; }
+const z14HasJ = () => !!(S && S.room && S.room.joined && Object.keys(S.room.joined).length);
+const __z14DuelR = duelResult;
+duelResult = function (s) { if (!z14HasJ()) return __z14DuelR.apply(this, arguments); const l = z14ActiveOn(s); return l ? memo('du14|' + s, () => z14With(l, () => { CACHE.delete('du|' + s); const r = __z14DuelR(s); CACHE.delete('du|' + s); return r; })) : __z14DuelR(s); };
+const __z14TeamF = z10Team;
+z10Team = function (wk) { if (!z14HasJ()) return __z14TeamF.apply(this, arguments); const l = z14ActiveOn(wk > S.room.start ? wk : S.room.start); return l ? memo('ztm14|' + wk, () => z14With(l, () => { CACHE.delete('ztm|' + wk); const r = __z14TeamF(wk); CACHE.delete('ztm|' + wk); return r; })) : __z14TeamF(wk); };
+const __z14Boss = bossState;
+bossState = function (key, asOf) {
+  if (!z14HasJ() || !z14ActiveOn(asOf) && !z14AllP().some(q => z14Eff(q) && z14Eff(q) > S.room.start)) return __z14Boss.apply(this, arguments);
+  return memo('bo14|' + key + '|' + asOf, () => {
+    const b = BOSSES[key]; if (!b || !S.room) return null;
+    const from = key === '10' ? (S.room.start < b.start ? S.room.start : b.start) : b.start;
+    if (asOf < from) return { key, boss: b, dmg: 0, defeat: null, from, started: false };
+    const to = asOf < b.end ? asOf : b.end; let dmg = 0, defeat = null; const per = {};
+    for (const s of range(from, to)) {
+      for (const p of z14AllP()) {
+        const e = z14Eff(p); if (e && e > s) continue;
+        const d = dget(p, s); const v = b.metric === 'treinos' ? (d.workout ? 1 : 0) : b.metric === 'agua' ? (d.water || 0) / 1000 : (planDay(d) ? 1 : 0);
+        dmg += v; per[p.id] = (per[p.id] || 0) + v;
+      }
+      if (!defeat && dmg >= b.hp) defeat = s;
+    }
+    return { key, boss: b, dmg, defeat, per, from, started: true, over: asOf > b.end };
+  });
+};
+
+/* ---------- XP que acompanha você entre salas ---------- */
+// O XP que veio da sala (desafio em grupo, X1 e Sexta do X1) fica guardado quando você troca de sala.
+function z14Derived(p, asOf) {
+  const out = []; if (!S || !S.room || !S.players.some(q => q.id === p.id)) return out;
+  const ok = s => s && s <= asOf && s >= S.room.start;
+  for (let wk = weekKey(zFrom()); wk <= weekKey(asOf); wk = addDays(wk, 7)) { const tm = z10Team(wk); if (tm.doneAt && ok(tm.doneAt)) out.push([tm.doneAt, 40]); }
+  for (const x of z10X1Results()) { if (!ok(x.day)) continue; if (x.winner === p.id) out.push([x.day, x.stake]); else if (x.loser === p.id) out.push([x.day, -x.stake]); }
+  for (const fri of z10Fridays(zFrom(), asOf)) { const ax = z10AutoX1(fri); if (ax.state === 'done' && ax.winner === p.id && ok(ax.ss[1])) out.push([ax.ss[1], 30]); }
+  return out;
+}
+const __z14XP = xpInfo;
+xpInfo = function (p, asOf) {
+  if (!p || (!p.carry && !p.roomSince)) return __z14XP.apply(this, arguments);
+  return memo('xp14|' + p.id + '|' + asOf, () => {
+    const r = __z14XP(p, asOf); if (!S.room) return r;
+    const byDate = Object.assign({}, r.byDate); const cat = Object.assign({}, r.cat); let total = r.total;
+    const add = (s, c, v) => { if (!v || !s || s > asOf) return; byDate[s] = (byDate[s] || 0) + v; cat[c] = (cat[c] || 0) + v; total += v; };
+    for (const c of p.carry || []) add(c.date, 'sala', c.xp);
+    if (p.roomSince) for (const [s, v] of z14Derived(p, asOf)) if (s < p.roomSince) add(s, 'sala', -v);
+    return { total: Math.max(0, total), byDate, cat };
+  });
+};
+function z14Carry(p, fn) {
+  const t = T(); CACHE = new Map(); const a = xpInfo(p, t).total;
+  fn(); CACHE = new Map(); const b = xpInfo(p, t).total;
+  if (a !== b) { p.carry = (p.carry || []).concat([{ date: t, xp: a - b }]); CACHE = new Map(); }
+}
+
+/* ---------- Sala na nuvem (refeito para salas de até 10) ---------- */
+const __z14Adopt = zfbAdoptRoom;
+zfbAdoptRoom = function (d) {
+  const r = __z14Adopt.apply(this, arguments);
+  if (d && S && S.room) {
+    S.room.name = d.name || ''; S.room.icon = d.icon || '🏆'; S.room.max = d.max || 2;
+    S.room.members = (d.members || []).slice(); S.room.joined = Object.assign({}, d.joined || {}); S.room.owner = d.owner || S.room.members[0] || '';
+  }
+  return r;
+};
+function z14ApplyPlayers() {
+  const uid = z14Uid(); const mem = S && S.room && S.room.members; if (!S || !ZFB.lastPlayers) return false;
+  let changed = false;
+  for (const [id, data] of ZFB.lastPlayers) {
+    if (id === uid || (mem && mem.length && !mem.includes(id))) continue;
+    let o; try { o = JSON.parse(data.p); } catch (e) { continue; }
+    o.remote = true; o.uid = id; o.pin = '';
+    const i = S.players.findIndex(x => x.remote && (x.uid === id || x.id === o.id));
+    const s = JSON.stringify(o); if (i > -1 && JSON.stringify(S.players[i]) === s) continue;
+    if (i > -1) S.players[i] = o; else S.players.push(o);
+    changed = true;
+  }
+  return changed;
+}
+// Alguém saiu ou foi removido: o seu XP fica como estava.
+function z14DropMembers(gone) {
+  const p = zfbMine() || me(); const names = [];
+  for (const u of gone) {
+    const i = S.players.findIndex(x => x.remote && x.uid === u); if (i < 0) continue;
+    names.push(S.players[i].name);
+    z14Carry(p, () => { S.players.splice(i, 1); });
+  }
+  if (names.length) { zfbSilentSave(); setTimeout(() => toast(`${names.join(' e ')} saiu da sala.`, 'violet', '👋'), 300); }
+}
+zfbLinkRoom = async function () {
+  if (!zfbOn()) return;
+  const { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, onSnapshot, collection } = ZFB.m;
+  const uid = ZFB.user.uid; const code = z14Code(S.room.code); const p = zfbMine(); if (!code || !p) return;
+  const ref = doc(ZFB.db, 'rooms', code);
+  let snap;
+  try { snap = await getDoc(ref); } catch (e) { ZFB.err = 'offline'; return; }
+  if (ZFB.linked) return;
+  if (!snap.exists()) {
+    if (S.room.wantJoin) return zfbRoomMissing(code);
+    const max = S.room.max || Z14_MAXDEF;
+    await setDoc(ref, { code, start: S.room.start, end: S.room.end, prize: S.room.prize, members: [uid], names: { [uid]: p.name }, pets: { [uid]: p.pet }, joined: { [uid]: T() }, owner: uid, name: S.room.name || '', icon: S.room.icon || '🏆', max, cw: S.challengeWeeks || {}, rr: S.rerolled || {}, createdAt: serverTimestamp() });
+    Object.assign(S.room, { members: [uid], joined: { [uid]: T() }, owner: uid, max, icon: S.room.icon || '🏆', name: S.room.name || '' });
+  } else {
+    const d = snap.data() || {}; const mem = d.members || [];
+    if (!mem.includes(uid)) {
+      if ((d.kicked || []).includes(uid)) { if (S.room.wantJoin) return z14Blocked(code); return z14Removed(code, d); }
+      if (mem.length >= (d.max || 2)) return zfbRoomFull(code, d);
+      await updateDoc(ref, { members: arrayUnion(uid), ['names.' + uid]: p.name, ['pets.' + uid]: p.pet, ['joined.' + uid]: T() });
+      d.members = mem.concat(uid); d.joined = Object.assign({}, d.joined, { [uid]: T() }); d.names = Object.assign({}, d.names, { [uid]: p.name });
+    } else if (!(d.pets || {})[uid] || (d.names || {})[uid] !== p.name) updateDoc(ref, { ['names.' + uid]: p.name, ['pets.' + uid]: p.pet }).catch(() => { });
+    zfbAdoptRoom(d);
+  }
+  S.room.code = code; S.room.wantJoin = false; S.cloud.room = code; zfbSilentSave();
+  ZFB.linked = code; ZFB.lastPlayers = null;
+  ZFB.offRoom = onSnapshot(ref, s => {
+    if (ZFB.linked !== code || !s.exists()) return;
+    const d = s.data() || {};
+    if (!(d.members || []).includes(uid)) return z14Removed(code, d);
+    const gone = (S.room.members || []).filter(u => u !== uid && !(d.members || []).includes(u));
+    if (gone.length) z14DropMembers(gone);
+    zfbAdoptRoom(d);
+    z14ApplyPlayers();
+    zfbSilentSave(); zfbRerender();
+  }, () => { });
+  ZFB.offPlayers = onSnapshot(collection(ref, 'players'), qs => {
+    if (ZFB.linked !== code) return;
+    const arr = []; qs.forEach(d => arr.push([d.id, d.data() || {}])); ZFB.lastPlayers = arr;
+    if (z14ApplyPlayers()) { zfbSilentSave(); zfbRerender(); }
+  }, () => { });
+  zfbPushMe(); zfbPushBackup();
+};
+function zfbRoomFull(code, d) {
+  const n = d ? (d.members || []).length : 2; const max = d ? (d.max || 2) : 2;
+  openSheet(`<h2>Sala cheia</h2><div class="sub">A sala <b>${esc(d && d.name ? d.name : code)}</b> já está com ${n} de ${max} pessoas. Peça para o dono aumentar o limite, digite outro código ou crie uma sala sua.</div>
+    <label class="field"><span>Código da sala</span><input class="input" id="zfbCode" value="" placeholder="SHAPE-XXX" autocapitalize="characters" style="text-transform:uppercase"></label>
+    <div style="margin-top:12px"><button class="btn" data-act="zfb-code">Ver essa sala</button></div>
+    <div style="margin-top:10px"><button class="btn sec" data-act="zfb-newroom">Criar uma sala minha</button></div>`, {});
+}
+ACT['zfb-code'] = () => { const c = z14Code(($('#zfbCode') || {}).value); if (c.length < 4) return toast('Digite o código da sala.', 'red', '🔑'); z14Preview(c); };
+ACT['zfb-newroom'] = () => { closeSheet(true); z14Move(null); };
+zfbSwitchRoom = function (code, join) { if (join) return z14Preview(code); closeSheet(true); return z14Move(null); };
+
+/* ---------- Trocar de sala (sair, entrar, ser removido) ---------- */
+function z14Hist(kicked) {
+  if (!S || !S.room || !S.room.code) return;
+  const others = S.players.filter(q => q.remote).map(q => q.name);
+  if (!others.length && !S.room.name && !kicked) return; // sala vazia não entra no histórico
+  S.roomsHist = (S.roomsHist || []).filter(h => h.code !== S.room.code);
+  S.roomsHist.unshift({ code: S.room.code, name: S.room.name || '', icon: S.room.icon || '🏆', with: others, left: T(), kicked: !!kicked });
+  S.roomsHist = S.roomsHist.slice(0, 12);
+}
+async function z14CloudLeave(code) {
+  if (!zfbOn() || !code) return;
+  const { doc, updateDoc, arrayRemove, deleteField, deleteDoc } = ZFB.m; const uid = ZFB.user.uid; const ref = doc(ZFB.db, 'rooms', code);
+  const upd = { members: arrayRemove(uid), ['names.' + uid]: deleteField(), ['pets.' + uid]: deleteField(), ['joined.' + uid]: deleteField() };
+  if (S.room.code === code && z14Owner() === uid) { const rest = (S.room.members || []).filter(u => u !== uid); if (rest.length) upd.owner = rest[0]; }
+  await z14Wait(updateDoc(ref, upd));
+  try { await z14Wait(deleteDoc(doc(ZFB.db, 'rooms', code, 'players', uid)), 5000); } catch (e) { }
+}
+// Muda para outra sala. dest = { code, d } para entrar numa sala que existe; null para uma sala nova só sua.
+async function z14Move(dest, opt) {
+  opt = opt || {}; const p = zfbMine() || me(); if (!p) return;
+  const old = S.room.code; const wasLinked = ZFB.linked === old;
+  zfbStop();
+  if (!opt.noCloud && old && wasLinked) { try { await z14CloudLeave(old); } catch (e) { if (!opt.force) { toast('Sem internet agora. Conecte e tente de novo.', 'red', '📶'); zfbLinkRoom(); return false; } } }
+  z14Hist(opt.kicked);
+  const d = dest ? dest.d || {} : null;
+  z14Carry(p, () => {
+    S.players = S.players.filter(q => !q.remote); S.room.x1 = {}; p.roomSince = T();
+    if (d) { if (d.start) S.room.start = d.start; if (d.end) S.room.end = d.end; }
+  });
+  const keep = { start: S.room.start, end: S.room.end, prize: S.room.prize };
+  if (dest) S.room = Object.assign(keep, { code: dest.code, prize: d.prize || keep.prize, wantJoin: true });
+  else S.room = Object.assign(keep, { code: zfbNewCode(), name: opt.name || '', icon: opt.icon || '🏆', max: opt.max || Z14_MAXDEF, wantJoin: false });
+  CACHE = new Map(); save();
+  if (zfbOn()) await zfbLinkRoom();
+  if ($('#main')) renderMain(true);
+  return true;
+}
+function z14Removed(code, d) {
+  if (ZFB.linked && ZFB.linked !== code) return;
+  const nm = (d && d.name) || 'Sala ' + code;
+  z14Move(null, { noCloud: true, kicked: true, force: true }).then(() => {
+    setTimeout(() => openSheet(`<div style="text-align:center;font-size:54px">👋</div><h2 style="text-align:center">Você não está mais na ${esc(nm)}</h2>
+      <div class="sub" style="text-align:center">O dono da sala tirou você. Seu XP, seu nível e seus registros continuam todos com você.</div>
+      <div class="card"><b>Agora você está numa sala só sua: ${esc(S.room.code)}</b><div class="sub">Convide alguém ou entre em outra sala com um código.</div></div>
+      <div style="margin-top:12px"><button class="btn" data-act="z14-room">Ver minha sala</button></div>`, { center: true }), 500);
+  });
+}
+function z14Blocked(code) {
+  S.room.wantJoin = false; zfbSilentSave();
+  openSheet(`<h2>Não dá para entrar</h2><div class="sub">O dono da sala <b>${esc(code)}</b> tirou você dela. Peça um código de outra sala ou crie uma sua.</div><div style="margin-top:12px"><button class="btn" data-act="zfb-newroom">Criar uma sala minha</button></div>`, {});
+}
+
+/* ---------- Telas ---------- */
+const z14Av = (pet, sz) => `<span class="z14-av" style="width:${sz || 44}px;height:${sz || 44}px;background:${petOf({ pet }).color}22">${petSVG(pet || 'gota', { mood: 'feliz', stage: 1, anim: false })}</span>`;
+function z14Members() {
+  const uid = z14Uid(); const own = z14Owner(); const p = me();
+  return S.players.map(q => ({ q, uid: q.remote ? q.uid : uid, me: q.id === p.id })).sort((a, b) => (b.me - a.me) || (a.q.name || '').localeCompare(b.q.name || ''))
+    .map(m => ({ ...m, owner: !!own && m.uid === own }));
+}
+function z14RoomHTML() {
+  const on = zfbOn(); const r = S.room; const mem = z14Members(); const n = S.players.length; const max = z14Max(); const own = z14IsOwner();
+  const mode = n > 2 ? `<span class="pill violet">Modo grupo</span>` : n === 2 ? `<span class="pill green">Modo dupla</span>` : `<span class="pill">Esperando a turma</span>`;
+  let h = `<div class="z14-head"><div class="z14-ic">${z14Icon(r)}</div><div class="grow"><h2>${esc(z14Title(r))}</h2><div class="z14-meta">${mode}<span class="pill">${n} de ${max} ${plural(max, 'pessoa', 'pessoas')}</span></div></div></div>
+    <div class="card z14-code"><div class="grow"><small>Código da sala</small><b>${esc(r.code)}</b></div><button class="btn xs sec" data-act="copy-code">Copiar</button></div>`;
+  if (!on) {
+    return h + `<div class="card tint-water"><b>A sala online precisa da sua conta.</b><div class="sub">Entre na conta para ver quem está na sala, convidar, sair ou entrar em outra.</div><div style="margin-top:10px"><button class="btn sm" data-act="zfb-open">Entrar na conta</button></div></div>`;
+  }
+  if (!ZFB.linked) h += `<div class="card tint-fire"><b>Você ainda não está conectado a esta sala.</b><div class="sub">Ela pode estar cheia, não existir mais ou faltar internet.</div><div class="grid2" style="margin-top:10px"><button class="btn sm sec" data-act="z14-relink">Tentar de novo</button><button class="btn sm sec" data-act="z14-join">Outro código</button></div></div>`;
+  h += `<div class="h2">Quem está na sala</div><div class="card z14-list" style="margin-top:0">${mem.map(m => `<div class="z14-m">${z14Av(m.q.pet)}<div class="grow"><b>${esc(m.q.name)}${m.me ? ' (você)' : ''}</b><span>${m.owner ? '👑 Dono da sala · ' : ''}Nível ${levelOf(xpInfo(m.q, T()).total) + 1} · ${fmtInt(xpInfo(m.q, T()).total)} XP</span></div>${own && !m.me ? `<button class="zmini" data-act="z14-kick" data-u="${esc(m.uid)}">Remover</button>` : ''}</div>`).join('')}
+    ${n < max ? `<div class="z14-empty">${'<i></i>'.repeat(Math.min(max - n, 8))}<span>${max - n} ${plural(max - n, 'vaga livre', 'vagas livres')}</span></div>` : '<div class="hint">A sala está cheia.</div>'}</div>
+    <button class="btn" data-act="z14-invite" style="margin-top:4px">📨 Convidar para a sala</button>`;
+  if (own) h += `<button class="btn sec" data-act="z14-edit" style="margin-top:10px">✏️ Editar nome, ícone e limite</button>`;
+  else h += `<div class="hint" style="text-align:center">Só o dono da sala muda o nome, o ícone e o limite.</div>`;
+  h += `<div class="h2">Outras salas</div><div class="card" style="margin-top:0">
+    <button class="z14-row" data-act="z14-join"><span>🔑</span><span class="grow"><b>Entrar em outra sala</b><small>Com o código ou o link de convite</small></span><em>›</em></button>
+    <button class="z14-row" data-act="z14-new"><span>🏠</span><span class="grow"><b>Criar uma sala nova</b><small>Você escolhe o nome e o tamanho</small></span><em>›</em></button>
+    <button class="z14-row" data-act="z14-hist"><span>🕘</span><span class="grow"><b>Salas anteriores</b><small>${(S.roomsHist || []).length ? (S.roomsHist.length + ' ' + plural(S.roomsHist.length, 'sala', 'salas')) : 'Nenhuma ainda'}</small></span><em>›</em></button></div>
+    <button class="btn gray" data-act="z14-leave" style="margin-top:6px">Sair da sala</button>`;
+  return h;
+}
+function z14Open() { openSheet(`<div id="z14Sheet">${z14RoomHTML()}</div>`, {}); }
+function z14Refresh() { const el = $('#z14Sheet'); if (el) el.innerHTML = z14RoomHTML(); }
+
+function z14EditHTML() {
+  const e = session.z14e; const min = Math.max(2, S.players.length);
+  return `<h2>Editar a sala</h2><div class="sub">Só o dono vê esta tela. As mudanças aparecem para todo mundo.</div>
+    <label class="field"><span>Nome da sala</span><input class="input" id="z14Name" maxlength="24" value="${esc(e.name)}" placeholder="Ex.: Rumo ao Réveillon"></label>
+    <div class="field"><span>Ícone</span><div class="z14-icons">${Z14_ICONS.map(i => `<button class="${e.icon === i ? 'on' : ''}" data-act="z14-ic" data-v="${i}">${i}</button>`).join('')}</div></div>
+    <div class="field"><span>Limite de pessoas</span><div class="zstep"><button data-act="z14-max" data-d="-1" ${e.max <= min ? 'disabled' : ''}>−</button><b>${e.max}</b><button data-act="z14-max" data-d="1" ${e.max >= 10 ? 'disabled' : ''}>+</button></div>
+      <div class="hint" style="text-align:center">${e.max === 2 ? 'Sala de dupla: o placar é um contra um.' : `Com mais de 2 pessoas, o placar vira modo grupo, com pódio.`}${S.players.length > 2 ? ` Hoje a sala tem ${S.players.length}.` : ''}</div></div>
+    <div style="margin-top:14px"><button class="btn" data-act="z14-edit-save">Salvar</button></div>`;
+}
+function z14NewHTML() {
+  const e = session.z14n;
+  return `<h2>Criar uma sala nova</h2><div class="sub">Você vira o dono. Depois é só mandar o convite.</div>
+    <label class="field"><span>Nome da sala</span><input class="input" id="z14Name" maxlength="24" value="${esc(e.name)}" placeholder="Ex.: Galera da academia"></label>
+    <div class="field"><span>Ícone</span><div class="z14-icons">${Z14_ICONS.map(i => `<button class="${e.icon === i ? 'on' : ''}" data-act="z14-ic" data-v="${i}">${i}</button>`).join('')}</div></div>
+    <div class="field"><span>Quantas pessoas, no máximo?</span><div class="zstep"><button data-act="z14-max" data-d="-1" ${e.max <= 2 ? 'disabled' : ''}>−</button><b>${e.max}</b><button data-act="z14-max" data-d="1" ${e.max >= 10 ? 'disabled' : ''}>+</button></div></div>
+    ${S.players.length > 1 ? `<div class="card tint-fire" style="margin-top:6px"><b>Você vai sair da ${esc(z14Title(S.room))}.</b><div class="sub">Seu XP, nível e registros vão junto com você.</div></div>` : ''}
+    <div style="margin-top:14px"><button class="btn" data-act="z14-new-ok">Criar sala</button></div>`;
+}
+
+/* Prévia antes de entrar */
+async function z14Preview(code) {
+  code = z14Code(code); if (!code) return;
+  if (code === z14Code(S.room.code) && ZFB.linked === code) { closeSheet(true); toast('Você já está nessa sala.', 'violet', '🤝'); return z14Open(); }
+  if (!zfbOn()) { session.z14pending = code; closeSheet(true); toast('Primeiro entre na sua conta. Depois a sala abre sozinha.', 'violet', '☁️'); return zfbOpenAccount(ZFB.user ? '' : 'up'); }
+  openSheet(`<div id="z14Prev"><div class="sub" style="text-align:center;padding:30px 0">Procurando a sala ${esc(code)}…</div></div>`, {});
+  let d = null;
+  try { const s = await z14Wait(ZFB.m.getDoc(ZFB.m.doc(ZFB.db, 'rooms', code))); d = s.exists() ? (s.data() || {}) : null; }
+  catch (e) { const el = $('#z14Prev'); if (el) el.innerHTML = `<h2>Sem internet</h2><div class="sub">Para ver a sala, o Zenit precisa de internet.</div><div style="margin-top:12px"><button class="btn sec" data-act="z14-prev" data-c="${esc(code)}">Tentar de novo</button></div>`; return; }
+  const el = $('#z14Prev'); if (!el) return;
+  if (!d) { el.innerHTML = `<h2>Não achei essa sala</h2><div class="sub">Nenhuma sala com o código <b>${esc(code)}</b>. Confira as letras com quem te convidou.</div><div style="margin-top:12px"><button class="btn sec" data-act="z14-join">Digitar de novo</button></div>`; return; }
+  const uid = z14Uid(); const mem = d.members || []; const max = d.max || 2; const names = d.names || {}; const pets = d.pets || {};
+  const kicked = (d.kicked || []).includes(uid); const full = mem.length >= max; const n2 = mem.length + 1;
+  session.z14prev = { code, d };
+  const leaving = S.players.length > 1 || S.room.name;
+  el.innerHTML = `<div class="z14-prev"><div class="z14-ic big">${z14Icon(d)}</div><h2>${esc(z14Title(d))}</h2>
+      <div class="z14-meta" style="justify-content:center"><span class="pill">${esc(code)}</span><span class="pill ${full ? 'red' : 'green'}">${mem.length} de ${max} ${plural(max, 'pessoa', 'pessoas')}</span></div></div>
+    <div class="h2">Quem já está lá</div><div class="card z14-list" style="margin-top:0">${mem.length ? mem.map(u => `<div class="z14-m">${z14Av(pets[u])}<div class="grow"><b>${esc(names[u] || 'Alguém')}</b>${u === (d.owner || mem[0]) ? '<span>👑 Dono da sala</span>' : ''}</div></div>`).join('') : '<div class="sub">Ninguém ainda.</div>'}</div>
+    ${d.end ? `<div class="kv" style="margin-top:4px"><span>Vai até</span><span>${fmtDay(d.end)}</span></div>` : ''}${d.prize ? `<div class="kv"><span>Prêmio</span><span style="text-align:right">${esc(d.prize)}</span></div>` : ''}
+    ${kicked ? `<div class="card tint-fire"><b>O dono dessa sala tirou você dela.</b><div class="sub">Peça o código de outra sala.</div></div>`
+      : full ? `<div class="card tint-fire"><b>Essa sala está cheia.</b><div class="sub">Peça para o dono aumentar o limite.</div></div>`
+      : `${n2 > 2 ? `<div class="hint">Com você, a sala fica com ${n2} pessoas e entra no modo grupo, com pódio.</div>` : `<div class="hint">Com você, a sala vira uma dupla.</div>`}
+         ${leaving ? `<div class="card tint-fire"><b>Você vai sair da ${esc(z14Title(S.room))}.</b><div class="sub">Seu XP, nível e registros vão junto com você.</div></div>` : ''}
+         <div style="margin-top:12px"><button class="btn" data-act="z14-join-ok">Entrar nessa sala</button></div>`}
+    <div style="margin-top:10px"><button class="btn gray" data-act="close">Cancelar</button></div>`;
+}
+
+/* ---------- Ações ---------- */
+Object.assign(ACT, {
+  'z14-room': () => { closeSheet(true); z14Open(); },
+  'z14-relink': async () => { closeSheet(true); S.room.wantJoin = true; await zfbLinkRoom(); if (ZFB.linked) { toast('Conectado à sala!', 'green', '🤝'); renderMain(true); setTimeout(z14Open, 400); } },
+  'z14-invite': async () => {
+    const r = S.room; const url = z14Link(r.code); const txt = `Bora entrar na minha sala do Zenit? ${z14Icon(r)} ${z14Title(r)}\nCódigo: ${r.code}\n`;
+    try { if (navigator.share) { await navigator.share({ title: 'Convite do Zenit', text: txt, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    copyText(txt + url, 'Convite copiado! Cole no WhatsApp.');
+  },
+  'z14-edit': () => { session.z14e = { name: S.room.name || '', icon: z14Icon(S.room), max: Math.max(z14Max(), S.players.length) }; closeSheet(true); openSheet(`<div id="z14Edit">${z14EditHTML()}</div>`, {}); },
+  'z14-ic': el => { const e = session.z14e && $('#z14Edit') ? session.z14e : session.z14n; const nm = $('#z14Name'); if (nm) e.name = nm.value; e.icon = el.dataset.v; z14Redraw(); },
+  'z14-max': el => { const isEdit = !!$('#z14Edit'); const e = isEdit ? session.z14e : session.z14n; const nm = $('#z14Name'); if (nm) e.name = nm.value; const min = isEdit ? Math.max(2, S.players.length) : 2; e.max = clamp(e.max + (+el.dataset.d), min, 10); z14Redraw(); },
+  'z14-edit-save': () => {
+    if (!z14IsOwner()) return toast('Só o dono da sala pode mudar.', 'red', '👑');
+    const e = session.z14e; e.name = String(($('#z14Name') || {}).value || '').trim().slice(0, 24);
+    if (e.max < S.players.length) return toast('O limite não pode ser menor que o número de pessoas na sala.', 'red', '👥');
+    Object.assign(S.room, { name: e.name, icon: e.icon, max: e.max }); save();
+    zfbRoomUpdate({ name: e.name, icon: e.icon, max: e.max });
+    closeSheet(true); z14Open(); renderMain(true); toast('Sala atualizada!', 'green', z14Icon(S.room));
+  },
+  'z14-kick': el => {
+    const u = el.dataset.u; const q = S.players.find(x => x.remote && x.uid === u); if (!q) return;
+    session.z14k = u; closeSheet(true);
+    openSheet(`<div style="text-align:center">${z14Av(q.pet, 80)}</div><h2 style="text-align:center">Remover ${esc(q.name)} da sala?</h2>
+      <div class="sub" style="text-align:center">${esc(q.name)} sai do placar e não consegue voltar com este código. O XP de todo mundo continua como está.</div>
+      <div style="margin-top:14px"><button class="btn red" data-act="z14-kick-ok">Remover</button></div><div style="margin-top:10px"><button class="btn gray" data-act="z14-room">Cancelar</button></div>`, { center: true });
+  },
+  'z14-kick-ok': async () => {
+    const u = session.z14k; if (!u || !z14IsOwner()) return; const { doc, updateDoc, arrayRemove, arrayUnion, deleteField, deleteDoc } = ZFB.m; const ref = doc(ZFB.db, 'rooms', S.room.code);
+    try { await z14Wait(updateDoc(ref, { members: arrayRemove(u), kicked: arrayUnion(u), ['names.' + u]: deleteField(), ['pets.' + u]: deleteField(), ['joined.' + u]: deleteField() })); }
+    catch (e) { return toast('Sem internet agora. Conecte e tente de novo.', 'red', '📶'); }
+    deleteDoc(doc(ZFB.db, 'rooms', S.room.code, 'players', u)).catch(() => { });
+    closeSheet(true); toast('Pronto, removido da sala.', 'violet', '👋'); setTimeout(z14Open, 600);
+  },
+  'z14-leave': () => {
+    closeSheet(true); const alone = S.players.length < 2;
+    openSheet(`<div style="text-align:center;font-size:54px">🚪</div><h2 style="text-align:center">Sair da ${esc(z14Title(S.room))}?</h2>
+      <div class="card"><div class="z14-li">✅ Seu XP, nível, conquistas e registros continuam com você.</div>
+        <div class="z14-li">👋 ${alone ? 'A sala fica vazia.' : 'Você some do placar desta sala.'}</div>
+        <div class="z14-li">⚔️ Os X1 e desafios da sala ficam para trás.</div>
+        <div class="z14-li">🏠 Você vai para uma sala nova, só sua. Dá para entrar em outra com um código.</div>
+        ${alone ? '' : '<div class="z14-li">🔑 Para voltar depois, é só usar o mesmo código, se tiver vaga.</div>'}</div>
+      <div style="margin-top:14px"><button class="btn red" data-act="z14-leave-ok">Sair da sala</button></div><div style="margin-top:10px"><button class="btn gray" data-act="z14-room">Ficar na sala</button></div>`, {});
+  },
+  'z14-leave-ok': async el => {
+    if (el) { el.disabled = true; el.textContent = 'Saindo…'; }
+    const nm = z14Title(S.room); const ok = await z14Move(null);
+    if (ok === false) { if (el) { el.disabled = false; el.textContent = 'Sair da sala'; } return; }
+    closeSheet(true); toast(`Você saiu da ${nm}. Agora está na sala ${S.room.code}.`, 'violet', '👋'); setTimeout(z14Open, 700);
+  },
+  'z14-join': () => {
+    closeSheet(true);
+    openSheet(`<h2>Entrar em outra sala</h2><div class="sub">Digite o código que te mandaram. Antes de entrar, você vê a sala e quem está nela.</div>
+      <label class="field"><span>Código da sala</span><input class="input" id="zfbCode" placeholder="SHAPE-XXX" autocapitalize="characters" style="text-transform:uppercase"></label>
+      <div style="margin-top:12px"><button class="btn" data-act="zfb-code">Ver a sala</button></div><div class="hint">Recebeu um link? É só tocar nele, o código já vem preenchido.</div>`, {});
+  },
+  'z14-prev': el => z14Preview(el.dataset.c),
+  'z14-join-ok': async el => {
+    const pv = session.z14prev; if (!pv) return; if (el) { el.disabled = true; el.textContent = 'Entrando…'; }
+    const ok = await z14Move({ code: pv.code, d: pv.d });
+    if (ok === false) { if (el) { el.disabled = false; el.textContent = 'Entrar nessa sala'; } return; }
+    session.z14prev = null; closeSheet(true);
+    if (ZFB.linked === pv.code) { confetti(90); sfx('level'); toast(`Você entrou na ${z14Title(S.room)}!`, 'green', z14Icon(S.room)); }
+  },
+  'z14-new': () => { closeSheet(true); session.z14n = { name: '', icon: '🏆', max: Z14_MAXDEF }; openSheet(`<div id="z14New">${z14NewHTML()}</div>`, {}); },
+  'z14-new-ok': async el => {
+    const e = session.z14n; e.name = String(($('#z14Name') || {}).value || '').trim().slice(0, 24);
+    if (el) { el.disabled = true; el.textContent = 'Criando…'; }
+    const ok = await z14Move(null, { name: e.name, icon: e.icon, max: e.max });
+    if (ok === false) { if (el) { el.disabled = false; el.textContent = 'Criar sala'; } return; }
+    closeSheet(true); confetti(60); toast(`Sala ${z14Title(S.room)} criada! Agora é só convidar.`, 'green', z14Icon(S.room)); setTimeout(z14Open, 600);
+  },
+  'z14-hist': () => {
+    closeSheet(true); const H = S.roomsHist || [];
+    openSheet(`<h2>Salas anteriores</h2><div class="sub">As salas em que você já esteve. Dá para voltar, se tiver vaga.</div>
+      <div class="card" style="margin-top:12px">${H.length ? H.map(h => `<div class="z14-m"><span class="z14-ic sm">${h.icon || '🏆'}</span><div class="grow"><b>${esc(h.name || 'Sala ' + h.code)}</b><span>${esc(h.code)} · saiu em ${fmtDay(h.left)}${h.with && h.with.length ? ' · com ' + esc(h.with.slice(0, 3).join(', ')) + (h.with.length > 3 ? ' e +' + (h.with.length - 3) : '') : ''}</span></div>${h.kicked ? '' : `<button class="zmini" data-act="z14-prev" data-c="${esc(h.code)}">Ver</button>`}</div>`).join('') : '<div class="sub" style="padding:6px 0">Você ainda não saiu de nenhuma sala.</div>'}</div>
+      <div style="margin-top:12px"><button class="btn gray" data-act="z14-room">Voltar</button></div>`, {});
+  }
+});
+function z14Redraw() { const a = $('#z14Edit'), b = $('#z14New'); if (a) a.innerHTML = z14EditHTML(); if (b) b.innerHTML = z14NewHTML(); }
+const __z14Copy = ACT['copy-code'];
+ACT['copy-code'] = function () { if (S && S.room) return copyText(S.room.code, 'Código copiado!'); return __z14Copy && __z14Copy.apply(this, arguments); };
+// Depois de entrar na conta, abre a sala que estava esperando
+const __z14After = zfbAfterLogin;
+zfbAfterLogin = async function () { const r = await __z14After.apply(this, arguments); setTimeout(z14Pending, 2500); return r; };
+function z14Pending(n) {
+  const c = session.z14pending; if (!c) return; n = n || 0;
+  if (!S || !session.pid || !zfbOn() || !ZFB.linked || $('#overlay') || $('#zcoach') || session.ob) { if (n < 120) setTimeout(() => z14Pending(n + 1), 1000); return; }
+  session.z14pending = null; z14Preview(c);
+}
+
+/* ---------- Link de convite (?sala=CODIGO) ---------- */
+(function () {
+  try {
+    const q = new URLSearchParams(location.search); const c = z14Code(q.get('sala')); if (!c) return;
+    session.z14link = c; session.z14pending = c;
+    q.delete('sala'); const s = q.toString(); history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash);
+    setTimeout(() => { if (S && session.pid) { if (!zfbOn()) toast(`Convite para a sala ${c}. Entre na sua conta para ver.`, 'violet', '📨'); z14Pending(); } else toast(`Você foi convidado para a sala ${c}! Crie seu perfil para entrar.`, 'violet', '📨'); }, 2600);
+  } catch (e) { }
+})();
+const __z14Welcome = welcomeHTML;
+welcomeHTML = function () {
+  let h = __z14Welcome.apply(this, arguments); const c = session.z14link;
+  if (c && session.ob && session.ob.step === 5) h = h.replace('id="obCode" placeholder="SHAPE-XXX"', `id="obCode" value="${esc(c)}" placeholder="SHAPE-XXX"`).replace('Ou entre com o código da sua dupla', `Você foi convidado para a sala ${esc(c)}`);
+  return h;
+};
+const __z14ObRoom = ACT['ob-room'];
+ACT['ob-room'] = function (el) { if (el && el.dataset && el.dataset.v === 'join') session.z14pending = null; return __z14ObRoom.apply(this, arguments); };
+
+/* ---------- Placar: cabeçalho, pódio, Minha sala ---------- */
+function z14Podium(rows, t) {
+  const top = rows.slice(0, 3); const order = top.length >= 3 ? [top[1], top[0], top[2]] : top.length === 2 ? [top[1], top[0]] : top;
+  const cls = r => r === top[0] ? 'first' : r === top[1] ? 'second' : 'third';
+  return `<div class="podium z14-pod">${order.map(r => `<div class="pod ${cls(r)}">${r === top[0] ? `<div class="pcrown">${crownSVG()}</div>` : '<div class="pcrown"></div>'}<div class="pav">${petSVG(r.p.pet, { mood: r === top[0] ? 'feliz' : 'ok', stage: stageOf(levelOf(xpInfo(r.p, t).total)), equip: r.p.equip, anim: false })}</div><div class="pn">${esc(r.p.name)}</div><div class="px">${fmtInt(r.xp)} XP</div><div class="blk">${top.indexOf(r) + 1}</div></div>`).join('')}</div>`;
+}
+const z14Pos = (rows, p) => rows.findIndex(r => r.p.id === p.id) + 1;
+function z14RoomCard() {
+  const n = S.players.length; const max = z14Max();
+  return `<button class="z14-card" data-act="z14-room"><span class="z14-ic">${z14Icon(S.room)}</span><span class="grow"><b>Minha sala</b><small>${esc(S.room.code)} · ${n} de ${max} ${plural(max, 'pessoa', 'pessoas')}${zfbOn() ? '' : ' · entre na conta'}</small></span><span class="z14-go">Ver</span></button>`;
+}
+const __z14Rank = rankHTML;
+rankHTML = function () {
+  let h = __z14Rank.apply(this, arguments); if (!S || !S.room) return h;
+  const p = me(), t = T(); const mode = session.rankMode || 'geral';
+  h = h.replace(`<h1>Sala ${esc(S.room.code)}</h1>`, `<h1>${S.room.name ? z14Icon(S.room) + ' ' + esc(S.room.name) : 'Sala ' + esc(S.room.code)}</h1>`);
+  h = h.replace(/(<div class="lb-hero">[\s\S]*?<div class="sub">[^<]*<\/div>)/, `$1<button class="z14-hl" data-act="z14-room">${z14Icon(S.room)} Minha sala · ${S.players.length} de ${z14Max()} ›</button>`);
+  // Convite antigo vira o cartão da sala
+  const ci = h.indexOf('<div class="card"><h3>Convidar para a sala</h3>');
+  if (ci > -1) { const ce = h.indexOf('</div></div>', h.indexOf('<div class="hint">', ci)); if (ce > -1) h = h.slice(0, ci) + z14RoomCard() + h.slice(ce + 12); }
+  if (!zGroup()) return h;
+  const rows = rankRows(S.players, t, mode === 'semana'); const pos = z14Pos(rows, p);
+  const seg = h.indexOf('<div style="margin-top:10px">', h.indexOf('class="seg"'));
+  if (seg > -1) h = h.slice(0, seg) + z14Podium(rows, t) + h.slice(seg);
+  // Recado de quem lidera, versão grupo
+  h = h.replace(/<div class="card tint-(green|fire)" style="text-align:center;font-weight:800">[\s\S]*?<\/div>/, () => {
+    if (pos === 1) { const d = rows[0].xp - rows[1].xp; return `<div class="card tint-green" style="text-align:center;font-weight:800">${d ? `Você está em 1º, ${fmtInt(d)} XP na frente de ${esc(rows[1].p.name)}. Não relaxa!` : `Empate no topo com ${esc(rows[1].p.name)}! Qualquer missão desempata.`}</div>`; }
+    const up = rows[pos - 2]; const d = up.xp - rows[pos - 1].xp;
+    return `<div class="card tint-fire" style="text-align:center;font-weight:800">Você está em ${z14Ord(pos)} de ${rows.length}. ${d ? `Faltam ${fmtInt(d + 1)} XP para passar ${esc(up.p.name)}.` : `Empatado com ${esc(up.p.name)}. Dá para passar!`}</div>`;
+  });
+  return h;
+};
+// Semanas vencidas: em grupo, conta as vitórias de cada um
+const __z14Hist = histHTML;
+histHTML = function (hist) {
+  if (!zGroup()) return __z14Hist.apply(this, arguments);
+  if (!hist.length) return '';
+  const cnt = {}; hist.forEach(x => { if (x.winner) cnt[x.winner.id] = (cnt[x.winner.id] || 0) + 1; });
+  const list = S.players.map(q => ({ q, n: cnt[q.id] || 0 })).sort((a, b) => b.n - a.n).filter(x => x.n).slice(0, 5);
+  return `<div class="z14-wins">${list.length ? list.map(x => `<div>${z14Av(x.q.pet, 34)}<b>${esc(x.q.name)}${x.q.id === me().id ? ' (você)' : ''}</b><em>${x.n} ${plural(x.n, 'semana', 'semanas')}</em></div>`).join('') : '<div class="sub">Nenhuma semana com vencedor ainda.</div>'}</div>
+    <div class="wchips">${hist.map((x, i) => `<button class="wchip" data-act="sunday" data-wk="${x.wk}" style="${x.winner ? `background:${petOf(x.winner).color}22;color:var(--ink)` : ''}">S${i + 1} ${x.tie ? 'Empate' : esc(x.winner.name)}</button>`).join('')}</div>`;
+};
+// Fechamento da semana: pódio de 3
+const __z14Sun = sundayHTML;
+sundayHTML = function (wk) {
+  const h = __z14Sun.apply(this, arguments); if (!zGroup()) return h;
+  const r = weekResult(wk); const p = me();
+  const rows = r.sc.map(s => ({ p: s.q, xp: s.xp }));
+  const pod = z14Podium(rows, T()); const pos = z14Pos(rows, p);
+  const title = r.tie ? 'Empate no topo da semana!' : r.winner.id === p.id ? 'Você venceu a semana!' : `${esc(r.winner.name)} venceu a semana!`;
+  return h.replace(/<div class="sun-t">[\s\S]*?<\/div><\/div><div class="podium">[\s\S]*?<\/div><\/div><\/div>(?=<div class="craque"|<div class="rep-h")/, `<div class="sun-t">${title}</div><div class="sun-me">Você ficou em ${z14Ord(pos)} de ${rows.length}</div></div>${pod}`);
+};
+
+/* ---------- Início: posição na sala, prêmio e desafio da sala ---------- */
+const __z14Duel = zDuelHTML;
+zDuelHTML = function (p, t) {
+  if (!zGroup()) return __z14Duel.apply(this, arguments);
+  const wk = weekKey(t); const rows = S.players.map(q => ({ p: q, xp: xpBetween(q, wk < S.room.start ? S.room.start : wk, t) })).sort((a, b) => b.xp - a.xp);
+  const pos = z14Pos(rows, p); const show = rows.slice(0, 3); if (pos > 3) show.push(rows[pos - 1]);
+  const top = Math.max(1, rows[0].xp);
+  return `<button class="zduel z14-mini" data-act="tab" data-tab="rank"><div class="zd-top"><b>Placar da semana · ${z14Ord(pos)} de ${rows.length}</b><span>Ver placar</span></div>
+    ${show.map(r => { const i = rows.indexOf(r); return `<div class="z14-r ${r.p.id === p.id ? 'me' : ''}"><em>${i + 1}</em>${z14Av(r.p.pet, 30)}<b>${esc(r.p.name)}${r.p.id === p.id ? ' (você)' : ''}</b><i><u style="width:${clamp(r.xp / top * 100, 3, 100).toFixed(1)}%"></u></i><span>${fmtInt(r.xp)}</span></div>`; }).join('')}</button>`;
+};
+const __z14Prize = z10PrizeHTML;
+z10PrizeHTML = function (p, t) {
+  const h = __z14Prize.apply(this, arguments); if (!zGroup()) return h;
+  const wk = weekKey(t); const lw = addDays(wk, -7);
+  const ra = rankRows(S.players, t, false); const rw = rankRows(S.players, t, true);
+  const line = (rows, lab) => { const pos = z14Pos(rows, p); const lead = rows[0]; return `<div class="zkp-row"><span>${lab}</span><b>${pos === 1 ? 'Você está em 1º 🏆' : `Você em ${z14Ord(pos)} · ${esc(lead.p.name)} lidera`}</b><em>${pos === 1 && rows[1] ? '+' + fmtInt(rows[0].xp - rows[1].xp) + ' XP' : pos > 1 ? '−' + fmtInt(lead.xp - rows[pos - 1].xp) + ' XP' : ''}</em></div>`; };
+  let rows = line(ra, 'No geral') + line(rw, 'Nesta semana');
+  if (lw >= weekKey(S.room.start)) { const r = weekResult(lw); rows += `<div class="zkp-row"><span>Semana passada</span><b>${r.tie || !r.winner ? 'Empate no topo' : r.winner.id === p.id ? 'Você venceu 🏆' : esc(r.winner.name) + ' venceu'}</b><em></em></div>`; }
+  const i = h.indexOf('<div class="zkp-rows">'); return i > -1 ? h.slice(0, i) + `<div class="zkp-rows">${rows}</div></button>` : h;
+};
+const __z14Team = z10TeamCardHTML;
+z10TeamCardHTML = function (p, t) {
+  const h = __z14Team.apply(this, arguments); if (!zGroup() || !h) return h;
+  const wk = weekKey(t); const tm = z10Team(wk); const def = tm.def; const fmtv = v => def.u === 'L' ? zUL(v) : fmtInt(v);
+  const mine = tm.per[p.id] || 0; const rest = Math.max(0, tm.sum - mine); const pa = clamp(mine / tm.target * 100, 0, 100); const pb = clamp(rest / tm.target * 100, 0, 100 - pa);
+  const left = Math.max(0, diffDays(t, addDays(wk, 6))); const n = S.players.length;
+  const top = S.players.map(q => ({ q, v: tm.per[q.id] || 0 })).sort((a, b) => b.v - a.v)[0];
+  return `<section class="zk-card zk-team ${tm.doneAt ? 'done' : ''}"><div class="zk-h"><span class="zk-ic" style="background:#FFE6F4">🤝</span><div class="grow"><small>Desafio da sala · semana</small><b>${esc(def.t(tm.target))}</b><span>${tm.doneAt ? `Conseguiram! +40 XP para cada um dos ${n} 🎉` : `Somando as ${n} pessoas da sala. Faltam ${left} ${plural(left, 'dia', 'dias')}.${top && top.v ? ` Quem mais ajudou até agora: ${esc(top.q.name)}.` : ''}`}</span></div></div>
+    <div class="zk-dbar"><i class="a" style="width:${pa.toFixed(1)}%"></i><i class="b" style="width:${pb.toFixed(1)}%;left:${pa.toFixed(1)}%"></i></div>
+    <div class="zk-dlab"><span class="a">Você ${fmtv(mine)}</span><b>${fmtv(Math.min(tm.sum, tm.target))} / ${fmtv(tm.target)}${def.u === 'L' ? ' L' : ''}</b><span class="b">${fmtv(rest)} a sala</span></div></section>`;
+};
+const __z14DuelCard = duelCardHTML;
+duelCardHTML = function (t) {
+  if (!zGroup()) return __z14DuelCard.apply(this, arguments);
+  const du = duelResult(t); const p = me(); if (!du) return '';
+  const typeTxt = du.type === 'agua' ? 'Quem da sala bater a meta de água primeiro hoje ganha +10 XP.' : 'Quem da sala fizer o check-in do treino primeiro hoje ganha +10 XP.';
+  let status = '';
+  if (du.winner) { const w = S.players.find(x => x.id === du.winner); status = du.winner === p.id ? `<div class="pill green" style="font-size:14px">🏆 Você venceu às ${fmtTime(du.time)}! +10 XP</div>` : `<div class="pill red" style="font-size:14px">${esc(w.name)} venceu às ${fmtTime(du.time)}. Fica para o próximo!</div>`; }
+  else if (du.type === 'agua') {
+    const rows = S.players.map(q => ({ q, f: (dget(q, t).water || 0) / q.waterGoal })).sort((a, b) => b.f - a.f); const show = rows.slice(0, 3); if (!show.some(r => r.q.id === p.id)) show.push(rows.find(r => r.q.id === p.id));
+    status = show.map(r => `<div class="small" style="font-weight:800;margin-top:6px">${esc(r.q.name)}${r.q.id === p.id ? ' (você)' : ''}: ${Math.round(r.f * 100)}%</div><div class="bar ${r.q.id === p.id ? 'water' : 'red'}" style="height:10px;margin-top:3px"><i style="width:${clamp(r.f * 100, 2, 100)}%"></i></div>`).join('');
+  } else status = `<div class="small" style="font-weight:800;margin-top:4px">Ninguém fez o check-in ainda. Corre!</div>`;
+  return `<div class="card tint-fire"><div class="row"><div style="font-size:40px">⚡</div><div class="grow"><h3>Duelo relâmpago</h3><div class="sub">${typeTxt}</div></div></div><div style="margin-top:10px">${status}</div></div>`;
+};
+const __z14Ins = insightsFor;
+insightsFor = function (p) {
+  const out = __z14Ins.apply(this, arguments); if (!zGroup() || !Array.isArray(out)) return out;
+  const t = T(); const rows = rankRows(S.players, t, false); const pos = z14Pos(rows, p);
+  const keep = out.filter(x => !(x.icon === '⚔️' || x.icon === '🏆') || !/XP (atrás|na frente)/.test(x.text || ''));
+  if (pos > 1) keep.push({ icon: '⚔️', text: `Você está em ${z14Ord(pos)} de ${rows.length}. Faltam ${fmtInt(rows[pos - 2].xp - rows[pos - 1].xp + 1)} XP para passar ${rows[pos - 2].p.name}.` });
+  else keep.push({ icon: '🏆', text: `Você lidera a sala, ${fmtInt(rows[0].xp - rows[1].xp)} XP na frente de ${rows[1].p.name}. Não relaxa!` });
+  return keep;
+};
+
+/* ---------- X1 em grupo: você escolhe contra quem ---------- */
+const z14Mine = x => { const p = me(); return x.from === p.id || x.to === p.id; };
+const __z14Can = z10X1CanLaunch;
+z10X1CanLaunch = function (p) {
+  if (!zGroup()) return __z14Can.apply(this, arguments);
+  const wk = weekKey(T()); const mineWk = z10X1All().filter(x => x.from === p.id && x.made >= wk && x.made <= addDays(wk, 6)).length;
+  if (mineWk >= 2) return 'Você já lançou 2 X1 nesta semana. Na segunda tem mais.';
+  const open = z10X1All().some(x => (x.from === p.id || x.to === p.id) && ['pending', 'scheduled', 'live'].includes(z10X1Eval(x).state));
+  if (open) return 'Você já tem um X1 em aberto. Termine esse primeiro.';
+  return '';
+};
+const __z14Auto = z10AutoX1;
+z10AutoX1 = function (fri) {
+  if (!zGroup()) return __z14Auto.apply(this, arguments);
+  const ty = ZX1W[hashStr(zRoomKey() + '|sexta|' + fri) % ZX1W.length]; const ss = [addDays(fri, 1), addDays(fri, 2)];
+  const upto = ss.filter(s => s <= T());
+  const rows = S.players.slice().sort((a, b) => a.id < b.id ? -1 : 1).map(q => ({ q, v: ty.val(q, upto.map(s => dget(q, s)), upto) })).sort((a, b) => b.v - a.v);
+  const final = T() > ss[1]; const w = rows.length > 1 && rows[0].v > rows[1].v ? rows[0].q : null;
+  return { fri, ty, ss, rows, A: rows[0].q, B: rows[1].q, va: rows[0].v, vb: rows[1].v, final, winner: w ? w.id : null, state: T() < ss[0] ? 'soon' : final ? 'done' : 'live', group: true };
+};
+const __z14AutoF = z10AutoX1;
+z10AutoX1 = function (fri) { if (!z14HasJ()) return __z14AutoF.apply(this, arguments); const l = z14ActiveOn(fri); return l ? z14With(l, () => __z14AutoF(fri)) : __z14AutoF(fri); };
+const __z14X1Sec = z10X1SectionHTML;
+z10X1SectionHTML = function (p, t) {
+  if (!zGroup()) return __z14X1Sec.apply(this, arguments);
+  const items = z10X1All().filter(x => { const r = z10X1Eval(x); return z14Mine(x) && r.state !== 'gone' && (['pending', 'scheduled', 'live'].includes(r.state) || diffDays(x.day, t) <= 3); }).slice(0, 4);
+  const others = z10X1All().filter(x => !z14Mine(x) && ['scheduled', 'live'].includes(z10X1Eval(x).state)).slice(0, 3);
+  const why = z10X1CanLaunch(p); const fri = dow(t) === 5 ? t : dow(t) === 6 ? addDays(t, -1) : dow(t) === 0 ? addDays(t, -2) : dow(t) === 1 ? addDays(t, -3) : null;
+  let sx = '';
+  if (fri && fri >= zFrom()) {
+    const ax = z10AutoX1(fri);
+    const head = ax.state === 'done' ? (ax.winner ? (ax.winner === p.id ? 'Você venceu a Sexta do X1! +30 XP 🏆' : `${esc(S.players.find(q => q.id === ax.winner).name)} venceu a Sexta do X1`) : 'Sexta do X1 terminou empatada no topo') : 'Sexta do X1 · todo mundo da sala';
+    sx = `<div class="zx1-item auto ${ax.state === 'done' ? (ax.winner === p.id ? 'win' : 'off') : 'on'}"><b>${head}</b><span>${ax.ty.ic} ${esc(ax.ty.t)} · sábado e domingo · quem ficar em 1º ganha +30 XP do app, ninguém perde nada</span>
+      ${ax.state !== 'soon' ? `<div class="z14-sx">${ax.rows.slice(0, 3).map((r, i) => `<div class="${r.q.id === p.id ? 'me' : ''}"><em>${i + 1}º</em><b>${esc(r.q.name)}</b><span>${ax.ty.f(r.v)}</span></div>`).join('')}${ax.rows.findIndex(r => r.q.id === p.id) > 2 ? `<div class="me"><em>${ax.rows.findIndex(r => r.q.id === p.id) + 1}º</em><b>Você</b><span>${ax.ty.f(ax.rows.find(r => r.q.id === p.id).v)}</span></div>` : ''}</div>` : '<span class="zk-note">Começa no sábado. Vale para todo mundo da sala.</span>'}</div>`;
+  }
+  const ox = others.map(x => { const ty = ZX1.find(y => y.id === x.type) || ZX1[0]; const A = S.players.find(q => q.id === x.from), B = S.players.find(q => q.id === x.to); return A && B ? `<div class="z14-ox">⚔️ <b>${esc(A.name)}</b> × <b>${esc(B.name)}</b> · ${ty.ic} ${zX1Day(x.day)}</div>` : ''; }).join('');
+  return `<section class="zx1"><div class="zx1-head"><span class="zx1-sw">⚔️</span><div class="grow"><b>X1</b><small>Escolha alguém da sala e aposte até 100 XP</small></div></div>
+    ${items.map(x => z10X1Item(x, p)).join('')}${sx}${ox ? `<div class="z14-oxs"><small>Rolando na sala</small>${ox}</div>` : ''}
+    ${why ? `<div class="zk-note" style="margin-top:10px">${why}</div>` : `<button class="btn red" data-act="z10-x1-new" style="margin-top:12px">⚔️ Lançar um X1</button>`}</section>`;
+};
+const __z14X1New = z10X1NewSheet;
+z10X1NewSheet = function () {
+  if (!zGroup()) return __z14X1New.apply(this, arguments);
+  const p = me(); const s = session.z10x1 || (session.z10x1 = { type: ZX1[0].id, stake: 25 });
+  const opp = S.players.filter(q => q.id !== p.id); if (!opp.some(q => q.id === s.to)) s.to = null;
+  const busy = q => z10X1All().some(x => (x.from === q.id || x.to === q.id) && ['pending', 'scheduled', 'live'].includes(z10X1Eval(x).state));
+  const m = opp.find(q => q.id === s.to);
+  openSheet(`<h2>Lançar X1 ⚔️</h2><div class="sub">Vale para amanhã, ${DOW[dow(addDays(T(), 1))]} (${fmtDay(addDays(T(), 1))}). Quem você chamar precisa aceitar até o fim de hoje.</div>
+    <div class="h2" style="margin-top:16px">Contra quem?</div><div class="z14-opp">${opp.map(q => `<button class="${s.to === q.id ? 'on' : ''}" data-act="z14-x1-to" data-id="${q.id}">${z14Av(q.pet, 46)}<b>${esc(q.name)}</b>${busy(q) ? '<small>já tem X1</small>' : ''}</button>`).join('')}</div>
+    <div class="h2">Qual desafio?</div><div class="zx1-types">${ZX1.map(ty => `<button class="opt ${s.type === ty.id ? 'sel' : ''}" data-act="z10-x1-type" data-id="${ty.id}"><span class="oi">${ty.ic}</span><span class="grow">${esc(ty.t)}<br><span class="small muted">${esc(ty.how)}</span></span></button>`).join('')}</div>
+    <div class="h2">Quanto de XP?</div><div class="chips">${[10, 25, 50, 100].map(v => `<button class="chip ${s.stake === v ? 'on' : ''}" data-act="z10-x1-stake" data-v="${v}">${v} XP</button>`).join('')}</div>
+    <label class="field"><span>Ou digite um valor (de 5 a 100)</span><input class="input" id="zx1Stake" type="number" inputmode="numeric" min="5" max="100" value="${s.stake}"></label>
+    <div class="hint">Quem vencer leva o XP apostado do outro. Empate: ninguém perde.</div>
+    <div style="margin-top:14px"><button class="btn red" data-act="z10-x1-send">${m ? 'Desafiar ' + esc(m.name) : 'Escolha contra quem'}</button></div>`, {});
+};
+ACT['z14-x1-to'] = el => { const s = session.z10x1; const v = $('#zx1Stake'); if (v && +v.value) s.stake = Math.round(+v.value); s.to = el.dataset.id; z10X1NewSheet(); };
+const __z14Send = ACT['z10-x1-send'];
+ACT['z10-x1-send'] = function () {
+  if (!zGroup()) return __z14Send.apply(this, arguments);
+  const p = me(); const m = S.players.find(q => q.id === (session.z10x1 || {}).to && q.id !== p.id);
+  if (!m) return toast('Escolha contra quem é o X1.', 'red', '⚔️');
+  const why = z10X1CanLaunch(p); if (why) return toast(why, 'red', '⚔️');
+  const v = Math.round(+(($('#zx1Stake') || {}).value || session.z10x1.stake));
+  if (!(v >= 5 && v <= 100)) return toast('A aposta precisa ser de 5 a 100 XP.', 'red', '⚔️');
+  const x = { id: 'x' + Date.now().toString(36), from: p.id, to: m.id, fromName: p.name, toName: m.name, type: session.z10x1.type, stake: v, made: T(), day: addDays(T(), 1), at: Date.now(), status: 'pending' };
+  z10X1Write(x); closeSheet(true); renderMain(true); confetti(40); toast(`X1 lançado! Agora ${m.name} precisa aceitar.`, 'fire', '⚔️');
+};
+
+/* ---------- Conquista secreta "Virada" em grupo: assumir a liderança ---------- */
+(function () {
+  const v = ZSECRET.find(a => a.id === 'virada'); if (!v) return; const orig = v.test;
+  v.test = (p, a) => {
+    if (!zGroup()) return orig(p, a);
+    for (const [s] of zDays(p, a)) {
+      if (dow(s) !== 0 || addDays(s, -1) < S.room.start) continue; const y = addDays(s, -1);
+      const lead = d => { const mx = Math.max(...S.players.filter(q => q.id !== p.id).map(q => xpInfo(q, d).total)); return xpInfo(p, d).total > mx; };
+      if (lead(s) && !lead(y)) return true;
+    }
+    return false;
+  };
+})();
+
+/* ---------- Novidades da sala (grupo) ---------- */
+const __z14Digest = z10Digest;
+z10Digest = function (force) {
+  if (!zGroup()) return __z14Digest.apply(this, arguments);
+  if (!S || !session.pid || S.mode === 'demo' && !force) return;
+  const p = me(); if (!p) return;
+  if ($('#overlay') || $('#ck') || $('#story') || $('#sun') || $('#zcoach') || session.ob) return;
+  S.zseenG = S.zseenG || {}; const seen = S.zseenG[p.id] || (S.zseenG[p.id] = { keys: [], pos: null, init: false });
+  const t = T(); const ev = [];
+  for (const m of S.players.filter(q => q.id !== p.id)) for (const e of z10MateEvents(p, m)) ev.push([m.id + '|' + e[0], e[1], e[2], m]);
+  const rows = rankRows(S.players, t, false); const pos = z14Pos(rows, p);
+  if (!seen.init) { seen.keys = ev.filter(e => !e[0].endsWith('|' + t) && !e[0].includes('|x1')).map(e => e[0]); seen.init = true; seen.pos = pos; }
+  const fresh = ev.filter(e => !seen.keys.includes(e[0]));
+  if (seen.pos && pos !== seen.pos) fresh.unshift(pos < seen.pos ? ['pos|' + t + pos, pos === 1 ? '👑' : '😎', pos === 1 ? 'Você assumiu a liderança da sala!' : `Você subiu para ${z14Ord(pos)} lugar no placar geral!`] : ['pos|' + t + pos, '👀', `${esc(rows[pos - 2].p.name)} passou você. Agora você está em ${z14Ord(pos)}.`]);
+  seen.pos = pos;
+  if (!fresh.length) { __z10Save(); return; }
+  seen.keys = seen.keys.concat(fresh.map(e => e[0])).slice(-800); __z10Save();
+  openSheet(`<div class="zdg-top"><div class="zdg-av" style="font-size:46px;display:grid;place-items:center">${z14Icon(S.room)}</div><div><small>Enquanto você estava fora</small><h2>Novidades da sala</h2></div></div>
+    <div class="zdg-list">${fresh.slice(0, 10).map(e => `<div class="zdg-it"><span>${e[1]}</span><b>${e[2]}</b></div>`).join('')}</div>
+    <div style="margin-top:16px"><button class="btn" data-act="close">Bora!</button></div>`, {});
+};
+
+/* ---------- Escalada em grupo: você sobe, e a última parada é o pódio ---------- */
+if (typeof z12Climb === 'function') {
+  const __z14Climb = z12Climb;
+  z12Climb = function () {
+    if (!zGroup()) return __z14Climb.apply(this, arguments);
+    const p = me(), t = T(); const rows = rankRows(S.players, t, false); const pos = z14Pos(rows, p);
+    const hist = weekHistory(); const wins = hist.filter(x => x.winner && x.winner.id === p.id).length;
+    const all = S.players; S.players = [p]; CACHE = new Map();
+    let r; try { r = __z14Climb.apply(this, arguments); } finally { S.players = all; CACHE = new Map(); }
+    if (ZESC && ZESC.stops) ZESC.stops[4] = { ic: '🏆', k: 'O pódio da sala', big: `${z14Ord(pos)} de ${rows.length}`, s: `Pódio: ${rows.slice(0, 3).map((x, i) => `${i + 1}º ${x.p.id === p.id ? 'você' : esc(x.p.name)}`).join(', ')}. Semanas que você venceu: ${wins}.` };
+    return r;
+  };
+}
+
+/* ---------- Conta: atalho para a sala ---------- */
+const __z14Acc = zfbAccountHTML;
+zfbAccountHTML = function () { const h = __z14Acc.apply(this, arguments); return ZFB.user && S ? h.replace('<div style="margin-top:12px"><button class="btn sec" data-act="zfb-sync">', `<div style="margin-top:12px"><button class="btn" data-act="z14-room">${z14Icon(S.room)} Minha sala</button></div><div style="margin-top:10px"><button class="btn sec" data-act="zfb-sync">`) : h; };
+</script>
+<style>
+.z14-head{display:flex;gap:14px;align-items:center}
+.z14-head h2{margin:0;font-size:22px}
+.z14-ic{width:58px;height:58px;flex:none;border-radius:18px;background:var(--gold-soft);display:grid;place-items:center;font-size:32px}
+.z14-ic.big{width:86px;height:86px;font-size:48px;border-radius:26px;margin:0 auto 8px}
+.z14-ic.sm{width:42px;height:42px;font-size:22px;border-radius:12px}
+.z14-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.z14-code{display:flex;align-items:center;gap:12px}
+.z14-code small{display:block;font-size:11.5px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.z14-code b{font-size:26px;font-weight:900;letter-spacing:2px;color:var(--green)}
+.z14-list{display:grid;gap:0}
+.z14-m{display:flex;gap:12px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.z14-m:first-child{border-top:0}
+.z14-m b{display:block;font-size:15.5px;font-weight:900}.z14-m span:not(.z14-av):not(.z14-ic){display:block;font-size:12.5px;color:var(--ink-2)}
+.z14-av{flex:none;border-radius:14px;display:grid;place-items:center;overflow:hidden}
+.z14-av svg{width:88%;height:88%}
+.z14-empty{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 0 2px;border-top:1px solid var(--line)}
+.z14-empty i{width:26px;height:26px;border-radius:9px;border:2px dashed var(--line)}
+.z14-empty span{font-size:12.5px;font-weight:800;color:var(--ink-3);margin-left:4px}
+.z14-row{display:flex;gap:12px;align-items:center;width:100%;background:none;border:0;border-top:1px solid var(--line);padding:11px 0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.z14-row:first-child{border-top:0}
+.z14-row>span:first-child{font-size:24px;width:32px;text-align:center}
+.z14-row b{display:block;font-size:15.5px;font-weight:900}.z14-row small{display:block;font-size:12.5px;color:var(--ink-2)}
+.z14-row em{font-style:normal;font-size:24px;color:var(--ink-3)}
+.z14-li{font-size:14.5px;font-weight:700;padding:5px 0;line-height:1.35}
+.z14-icons{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.z14-icons button{border:2px solid var(--line);border-bottom-width:4px;background:var(--card);border-radius:14px;padding:8px 0;font-size:24px}
+.z14-icons button.on{border-color:var(--green-line);background:var(--green-soft)}
+.zstep button:disabled{opacity:.35}
+.z14-prev{text-align:center}.z14-prev h2{margin:0}
+.z14-card{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:var(--card);border:2px solid var(--line);border-radius:20px;padding:12px 14px;margin:14px 0;box-shadow:0 4px 0 var(--line);font:inherit;color:inherit;cursor:pointer}
+.z14-card .z14-ic{width:48px;height:48px;font-size:26px;border-radius:14px}
+.z14-card b{display:block;font-size:16.5px;font-weight:900}.z14-card small{display:block;font-size:13px;color:var(--ink-2)}
+.z14-go{background:#58CC02;color:#fff;font-weight:900;font-size:13px;border-radius:12px;padding:8px 12px;box-shadow:0 3px 0 #46A302}
+.z14-pod{margin-bottom:12px}
+.z14-hl{margin-top:8px;background:var(--surface-2);border:2px solid var(--line);border-radius:99px;padding:6px 14px;font:inherit;font-weight:900;font-size:14px;color:var(--ink)}
+.pod.third .blk{height:56px;background:#E2A46B;animation-delay:.3s}
+.z14-pod .pn{font-size:15px}.z14-pod .px{font-size:12.5px}.z14-pod .blk{font-size:30px}
+.z14-pod .pav{width:64px;margin:0 auto}
+.sun-me{margin-top:6px;font-weight:900;font-size:15px;opacity:.9}
+.z14-wins{display:grid;gap:8px}
+.z14-wins>div{display:flex;align-items:center;gap:10px}
+.z14-wins b{flex:1;font-size:15px;font-weight:900}.z14-wins em{font-style:normal;font-weight:900;color:var(--gold-text);font-size:13.5px}
+.z14-mini .zd-top b{font-size:15.5px}
+.z14-r{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13.5px}
+.z14-r em{font-style:normal;font-weight:900;width:16px;text-align:center;color:var(--ink-3)}
+.z14-r b{width:104px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:900;text-align:left}
+.z14-r i{flex:1;height:10px;background:var(--line);border-radius:99px;overflow:hidden}
+.z14-r i u{display:block;height:100%;background:#FF9600;border-radius:99px}
+.z14-r.me i u{background:#1CB0F6}
+.z14-r span{width:44px;text-align:right;font-weight:900}
+.z14-r.me b{color:var(--blue)}
+.z14-sx{display:grid;gap:5px;margin-top:10px}
+.z14-sx div{display:flex;gap:10px;align-items:center;font-size:14px;background:var(--card);border-radius:10px;padding:6px 10px}
+.z14-sx em{font-style:normal;font-weight:900;color:var(--ink-3);width:22px}.z14-sx b{flex:1;font-weight:900}.z14-sx span{font-weight:900}
+.z14-sx div.me{outline:2px solid #1CB0F6}
+.z14-oxs{margin-top:12px}.z14-oxs small{display:block;font-size:11.5px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.z14-ox{font-size:13.5px;color:var(--ink-2);margin-top:5px}
+.z14-opp{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+.z14-opp button{display:flex;flex-direction:column;align-items:center;gap:4px;border:2px solid var(--line);border-bottom-width:4px;background:var(--card);border-radius:16px;padding:10px 4px;font:inherit;color:inherit}
+.z14-opp button.on{border-color:#FF4B4B;background:var(--red-soft)}
+.z14-opp b{font-size:13.5px;font-weight:900}.z14-opp small{font-size:11px;color:var(--ink-3);font-weight:800}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 2.6 · Notificações reformuladas
+   Tela "Permitir acessos", avisos em destaque (canal de prioridade
+   alta), verificador na tela de Lembretes e o sininho com tudo o
+   que está pendente hoje e o que ficou para trás.
+   ========================================================= */
+const Z15_CH = 'zenit-lembretes';
+let z15Ch = null;
+const __z15LN = zLN;
+// Canal novo, de prioridade alta: aparece em cima da tela, com som e vibração.
+function z15Chan(LN) {
+  if (z15Ch) return z15Ch;
+  z15Ch = (async () => {
+    if (!LN || typeof LN.createChannel !== 'function') return false;
+    try { await LN.createChannel({ id: Z15_CH, name: 'Lembretes do Zenit', description: 'Água, treino, refeições, desafios e X1', importance: 5, visibility: 1, vibration: true, lights: true, lightColor: '#58CC02' }); return true; }
+    catch (e) { z15Ch = null; return false; }
+  })();
+  return z15Ch;
+}
+const Z15W = new WeakMap();
+zLN = function () {
+  const LN = __z15LN(); if (!LN) return null;
+  let w = Z15W.get(LN); if (w) return w;
+  const sched = async o => { const ok = await z15Chan(LN); if (ok && o && o.notifications) o.notifications.forEach(n => { if (!n.channelId) n.channelId = Z15_CH; }); return LN.schedule(o); };
+  // os testes (9997 a 9999) nunca são cancelados pelo reagendamento
+  const cancel = o => LN.cancel(Object.assign({}, o, { notifications: ((o && o.notifications) || []).filter(n => n.id < 9990) }));
+  w = new Proxy({}, { get: (_, k) => k === 'schedule' ? sched : k === 'cancel' ? cancel : k === 'then' ? undefined : (typeof LN[k] === 'function' ? (...a) => LN[k](...a) : LN[k]) });
+  Z15W.set(LN, w); return w;
+};
+
+/* ---------- O que está liberado neste aparelho ---------- */
+async function z15Status() {
+  const LN = zLN(); const st = { native: !!LN, bat: !!(S && S.settings && S.settings.z15bat) };
+  if (LN) {
+    try { st.perm = ((await LN.checkPermissions()) || {}).display || 'prompt'; } catch (e) { st.perm = 'prompt'; }
+    st.exact = 'granted'; try { const r = await LN.checkExactNotificationSetting(); st.exact = (r && r.exact_alarm) || 'granted'; } catch (e) { }
+    st.chan = null;
+    if (st.perm === 'granted') {
+      const made = await z15Chan(__z15LN());
+      try { const r = await LN.listChannels(); const c = ((r && r.channels) || []).find(x => x.id === Z15_CH); st.chan = c ? (c.importance == null ? 5 : c.importance) : (made ? 5 : null); } catch (e) { st.chan = made ? 5 : null; }
+    }
+    try { const r = await LN.getPending(); st.pend = ((r && r.notifications) || []).filter(n => n.id < 9990).length; } catch (e) { st.pend = 0; }
+  } else st.perm = !('Notification' in window) ? 'none' : Notification.permission === 'default' ? 'prompt' : Notification.permission;
+  return st;
+}
+function z15Rows(st) {
+  const rows = [];
+  if (st.native) {
+    const p = st.perm;
+    rows.push({ k: 'perm', ic: '🔔', t: 'Notificações', ok: p === 'granted', s: p === 'granted' ? 'Liberadas para o Zenit.' : p === 'denied' ? 'Bloqueadas no Android. Abra <b>Configurações › Apps › Zenit › Notificações</b> e ligue <b>Permitir notificações</b>.' : 'Toque em Permitir e escolha <b>Permitir</b> na janelinha do Android.',
+      btn: p === 'granted' ? '' : p === 'denied' ? `<button class="btn xs sec" data-act="z15-check">Já liberei</button>` : `<button class="btn xs" data-act="z15-perm">Permitir</button>` });
+    if (p === 'granted' && st.chan != null) rows.push({ k: 'chan', ic: '📣', t: 'Aviso em destaque', ok: st.chan >= 4, s: st.chan >= 4 ? 'Aparece no topo da tela, com som e vibração.' : st.chan === 0 ? 'Os "Lembretes do Zenit" estão desligados. Abra <b>Configurações › Apps › Zenit › Notificações</b> e ligue <b>Lembretes do Zenit</b>.' : 'Está no silencioso. Em <b>Configurações › Apps › Zenit › Notificações › Lembretes do Zenit</b>, escolha <b>Alertar</b> e ligue <b>Mostrar como pop-up</b>.',
+      btn: st.chan >= 4 ? '' : `<button class="btn xs sec" data-act="z15-check">Já fiz</button>` });
+    rows.push({ k: 'exact', ic: '⏰', t: 'Horário exato', ok: st.exact === 'granted', s: st.exact === 'granted' ? 'Os avisos chegam na hora certa.' : 'Sem isso, o Android pode atrasar os avisos. Toque em Liberar e ligue o Zenit.', btn: st.exact === 'granted' ? '' : `<button class="btn xs" data-act="z15-exact">Liberar</button>` });
+    rows.push({ k: 'bat', ic: '🔋', t: 'Bateria sem restrição', ok: st.bat, s: st.bat ? 'Feito. O celular não vai "adormecer" o Zenit.' : 'O app não consegue ver isso sozinho. Faça uma vez:',
+      steps: st.bat ? '' : `<ol class="z11-steps"><li><b>Configurações › Apps › Zenit › Bateria</b>: escolha <b>Sem restrições</b>.</li><li>Em <b>Configurações › Assistência do aparelho e bateria › Bateria › Limites de uso em segundo plano</b>: tire o Zenit de <b>Apps em suspensão</b> e <b>Apps em suspensão profunda</b>.</li></ol>`,
+      btn: st.bat ? `<button class="zmini" data-act="z15-bat" data-v="0">Desfazer</button>` : `<button class="btn xs sec" data-act="z15-bat" data-v="1">Já fiz</button>` });
+  } else {
+    const p = st.perm;
+    rows.push({ k: 'perm', ic: '🔔', t: 'Notificações', ok: p === 'granted', s: p === 'granted' ? 'Liberadas neste navegador. Chegam com o Zenit aberto ou usado há pouco.' : p === 'denied' ? 'Bloqueadas. Libere nas configurações do navegador.' : p === 'none' ? 'Este navegador não mostra notificações. O sininho do app mostra tudo que está pendente.' : 'Toque em Permitir.',
+      btn: p === 'prompt' ? `<button class="btn xs" data-act="z15-perm">Permitir</button>` : '' });
+  }
+  return rows;
+}
+function z15ListHTML(st, lite) {
+  const rows = z15Rows(st); const ok = rows.filter(r => r.ok).length;
+  return `<div class="z15-sum ${ok === rows.length ? 'ok' : ''}"><b>${ok === rows.length ? '✅ Tudo liberado!' : `${ok} de ${rows.length} liberados`}</b><span>${ok === rows.length ? (st.native ? `Os lembretes vão chegar mesmo com o Zenit fechado.${st.pend ? ` ${st.pend} avisos agendados.` : ''}` : 'Tudo certo por aqui.') : 'Falta pouco. Siga os itens abaixo.'}</span></div>
+    <div class="z15-list">${rows.map(r => `<div class="z15-it ${r.ok ? 'ok' : 'no'}"><span class="z15-ic">${r.ic}</span><div class="grow"><b>${r.t}</b><span>${r.s}</span>${r.steps || ''}</div>${r.ok && !r.btn ? '<em class="z15-ck">✓</em>' : r.btn}</div>`).join('')}</div>
+    ${st.native && !lite ? `<div class="grid2" style="margin-top:12px"><button class="btn sm sec" data-act="z15-now">Testar agora</button><button class="btn sm sec" data-act="z11-test">Testar fechado</button></div><div class="hint">"Testar agora" mostra um aviso em 3 segundos. "Testar fechado" chega em 1 minuto: feche o app e bloqueie a tela.</div>` : ''}`;
+}
+async function z15Fill() {
+  const boxes = $$('.z15-box'); if (!boxes.length) return;
+  const st = await z15Status();
+  boxes.forEach(b => { if (document.body.contains(b)) b.innerHTML = z15ListHTML(st, b.dataset.lite === '1'); });
+  return st;
+}
+function z15Access(first) {
+  closeSheet(true);
+  openSheet(`<div class="z15-top"><div class="z15-bell">${Z15_BELL}</div><h2>${first ? 'Permitir acessos' : 'Verificador de avisos'}</h2><div class="sub">${first ? 'Para os lembretes chegarem mesmo com o Zenit fechado, libere estes itens. Leva 1 minuto.' : 'Veja o que está liberado neste aparelho e teste os avisos.'}</div></div>
+    <div class="z15-box"><div class="sub" style="text-align:center;padding:20px 0">Conferindo…</div></div>
+    <div style="margin-top:14px"><button class="btn" data-act="close">${first ? 'Pronto' : 'Fechar'}</button></div>`, {});
+  z15Fill();
+}
+// Na tela de Lembretes, o quadro de notificações vira o verificador
+z7FixRemSheet = async function () {
+  const ov = $('#overlay'); if (!ov || !(ov.querySelector('[data-act="zrem-add"]') || ov.querySelector('#z11Box'))) return;
+  const card = ov.querySelector('.card'); if (!card || card.classList.contains('z15-card')) { z15Fill(); return; }
+  card.classList.add('z15-card');
+  card.innerHTML = `<div class="z15-ch"><h3>Verificador de avisos</h3><button class="link-btn" data-act="z15-open">Abrir</button></div><div class="z15-box" data-lite="1"><div class="sub">Conferindo…</div></div>`;
+  z15Fill();
+};
+
+/* ---------- Ações ---------- */
+Object.assign(ACT, {
+  'z15-open': () => z15Access(false),
+  'z15-check': () => { z15Fill().then(st => { if (st && st.perm === 'granted') zScheduleNative(); }); },
+  'z15-perm': async () => {
+    const LN = zLN();
+    if (LN) { try { const r = await LN.requestPermissions(); if (r && r.display === 'granted') { toast('Notificações liberadas!', 'green', '🔔'); await z15Chan(__z15LN()); zScheduleNative(); } else toast('Ainda bloqueadas. Libere em Configurações › Apps › Zenit › Notificações.', 'red', '🔔'); } catch (e) { } }
+    else if ('Notification' in window) { try { await Notification.requestPermission(); } catch (e) { } }
+    z15Fill();
+  },
+  'z15-exact': async () => { const LN = zLN(); try { if (LN) await LN.changeExactNotificationSetting(); } catch (e) { } setTimeout(() => { z15Fill(); zScheduleNativeSoon(); }, 800); },
+  'z15-bat': el => { S.settings.z15bat = el.dataset.v === '1'; save(); z15Fill(); if (S.settings.z15bat) toast('Boa! Agora é só testar com o app fechado.', 'green', '🔋'); },
+  'z15-now': async () => {
+    const LN = zLN(); if (!LN) return;
+    try { await LN.schedule({ notifications: [{ id: 9997, title: 'Teste do Zenit 🔔', body: 'Apareceu? Então os seus avisos estão funcionando!', schedule: { at: new Date(Date.now() + 3000), allowWhileIdle: true } }] }); toast('Em 3 segundos chega um aviso de teste.', 'green', '🔔'); }
+    catch (e) { toast('Não consegui mostrar o teste. Confira se as notificações estão liberadas.', 'red', '🔔'); }
+  }
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && $('.z15-box')) setTimeout(z15Fill, 400); });
+
+/* ---------- Mostra "Permitir acessos" uma vez, quando o app estiver livre ---------- */
+function z15Auto(n) {
+  n = n || 0; if (!zLN() || !S || S.mode === 'demo') return;
+  if (S.settings && S.settings.z15acc === ZV) return;
+  const p = session.pid ? me() : null;
+  const busy = !p || $('#overlay') || $('#zcoach') || $('#sun') || $('#story') || $('#ck') || $('#zesc') || session.ob || !p.coachDone;
+  if (busy) { if (n < 900) setTimeout(() => z15Auto(n + 1), 1500); return; }
+  z15Status().then(st => {
+    if (!S || (S.settings && S.settings.z15acc === ZV)) return;
+    S.settings.z15acc = ZV; save();
+    if (z15Rows(st).some(r => !r.ok) && !$('#overlay')) z15Access(true);
+  });
+}
+setTimeout(z15Auto, 4500);
+const __z15Login = onLogin;
+onLogin = function () { const r = __z15Login.apply(this, arguments); setTimeout(z15Auto, 4000); return r; };
+// Configurações: atalho para o verificador
+const __z15Set = openSettings;
+openSettings = function () {
+  const r = __z15Set.apply(this, arguments);
+  try { const ov = $('#overlay'); const c = ov && ov.querySelector('.card'); if (c && !ov.querySelector('[data-act="z15-open"]')) c.insertAdjacentHTML('beforebegin', `<button class="z14-card" data-act="z15-open"><span class="z14-ic">🔔</span><span class="grow"><b>Avisos do celular</b><small>Permissões e teste dos lembretes</small></span><span class="z14-go">Ver</span></button>`); } catch (e) { }
+  return r;
+};
+
+/* ---------- Sininho: o que está pendente e o que ficou para trás ---------- */
+const Z15_BELL = '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4 a2 2 0 0 1 2 2 v1 a8 8 0 0 1 6 8 v6 l3 3 H 5 l3 -3 v-6 a8 8 0 0 1 6 -8 V6 a2 2 0 0 1 2 -2Z" fill="#FFC23D" stroke="#E5A500" stroke-width="1.6" stroke-linejoin="round"/><path d="M12.5 26 a3.5 3.5 0 0 0 7 0Z" fill="#E5A500"/></svg>';
+function z15Items() {
+  const out = { agora: [], hoje: [], ontem: [] }; if (!S || !session.pid || !S.room) return out;
+  const p = me(), t = T();
+  try {
+    for (const x of z10X1All()) if (x.to === p.id && z10X1Eval(x).state === 'pending') out.agora.push({ k: 'x1|' + x.id, ic: '⚔️', t: `${x.fromName || 'Alguém'} te desafiou para um X1`, s: 'Aceite ou recuse até o fim do dia', go: 'x1' });
+    const fs = z10FlashState(p, t); if (fs && fs.phase === 'live' && !fs.done) out.agora.push({ k: 'flash|' + t, ic: '⚡', t: 'Desafio-surpresa valendo agora', s: `${fs.f.ty.t} até ${fmtTime(fs.f.end)} · +25 XP`, go: fs.f.ty.kind === 'water' ? 'water-quick' : 'checkin' });
+    const wk = weekKey(t); for (const w of [addDays(wk, -7), wk]) { if (w < weekKey(S.room.start)) continue; const g = z10GoalState(p, w); if (g && g.met && !g.claimed && (w < wk || g.open)) out.agora.push({ k: 'bau|' + w, ic: '🎁', t: 'Seu baú especial chegou', s: 'Você cumpriu a meta da semana', go: 'quest' }); }
+    if (t >= zFrom()) { const ds = z10DayState(p, t); if (!ds.done && !ds.failed) out.hoje.push({ k: 'dia|' + t, ic: ds.c.ic, t: 'Desafio do dia: ' + ds.c.t, s: (ds.c.dl != null ? 'Até ' + fmtTime(ds.c.dl) : 'Até o fim do dia') + ' · +15 XP', go: 'quest' }); }
+  } catch (e) { }
+  try {
+    for (const it of zReminders(p, t)) { if (it.info || it.done) continue; out.hoje.push({ k: 'r|' + t + '|' + it.id, ic: '', zi: it.ic, bg: it.bg, t: it.t, s: (it.late ? 'Atrasado · ' : '') + (it.h ? it.h.replace(':', 'h') : 'Hoje'), late: !!it.late, go: it.act || '', rid: it.id }); }
+    const y = addDays(t, -1);
+    if (y >= S.room.start) for (const it of zReminders(p, y)) { if (it.info || it.done || ['agua', 'esp', 'desafio', 'backup'].includes(it.id) || out.ontem.length >= 4) continue; out.ontem.push({ k: 'o|' + y + '|' + it.id, zi: it.ic, bg: it.bg, t: it.t, s: 'Ficou para trás ontem' + (it.h ? ', às ' + it.h.replace(':', 'h') : '') }); }
+  } catch (e) { }
+  out.hoje.sort((a, b) => (b.late - a.late));
+  return out;
+}
+const z15Key = () => 'zenit-sino-' + T();
+function z15Seen() { try { return JSON.parse(localStorage.getItem(z15Key()) || '[]'); } catch (e) { return []; } }
+function z15Alerts(it) { return it.agora.concat(it.hoje.filter(x => x.late), it.ontem); }
+function z15Badge() { const it = z15Items(); const seen = z15Seen(); return z15Alerts(it).filter(x => !seen.includes(x.k)).length; }
+function z15Row(x, canDone) {
+  const ic = x.zi ? `<span class="zr-ic" style="background:${x.bg || '#FFF5D6'}">${ZI[x.zi] || ZI.bell}</span>` : `<span class="z15-em">${x.ic}</span>`;
+  return `<div class="z15-n ${x.late ? 'late' : ''}">${ic}<button class="grow" data-act="z15-go" data-go="${esc(x.go || '')}"><b>${esc(x.t)}</b><span>${esc(x.s)}</span></button>${canDone && x.rid ? `<button class="zr-ok" data-act="z15-done" data-id="${esc(x.rid)}" aria-label="Marcar como feito">${ZI.check}</button>` : ''}</div>`;
+}
+function z15BellHTML() {
+  const it = z15Items(); const n = it.agora.length + it.hoje.length + it.ontem.length;
+  return `<div class="z15-top"><div class="z15-bell">${Z15_BELL}</div><h2>Avisos</h2><div class="sub">${n ? 'Tudo o que está pendente, mesmo que o celular não tenha avisado.' : 'Nada pendente agora. Tudo em dia! 🎉'}</div></div>
+    ${it.agora.length ? `<div class="h2">Agora</div><div class="card z15-ns zrl" style="margin-top:0">${it.agora.map(x => z15Row(x)).join('')}</div>` : ''}
+    ${it.hoje.length ? `<div class="h2">Pendentes hoje</div><div class="card z15-ns zrl" style="margin-top:0">${it.hoje.map(x => z15Row(x, true)).join('')}</div>` : ''}
+    ${it.ontem.length ? `<div class="h2">Você perdeu ontem</div><div class="card z15-ns zrl" style="margin-top:0">${it.ontem.map(x => z15Row(x)).join('')}</div>` : ''}
+    <div style="margin-top:12px">${zLN() ? `<button class="btn sec" data-act="z15-open">🔔 Verificar avisos do celular</button>` : `<button class="btn sec" data-act="z-rem">Editar lembretes</button>`}</div>`;
+}
+function z15OpenBell() {
+  closeSheet(true); openSheet(`<div id="z15Bell">${z15BellHTML()}</div>`, {});
+  try { const it = z15Items(); localStorage.setItem(z15Key(), JSON.stringify(z15Alerts(it).map(x => x.k).concat(z15Seen()).slice(-200))); } catch (e) { }
+  z15Paint();
+}
+function z15Paint() { const b = $('#z15Badge'); if (!b) return; let n = 0; try { n = z15Badge(); } catch (e) { } b.textContent = n > 9 ? '9+' : String(n); b.style.display = n ? '' : 'none'; const tb = $('.tb.bell'); if (tb) tb.classList.toggle('has', n > 0); }
+Object.assign(ACT, {
+  'z15-bell': () => z15OpenBell(),
+  'z15-go': el => {
+    const g = el.dataset.go; closeSheet(true); if (!g) return;
+    if (g === 'x1' || g === 'quest') { session.tab = g === 'x1' ? 'rank' : 'quest'; renderMain(); window.scrollTo(0, 0); return; }
+    if (ACT['rem-go']) ACT['rem-go']({ dataset: { go: g } }); else if (ACT[g]) ACT[g](el);
+  },
+  'z15-done': el => { ACT['rem-done'](el); const b = $('#z15Bell'); if (b) b.innerHTML = z15BellHTML(); z15Paint(); }
+});
+const __z15Top = renderTopbar;
+renderTopbar = function () {
+  const r = __z15Top.apply(this, arguments);
+  const el = $('#topbar'); if (el && S && session.pid && !el.querySelector('.tb.bell')) { el.insertAdjacentHTML('beforeend', `<button class="tb bell" data-act="z15-bell" aria-label="Avisos">${Z15_BELL}<i id="z15Badge" style="display:none">0</i></button>`); z15Paint(); }
+  return r;
+};
+// Ao abrir o app: se tem coisa atrasada, o sininho chama a atenção
+let z15Nudged = '';
+function z15Nudge() {
+  if (!S || !session.pid || document.hidden || $('#overlay') || $('#zcoach') || session.ob) return;
+  z15Paint(); const n = z15Badge(); const sig = T() + '|' + n;
+  if (n && sig !== z15Nudged) { z15Nudged = sig; const tb = $('.tb.bell'); if (tb) { tb.classList.remove('ring'); void tb.offsetWidth; tb.classList.add('ring'); } toast(`Você tem ${n} ${plural(n, 'aviso pendente', 'avisos pendentes')}. Toque no sininho 🔔`, 'violet', '🔔'); }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(z15Nudge, 6000); });
+setTimeout(z15Nudge, 7000);
+setInterval(z15Paint, 60000);
+const __z15Save = save;
+save = function () { const r = __z15Save.apply(this, arguments); setTimeout(z15Paint, 50); return r; };
+try { if (S && session.pid && $('#topbar')) renderTopbar(); } catch (e) { }
+ZNEWS.splice(0, ZNEWS.length,
+  ['🏠', 'Minha sala', 'No Placar, toque em Minha sala: veja quem está, convide com um link, mude nome e ícone, saia com confirmação ou entre em outra sala vendo quem está lá antes.'],
+  ['👥', 'Salas de até 10 pessoas', 'O dono escolhe o limite. Com 2 pessoas, tudo continua igual. Com 3 ou mais, entra o modo grupo: pódio, X1 escolhendo o adversário e desafio da sala.'],
+  ['🔔', 'Avisos reformulados', 'Tela de Permitir acessos, avisos em destaque com som e vibração e um verificador em Lembretes.'],
+  ['🛎️', 'Sininho', 'No topo do app: o que está pendente hoje e o que ficou para trás, mesmo que o celular não tenha avisado.']);
+</script>
+<style>
+.tb.bell{position:relative;padding:6px 4px}
+.tb.bell svg{width:28px;height:28px}
+.tb.bell i{position:absolute;top:0;right:-2px;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:#FF4B4B;color:#fff;font-style:normal;font-size:11.5px;font-weight:900;display:grid;place-items:center;border:2px solid var(--bg)}
+.tb.bell.ring svg{animation:z15ring 1s ease-in-out 2;transform-origin:50% 10%}
+@keyframes z15ring{0%,100%{transform:rotate(0)}15%{transform:rotate(16deg)}30%{transform:rotate(-14deg)}45%{transform:rotate(10deg)}60%{transform:rotate(-6deg)}75%{transform:rotate(3deg)}}
+.z15-top{text-align:center}.z15-top h2{margin:4px 0 0}
+.z15-bell{width:64px;height:64px;margin:0 auto}.z15-bell svg{width:100%;height:100%}
+.z15-sum{margin-top:14px;border-radius:16px;padding:12px 14px;background:var(--gold-soft);border:2px solid var(--gold)}
+.z15-sum.ok{background:var(--green-soft);border-color:var(--green-line)}
+.z15-sum b{display:block;font-size:16px;font-weight:900}.z15-sum span{display:block;font-size:13.5px;color:var(--ink-2);margin-top:2px}
+.z15-list{display:grid;gap:8px;margin-top:10px}
+.z15-it{display:flex;gap:12px;align-items:flex-start;border:2px solid var(--line);border-radius:16px;padding:11px 12px;background:var(--card)}
+.z15-it.ok{border-color:var(--green-line)}
+.z15-it.no{border-color:#FFB020}
+.z15-it b{display:block;font-size:15px;font-weight:900}.z15-it .grow>span{display:block;font-size:13px;color:var(--ink-2);margin-top:2px;line-height:1.35}
+.z15-it .grow>span b,.z15-it .z11-steps b{display:inline;font-size:inherit;font-weight:900}
+.z15-it .z11-steps{margin:8px 0 0 16px;font-size:13px;gap:6px}
+.z15-it .btn{flex:none;width:auto;padding-left:12px;padding-right:12px;align-self:center}
+.z15-it .zmini{align-self:center}
+.z15-ic{font-size:24px;width:30px;text-align:center;flex:none}
+.z15-ck{font-style:normal;flex:none;align-self:center;width:30px;height:30px;border-radius:50%;background:#58CC02;color:#fff;display:grid;place-items:center;font-weight:900}
+.z15-ch{display:flex;align-items:center;justify-content:space-between}
+.z15-card .z15-sum{margin-top:8px}
+.z15-ns{display:grid;gap:0}
+.z15-n{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.z15-n:first-child{border-top:0}
+.z15-n>button.grow{background:none;border:0;padding:0;text-align:left;font:inherit;color:inherit}
+.z15-n b{display:block;font-size:15px;font-weight:900}.z15-n span:not(.zr-ic):not(.z15-em){display:block;font-size:12.5px;color:var(--ink-2)}
+.z15-n.late span:not(.zr-ic){color:#E0402C;font-weight:800}
+.z15-em{font-size:24px;width:40px;height:40px;display:grid;place-items:center;flex:none}
+.z15-n .zr-ok{flex:none}
 </style>
 
 </body>
