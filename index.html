@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '2.9.1';
+const ZV = '3.0';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -8506,6 +8506,7 @@ function zaiHistory() {
     if (m.k === 'food' && m.data) text = 'Estimativa de calorias: ' + zaiFoodSummary(m.data);
     if (m.k === 'ficha' && m.data) text = 'Li a ficha da academia: ' + (m.data.fichas || []).map(f => `${f.letra || ''} ${f.nome || ''} (${(f.ex || []).length} exercícios)`).join(', ') + (m.saved ? '. As fichas foram salvas no app.' : '.');
     if (m.img && m.r === 'u') text = '[mandou uma foto] ' + text;
+    if (m.acts && m.actDone && typeof z20ActLabel === 'function') text += '\n[Registrado no app: ' + m.acts.map(z20ActLabel).join('; ') + ']';
     if (!text) continue;
     const last = out[out.length - 1];
     if (last && last.role === role) last.parts[0].text += '\n' + text; else out.push({ role, parts: [{ text }] });
@@ -8659,7 +8660,8 @@ function zaiMsgHTML(m) {
   const img = m.img ? (ZAI.imgs.get(m.id) ? `<img class="zai-img" src="${ZAI.imgs.get(m.id)}" alt="Foto enviada">` : `<div class="zai-noimg">📷 Foto</div>`) : '';
   if (m.wait) return `<div class="zai-m a" data-id="${m.id}"><div class="zai-b">${m.t ? zaiMd(m.t) : '<span class="zai-typing"><i></i><i></i><i></i></span>'}</div></div>`;
   const spk = !me_ && !m.err && zaiTTSKind() ? `<button class="zai-spk" data-act="zai-say" data-id="${m.id}" aria-label="Ouvir resposta">${ZAI_IC.spk}</button>` : '';
-  return `<div class="zai-m ${me_ ? 'u' : 'a'} ${m.err ? 'err' : ''}" data-id="${m.id}"><div class="zai-b">${img}${m.voz ? '<span class="zai-voz">🎤 áudio</span>' : ''}${me_ ? (m.t ? `<p>${esc(m.t).replace(/\n/g, '<br>')}</p>` : '') : zaiMd(m.t)}</div>${spk}${m.err && m.retry ? `<button class="chip zai-retry" data-act="zai-retry" data-id="${m.id}">🔄 Tentar de novo</button>` : ''}</div>`;
+  const acts = !me_ && typeof z20ActsHTML === 'function' ? z20ActsHTML(m) : '';
+  return `<div class="zai-m ${me_ ? 'u' : 'a'} ${m.err ? 'err' : ''}" data-id="${m.id}"><div class="zai-b">${img}${m.voz ? '<span class="zai-voz">🎤 áudio</span>' : ''}${me_ ? (m.t ? `<p>${esc(m.t).replace(/\n/g, '<br>')}</p>` : '') : zaiMd(m.t)}${acts}</div>${spk}${m.err && m.retry ? `<button class="chip zai-retry" data-act="zai-retry" data-id="${m.id}">🔄 Tentar de novo</button>` : ''}</div>`;
 }
 function zaiList() {
   const l = $('#zaiList'); if (!l) return;
@@ -8704,8 +8706,8 @@ async function zaiSend(text, o) {
   try {
     let lastPaint = 0;
     const out = await zaiCall(ZAI_CHAT, { contents, systemInstruction: { role: 'system', parts: [{ text: zaiSystem() }] }, generationConfig: { temperature: 0.8, maxOutputTokens: 4096 } },
-      { stream: true, signal: ZAI.ctl && ZAI.ctl.signal, onText: t => { am.t = t; const now = Date.now(); if (now - lastPaint > 70) { lastPaint = now; zaiRepaint(am); zaiScroll(); } } });
-    am.t = out.text.trim(); delete am.wait; zaiRepaint(am); zaiStore(); zaiScroll();
+      { stream: true, signal: ZAI.ctl && ZAI.ctl.signal, onText: t => { am.t = typeof z20Vis === 'function' ? z20Vis(t) : t; const now = Date.now(); if (now - lastPaint > 70) { lastPaint = now; zaiRepaint(am); zaiScroll(); } } });
+    am.t = out.text.trim(); if (typeof z20Acts === 'function') z20Acts(am); delete am.wait; zaiRepaint(am); zaiStore(); zaiScroll();
     if (o.voz && zaiVozOn()) zaiSpeak(am.t);
   } catch (e) {
     if (e.kind === 'abort') { ZAI.msgs = ZAI.msgs.filter(x => x !== am); zaiUse(-1); zaiStore(); return; }
@@ -8732,22 +8734,23 @@ function zaiPickImg(cb, max) {
 /* ---------- Calorias ---------- */
 const ZAI_FOOD_RULES = `Você é especialista em nutrição e estima calorias de refeições brasileiras de forma realista.
 Responda SOMENTE com um JSON válido, sem texto fora dele, neste formato:
-{"prato":"nome curto do prato","itens":[{"nome":"Arroz branco","porcao":"4 colheres de sopa (~100 g)","kcal":130}],"total":650,"min":550,"max":750,"perguntas":[{"id":"q1","texto":"A carne foi frita no óleo ou grelhada?","opcoes":["Frita no óleo","Grelhada","Assada"]}],"dica":"uma frase curta, amigável e útil","nao_comida":false}
+{"prato":"nome curto do prato","itens":[{"nome":"Arroz branco","porcao":"4 colheres de sopa (~100 g)","kcal":130,"prot":3}],"total":650,"prot_total":32,"min":550,"max":750,"perguntas":[{"id":"q1","texto":"A carne foi frita no óleo ou grelhada?","opcoes":["Frita no óleo","Grelhada","Assada"]}],"dica":"uma frase curta, amigável e útil","nao_comida":false}
 Regras:
 - Use porções caseiras brasileiras (colheres, conchas, fatias, unidades) com a estimativa em gramas.
-- "total" é a soma dos itens; "min" e "max" mostram a margem de erro.
+- "total" é a soma dos itens; "min" e "max" mostram a margem de erro. "prot" é a proteína em gramas de cada item e "prot_total" a soma.
 - Faça no máximo 3 perguntas, e só quando a resposta mudar bem as calorias (óleo, fritura, molho, tamanho da porção, açúcar na bebida). Cada pergunta com 2 a 4 opções curtas. Se não precisar, "perguntas": [].
 - Se a imagem ou o texto não for comida, use "nao_comida": true, itens vazios e total 0.
 - Não julgue a pessoa. Escreva em português do Brasil.`;
 function zaiFoodSummary(d) { if (!d) return ''; if (d.nao_comida) return 'não era comida'; return `${d.prato || 'prato'}: ${(d.itens || []).map(i => `${i.nome} ${i.porcao ? '(' + i.porcao + ') ' : ''}${Math.round(i.kcal || 0)} kcal`).join(', ')}. Total aproximado ${Math.round(d.total || 0)} kcal.`; }
 function zaiFoodClean(d) {
   d = d && typeof d === 'object' ? d : {};
-  const itens = (Array.isArray(d.itens) ? d.itens : []).slice(0, 12).map(i => ({ nome: String(i && i.nome || 'Item').slice(0, 50), porcao: String(i && i.porcao || '').slice(0, 60), kcal: Math.max(0, Math.round(+(i && i.kcal) || 0)) }));
+  const itens = (Array.isArray(d.itens) ? d.itens : []).slice(0, 12).map(i => ({ nome: String(i && i.nome || 'Item').slice(0, 50), porcao: String(i && i.porcao || '').slice(0, 60), kcal: Math.max(0, Math.round(+(i && i.kcal) || 0)), prot: Math.max(0, Math.round(+(i && i.prot) || 0)) }));
   const sum = itens.reduce((a, b) => a + b.kcal, 0);
   let total = Math.round(+d.total || 0); if (!total || Math.abs(total - sum) > Math.max(30, sum * 0.15)) total = sum;
   const min = Math.round(+d.min || total * 0.85), max = Math.round(+d.max || total * 1.15);
   const perguntas = (Array.isArray(d.perguntas) ? d.perguntas : []).slice(0, 3).map((q, i) => ({ id: 'q' + (i + 1), texto: String(q && q.texto || '').slice(0, 120), opcoes: (Array.isArray(q && q.opcoes) ? q.opcoes : []).slice(0, 4).map(x => String(x).slice(0, 40)) })).filter(q => q.texto && q.opcoes.length >= 2);
-  return { prato: String(d.prato || 'Refeição').slice(0, 60), itens, total, min: Math.min(min, total), max: Math.max(max, total), perguntas, dica: String(d.dica || '').slice(0, 200), nao_comida: !!d.nao_comida || (!itens.length && !total) };
+  const prot = itens.reduce((a, b) => a + (b.prot || 0), 0) || Math.max(0, Math.round(+d.prot_total || 0));
+  return { prato: String(d.prato || 'Refeição').slice(0, 60), itens, total, prot, min: Math.min(min, total), max: Math.max(max, total), perguntas, dica: String(d.dica || '').slice(0, 200), nao_comida: !!d.nao_comida || (!itens.length && !total) };
 }
 function zaiMealNow() { const h = new Date().getHours() + new Date().getMinutes() / 60; return h < 10.5 ? 'cafe' : h < 15 ? 'almoco' : h < 18.5 ? 'lanche' : 'jantar'; }
 async function zaiFood(o) {
@@ -8787,7 +8790,7 @@ function zaiFoodHTML(m) {
   const busy = m.wait ? ' busy' : '';
   let h = `<div class="zai-m a" data-id="${m.id}"><div class="zai-b zai-card${busy}"><div class="zai-ch">🍽️ ${esc(d.prato)}</div>
     <ul class="zai-items">${d.itens.map(i => `<li><span class="grow"><b>${esc(i.nome)}</b>${i.porcao ? `<small>${esc(i.porcao)}</small>` : ''}</span><em>${fmtInt(i.kcal)} kcal</em></li>`).join('')}</ul>
-    <div class="zai-total"><span>Total aproximado</span><b>${fmtInt(d.total)} kcal</b></div><div class="zai-range">Pode variar entre ${fmtInt(d.min)} e ${fmtInt(d.max)} kcal</div>`;
+    <div class="zai-total"><span>Total aproximado</span><b>${fmtInt(d.total)} kcal</b></div><div class="zai-range">Pode variar entre ${fmtInt(d.min)} e ${fmtInt(d.max)} kcal${d.prot ? ` · 💪 ${d.prot} g de proteína` : ''}</div>`;
   if (d.dica) h += `<div class="zai-tipline">💡 ${esc(d.dica)}</div>`;
   if (m.saved) {
     const ml = MEALS.find(x => x.id === m.saved.meal) || MEALS[0];
@@ -8992,7 +8995,7 @@ Object.assign(ACT, {
     const m = zaiFind(el.dataset.id); if (!m || !m.data) return; zaiKcalKeep(m);
     const kcal = clamp(Math.round(m.kcal != null ? m.kcal : m.data.total), 0, 5000); if (!kcal) return toast('Coloque as calorias antes de registrar.', 'red', '🔥');
     const p = me(), t = T(), d = dmut(p, t); d.kcal = d.kcal || [];
-    const it = { id: z16Id(), at: Date.now(), meal: m.meal || zaiMealNow(), desc: m.data.prato, kcal };
+    const it = { id: z16Id(), at: Date.now(), meal: m.meal || zaiMealNow(), desc: m.data.prato, kcal, prot: m.data.prot || 0 };
     d.kcal.push(it);
     const ml = MEALS.find(x => x.id === it.meal) || MEALS[0];
     m.saved = { meal: it.meal, kcal, item: it.id, date: t, prev: (d.meals || {})[it.meal] || null, plan: m.plan || '' };
@@ -10186,6 +10189,465 @@ ZNEWS.splice(0, ZNEWS.length,
 .zai-fab.dim{transform:scale(.78);opacity:.42}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .z19-row.me .z19-b{background:#1F5C3A;border-color:#2C7A4E;color:#fff} :root:not([data-theme="light"]) .z19-auto{background:linear-gradient(135deg,#3B2A70,#22355F);border-color:#6B54C9;color:#fff} :root:not([data-theme="light"]) .z19-sys.err{background:#5A1F1F;color:#FFD5D5}}
 :root[data-theme="dark"] .z19-row.me .z19-b{background:#1F5C3A;border-color:#2C7A4E;color:#fff}:root[data-theme="dark"] .z19-auto{background:linear-gradient(135deg,#3B2A70,#22355F);border-color:#6B54C9;color:#fff}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 3.0 · Assistente mais esperta
+   Voz natural (Gemini TTS) com 4 vozes, modo conversa, meta de
+   calorias e proteína para todos os objetivos, a assistente
+   registra por você e lista de compras pelo cardápio.
+   ========================================================= */
+const Z20_TTS = ['gemini-3.1-flash-tts-preview'];
+const Z20_VOICES = [
+  { id: 'Achernar', t: 'Clara', s: 'Voz feminina suave', g: 'f' },
+  { id: 'Vindemiatrix', t: 'Bia', s: 'Voz feminina calma', g: 'f' },
+  { id: 'Algieba', t: 'Léo', s: 'Voz masculina suave', g: 'm' },
+  { id: 'Achird', t: 'Davi', s: 'Voz masculina amigável', g: 'm' }
+];
+const Z20_VLIM = 30, Z20_CLIM = 15;
+const Z20 = { ac: null, src: null, conv: null, playing: false };
+
+/* ---------- Áudio ---------- */
+function z20AC() {
+  if (!Z20.ac) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) try { Z20.ac = new AC(); } catch (e) { } }
+  if (Z20.ac && Z20.ac.state === 'suspended') Z20.ac.resume().catch(() => { });
+  return Z20.ac;
+}
+// O navegador só deixa tocar som depois de um toque: destrava ao tocar no chat
+document.addEventListener('pointerdown', e => { if (e.target.closest && e.target.closest('#zai,#z20conv,.z20-voices')) z20AC(); }, true);
+function z20Pcm(b64, rate) {
+  const ac = z20AC(); if (!ac) return null;
+  const bin = atob(b64); const n = bin.length >> 1; const buf = ac.createBuffer(1, Math.max(1, n), rate || 24000); const ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) { let v = bin.charCodeAt(i * 2) | (bin.charCodeAt(i * 2 + 1) << 8); if (v >= 32768) v -= 65536; ch[i] = v / 32768; }
+  return buf;
+}
+function z20Play(buf) {
+  return new Promise(res => {
+    const ac = z20AC(); if (!ac || !buf) return res(false); z20Stop();
+    const src = ac.createBufferSource(); src.buffer = buf; src.connect(ac.destination); src.onended = () => { if (Z20.src === src) { Z20.src = null; Z20.playing = false; } res(true); };
+    Z20.src = src; Z20.playing = true; src.start(0);
+  });
+}
+function z20Stop() { if (Z20.src) { try { Z20.src.onended = null; Z20.src.stop(); } catch (e) { } Z20.src = null; } Z20.playing = false; }
+const z20Voice = () => { try { return localStorage.getItem('zenit-voz') || Z20_VOICES[0].id; } catch (e) { return Z20_VOICES[0].id; } };
+function z20VLeft() { const p = me(); const a = (p && p.aiv) || {}; return a.d === localToday() ? Math.max(0, Z20_VLIM - (a.n || 0)) : Z20_VLIM; }
+function z20VUse() { const p = me(); const t = localToday(); const a = (p.aiv && p.aiv.d === t) ? p.aiv : { d: t, n: 0 }; a.n++; p.aiv = a; save(); }
+async function z20TTS(text, voice) {
+  const body = { contents: [{ role: 'user', parts: [{ text: `Fale em português do Brasil, com voz calma, suave e simpática:\n${text}` }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { languageCode: 'pt-BR', voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } } };
+  if (navigator.onLine === false) throw zaiErr('net');
+  for (const m of Z20_TTS) {
+    if (ZAI.bad[m]) continue;
+    let r; try { r = await fetch(ZAI_HOST + ZFB_CONFIG.projectId + '/models/' + m + ':generateContent', { method: 'POST', headers: zaiHeaders(), body: JSON.stringify(body) }); } catch (e) { throw zaiErr('net'); }
+    if (!r.ok) { if (r.status === 404) ZAI.bad[m] = 1; throw zaiErr(r.status === 429 ? 'quota' : 'bad'); }
+    const j = await r.json(); const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
+    const a = parts.find(x => x.inlineData && /audio/.test(x.inlineData.mimeType || ''));
+    if (!a) throw zaiErr('empty');
+    const rate = +((a.inlineData.mimeType.match(/rate=(\d+)/) || [])[1] || 24000);
+    return z20Pcm(a.inlineData.data, rate);
+  }
+  throw zaiErr('model');
+}
+// Fala uma resposta: voz natural quando dá, voz do aparelho quando não dá. Devolve quando terminar.
+const __z20Speak = zaiSpeak, __z20Hush = zaiHush;
+function z20SpeakAwait(t) {
+  const text = zaiPlain(t).slice(0, 700); if (!text) return Promise.resolve();
+  const v = z20Voice();
+  if (v !== 'aparelho' && z20VLeft() > 0 && navigator.onLine !== false) {
+    return z20TTS(text, v).then(buf => { z20VUse(); return z20Play(buf); }).catch(() => z20Device(text));
+  }
+  return z20Device(text);
+}
+function z20Device(text) {
+  return new Promise(res => {
+    const k = zaiTTSKind(); if (!k) return res();
+    if (k === 'cap') { const P = Capacitor.Plugins.TextToSpeech; Promise.resolve(P.stop && P.stop()).catch(() => { }).then(() => P.speak({ text, lang: 'pt-BR', rate: 1.0, pitch: 1.0, volume: 1.0, category: 'playback' })).then(res, res); return; }
+    try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = 'pt-BR'; const vs = speechSynthesis.getVoices().filter(x => /pt[-_]BR/i.test(x.lang)); const best = vs.find(x => /natural|neural|google|premium|enhanced/i.test(x.name)) || vs[0]; if (best) u.voice = best; u.onend = u.onerror = () => res(); speechSynthesis.speak(u); } catch (e) { res(); }
+  });
+}
+zaiSpeak = function (t) { z20SpeakAwait(t); };
+zaiHush = function () { z20Stop(); return __z20Hush.apply(this, arguments); };
+zaiTTSKind = (function (orig) { return function () { return orig.apply(this, arguments) || (z20Voice() !== 'aparelho' ? 'gem' : null); }; })(zaiTTSKind);
+
+/* ---------- Escolher a voz ---------- */
+function z20VoicesHTML() {
+  const cur = z20Voice(); const pet = petOf(me());
+  return `<div class="z20-voices"><h2>🎙️ Voz da assistente</h2><div class="sub">Escolha como ${pet.a === 'o' ? 'o' : 'a'} ${esc(pet.name)} fala com você. Toque em ▶ para ouvir antes.</div>
+    <div class="card" style="margin-top:12px">${Z20_VOICES.map(v => `<div class="z20-v ${cur === v.id ? 'on' : ''}"><button class="z20-play" data-act="z20-hear" data-v="${v.id}" aria-label="Ouvir ${v.t}">▶</button><button class="grow z20-pick" data-act="z20-voice" data-v="${v.id}"><b>${v.g === 'f' ? '👩' : '👨'} ${v.t}</b><small>${v.s}</small></button>${cur === v.id ? '<span class="pill green">Usando</span>' : ''}</div>`).join('')}
+      <div class="z20-v ${cur === 'aparelho' ? 'on' : ''}"><button class="z20-play" data-act="z20-hear" data-v="aparelho" aria-label="Ouvir a voz do aparelho">▶</button><button class="grow z20-pick" data-act="z20-voice" data-v="aparelho"><b>📱 Voz do aparelho</b><small>Funciona sem internet. Pode soar mais robótica.</small></button>${cur === 'aparelho' ? '<span class="pill green">Usando</span>' : ''}</div></div>
+    <div class="hint">A voz natural vem da IA do Google: até ${Z20_VLIM} respostas faladas por dia. Depois disso, o app usa a voz do aparelho até a meia-noite.</div>
+    <div class="card"><h3>📱 Melhorar a voz do aparelho</h3><div class="sub" style="margin-bottom:8px">No Galaxy: <b>Configurações › Gerenciamento geral › Saída de conversão de texto em voz</b>, escolha <b>Serviços de fala do Google</b> e baixe a voz em Português (Brasil).</div>
+      ${window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.TextToSpeech && Capacitor.Plugins.TextToSpeech.openInstall ? '<button class="btn sec sm" data-act="z20-install">Abrir instalação de vozes</button>' : ''}</div></div>`;
+}
+function z20VoicesOpen() { openSheet(`<div id="z20Vs">${z20VoicesHTML()}</div>`, {}); const ov = $('#overlay'); if (ov && $('#zai')) ov.style.zIndex = '95'; }
+const __z20Menu = zaiMenu;
+zaiMenu = function () {
+  __z20Menu.apply(this, arguments); const f = $('#zaiFoot .zai-cam'); if (!f) return;
+  const v = z20Voice(); const vv = Z20_VOICES.find(x => x.id === v);
+  f.insertAdjacentHTML('afterbegin', `<button data-act="z20-voices"><span>🎙️</span><span class="grow"><b>Voz da assistente</b><small>${vv ? vv.t + ' · ' + vv.s : 'Voz do aparelho'}</small></span></button><button data-act="z20-conv"><span>🗣️</span><span class="grow"><b>Modo conversa</b><small>Fale e ouça sem tocar na tela</small></span></button>`);
+};
+
+/* ---------- Modo conversa ---------- */
+function z20CLeft() { const p = me(); const a = (p && p.aic) || {}; return a.d === localToday() ? Math.max(0, Z20_CLIM - (a.n || 0)) : Z20_CLIM; }
+function z20CUse(n) { const p = me(); const t = localToday(); const a = (p.aic && p.aic.d === t) ? p.aic : { d: t, n: 0 }; a.n = Math.max(0, a.n + n); p.aic = a; save(); }
+function z20ConvHTML() {
+  const C = Z20.conv; const p = me(); const pet = petOf(p);
+  const lbl = { ouvindo: 'Pode falar, estou ouvindo…', pensando: 'Pensando…', falando: 'Falando…', pronto: 'Toque para começar' }[C.st] || '';
+  return `<div class="z20-c st-${C.st}"><div class="z20-ct"><b>🗣️ Modo conversa</b><span class="pill">${z20CLeft()} ${plural(z20CLeft(), 'fala', 'falas')} hoje</span></div>
+    <div class="z20-stage"><div class="z20-ring"></div><div class="z20-pet">${petSVG(p.pet, { mood: 'feliz', stage: 1 })}</div></div>
+    <div class="z20-st">${lbl}</div>
+    <div class="z20-tx">${C.you ? `<div class="you">“${esc(C.you)}”</div>` : ''}${C.say ? `<div class="say">${esc(zaiPlain(C.say)).slice(0, 260)}</div>` : `<div class="say muted">Fale normalmente. Quando você parar, ${pet.a === 'o' ? 'o' : 'a'} ${esc(pet.name)} responde falando e volta a ouvir.</div>`}</div>
+    <button class="btn red" data-act="z20-conv-x">Encerrar conversa</button></div>`;
+}
+function z20ConvPaint() { const el = $('#z20conv'); if (el && Z20.conv) el.innerHTML = z20ConvHTML(); }
+async function z20ConvStart() {
+  if (Z20.conv) return; if (!zaiLeft() && !z20CLeft()) return toast('As falas de hoje acabaram. Volta amanhã!', 'red', '⏳');
+  if (!z20CLeft()) return toast(`Você usou as ${Z20_CLIM} falas do modo conversa hoje.`, 'red', '⏳');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return toast('Este aparelho não deixa gravar áudio aqui.', 'red', '🎤');
+  z20AC(); zaiMicCancel(); zaiHush();
+  let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+  catch (e) { return toast(zaiIsApk() ? 'Para conversar, permita o microfone do Zenit nas configurações.' : 'Permita o uso do microfone para conversar. 🎤', 'red', '🎤'); }
+  Z20.conv = { stream, st: 'ouvindo', you: '', say: '', pend: null, idle: Date.now(), alive: true };
+  let el = $('#z20conv'); if (!el) { el = document.createElement('div'); el.id = 'z20conv'; el.className = 'z20-cw'; ($('#zai .zai-in') || document.body).appendChild(el); }
+  z20ConvPaint(); z20Listen();
+}
+function z20ConvStop(msg) {
+  const C = Z20.conv; if (!C) return; C.alive = false; Z20.conv = null;
+  try { if (C.rec && C.rec.state !== 'inactive') C.rec.stop(); } catch (e) { }
+  try { C.stream.getTracks().forEach(t => t.stop()); } catch (e) { } clearInterval(C.vadT); z20Stop(); zaiHush();
+  const el = $('#z20conv'); if (el) el.remove(); zaiFoot(); zaiLeftPaint(); if (msg) toast(msg, 'violet', '🗣️');
+}
+function z20Listen() {
+  const C = Z20.conv; if (!C || !C.alive) return;
+  C.st = 'ouvindo'; z20ConvPaint();
+  const ac = z20AC(); const srcN = ac.createMediaStreamSource(C.stream); const an = ac.createAnalyser(); an.fftSize = 1024; srcN.connect(an); const data = new Uint8Array(an.fftSize);
+  const mime = zaiRecMime(); let rec; try { rec = mime ? new MediaRecorder(C.stream, { mimeType: mime }) : new MediaRecorder(C.stream); } catch (e) { return z20ConvStop('Não consegui usar o microfone.'); }
+  const chunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); }; rec.start(200); C.rec = rec;
+  let spoke = false, lastVoice = 0, noise = 0.01, n = 0; const t0 = Date.now();
+  C.vadT = setInterval(() => {
+    if (!Z20.conv || !C.alive) { clearInterval(C.vadT); return; }
+    an.getByteTimeDomainData(data); let sum = 0; for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; } const rms = Math.sqrt(sum / data.length);
+    n++; if (n < 8) { noise = Math.max(noise, rms); return; }
+    const thr = Math.max(0.035, noise * 2.6); const now = Date.now();
+    if (rms > thr) { if (!spoke) { spoke = true; } lastVoice = now; C.idle = now; }
+    const stop = (spoke && now - lastVoice > 1400) || (spoke && now - t0 > 30000);
+    if (stop) { clearInterval(C.vadT); rec.onstop = () => { try { srcN.disconnect(); } catch (e) { } z20Heard(new Blob(chunks, { type: rec.mimeType || mime || 'audio/webm' })); }; try { rec.stop(); } catch (e) { } return; }
+    if (!spoke && now - C.idle > 20000) { clearInterval(C.vadT); try { rec.stop(); } catch (e) { } z20ConvStop('Conversa encerrada por silêncio. Até já!'); }
+  }, 100);
+}
+const Z20_YES = /^(sim|pode|isso|confirma|confirmo|registra|registre|claro|ok|beleza|bora|manda|quero|pode sim|isso mesmo)\b/i;
+const Z20_NO = /^(não|nao|cancela|deixa|esquece|agora não|nem)\b/i;
+async function z20Heard(blob) {
+  const C = Z20.conv; if (!C || !C.alive) return;
+  C.st = 'pensando'; z20ConvPaint();
+  let part; try { part = { inlineData: { mimeType: 'audio/wav', data: await zaiBlob64(await zaiWav(await blob.arrayBuffer())) } }; } catch (e) { part = { inlineData: { mimeType: String(blob.type || 'audio/webm').split(';')[0], data: await zaiBlob64(blob) } }; }
+  let text = '';
+  try { const out = await zaiCall(ZAI_FAST, { contents: [{ role: 'user', parts: [part, { text: 'Transcreva exatamente o que a pessoa falou neste áudio, em português do Brasil, com pontuação. Responda só com a transcrição. Se não houver fala, responda apenas: [silêncio]' }] }], generationConfig: { temperature: 0, maxOutputTokens: 1024 } }); text = out.text.trim().replace(/^["“]|["”]$/g, ''); }
+  catch (e) { if (!Z20.conv) return; C.say = zaiErrText(e); z20ConvPaint(); await z20SpeakAwait(C.say); return z20Listen(); }
+  if (!Z20.conv || !C.alive) return;
+  if (!text || /^\[?sil[eê]ncio\]?\.?$/i.test(text)) return z20Listen();
+  C.you = text; C.idle = Date.now();
+  // confirmação por voz de um registro pendente
+  if (C.pend) {
+    const m = C.pend; C.pend = null;
+    if (Z20_YES.test(text.trim())) { z20Apply(m); C.say = 'Pronto, registrei! ✅'; z20ConvPaint(); C.st = 'falando'; z20ConvPaint(); await z20SpeakAwait('Pronto, registrei!'); return z20Listen(); }
+    if (Z20_NO.test(text.trim())) { m.actX = true; zaiStore(); zaiRepaint(m); C.say = 'Tudo bem, não registrei.'; C.st = 'falando'; z20ConvPaint(); await z20SpeakAwait(C.say); return z20Listen(); }
+  }
+  if (!z20CLeft()) return z20ConvStop(`Você usou as ${Z20_CLIM} falas do modo conversa hoje.`);
+  zaiAdd({ r: 'u', t: text, voz: true });
+  const am = zaiAdd({ r: 'a', t: '', wait: true, id: zaiId() }); z20CUse(1);
+  try {
+    const sys = zaiSystem() + '\n\nMODO CONVERSA: sua resposta vai ser falada em voz alta. Responda em no máximo 3 frases curtas, sem listas, sem emojis e sem markdown.';
+    const out = await zaiCall(ZAI_CHAT, { contents: zaiHistory(), systemInstruction: { role: 'system', parts: [{ text: sys }] }, generationConfig: { temperature: 0.8, maxOutputTokens: 2048 } });
+    am.t = out.text.trim(); z20Acts(am); delete am.wait; zaiRepaint(am); zaiStore(); zaiScroll(true);
+  } catch (e) { am.t = zaiErrText(e); am.err = true; delete am.wait; zaiRepaint(am); zaiStore(); z20CUse(-1); }
+  if (!Z20.conv || !C.alive) return;
+  if (am.acts && am.acts.length) C.pend = am;
+  C.say = am.t; C.st = 'falando'; z20ConvPaint(); await z20SpeakAwait(am.t);
+  if (Z20.conv && C.alive) z20Listen();
+}
+
+/* ---------- A assistente registra para você ---------- */
+const Z20_ACT_RULES = `
+
+REGISTRAR NO APP: quando a pessoa contar que FEZ algo (bebeu água, comeu, treinou, descansou, se pesou, dormiu) ou pedir um lembrete ou um dia especial na agenda, ofereça registrar. Escreva a resposta normal, termine perguntando se quer registrar, e no FINAL coloque um bloco exatamente neste formato:
+[[ACOES]]{"acoes":[ ... ]}[[/ACOES]]
+Tipos possíveis:
+{"t":"agua","ml":500}
+{"t":"refeicao","ref":"cafe|almoco|lanche|jantar","plano":"ok|fora"}
+{"t":"calorias","desc":"pão com ovo","kcal":250,"prot":12,"ref":"cafe|almoco|lanche|jantar"}
+{"t":"treino","tipo":"A|B|C|Cardio|Leve","min":60,"completo":true}
+{"t":"descanso"}
+{"t":"peso","kg":86.4}
+{"t":"sono","h":7.5}
+{"t":"lembrete","texto":"Tomar creatina","hora":"08:00","dias":[0,1,2,3,4,5,6]}
+{"t":"agenda","data":"AAAA-MM-DD","tipo":"folga|viagem|festa|aniversario","nota":"texto curto"}
+Regras: só proponha o que a pessoa disse; não invente quantidades (se faltar o número, pergunte antes e não escreva o bloco); tudo é de hoje, a não ser a agenda; dias da semana: 0=domingo ... 6=sábado; não escreva o bloco quando for só uma dúvida ou conversa. Nunca mostre nem explique o bloco: o app transforma ele num botão de confirmar.`;
+const __z20Sys = zaiSystem;
+zaiSystem = function () {
+  let s = __z20Sys.apply(this, arguments);
+  try { const g = z20Goal(me()); const d = dget(me(), T()); const k = (d.kcal || []); const kc = k.reduce((a, b) => a + (b.kcal || 0), 0), pr = k.reduce((a, b) => a + (b.prot || 0), 0); if (g) s += `\nMeta de calorias do dia: ${fmtInt(g.kcal)} kcal (gasto estimado ${fmtInt(g.tdee)} kcal) e ${g.prot} g de proteína. Já registrou hoje: ${fmtInt(kc)} kcal e ${pr} g de proteína.`; else s += '\nAinda não definiu a meta de calorias no app (fica em Registrar › Refeições).'; } catch (e) { }
+  return s + Z20_ACT_RULES;
+};
+function z20Vis(t) { const i = String(t).indexOf('[['); return i > -1 ? t.slice(0, i).trim() : t; }
+function z20Clean(a) {
+  if (!a || typeof a !== 'object') return null; const t = String(a.t || '');
+  const refs = ['cafe', 'almoco', 'lanche', 'jantar'];
+  if (t === 'agua') { const ml = Math.round(+a.ml); return ml >= 50 && ml <= 2000 ? { t, ml } : null; }
+  if (t === 'refeicao') return refs.includes(a.ref) && ['ok', 'fora'].includes(a.plano) ? { t, ref: a.ref, plano: a.plano } : null;
+  if (t === 'calorias') { const kcal = Math.round(+a.kcal); return kcal > 0 && kcal < 4000 ? { t, desc: String(a.desc || 'Refeição').slice(0, 50), kcal, prot: Math.max(0, Math.round(+a.prot || 0)), ref: refs.includes(a.ref) ? a.ref : zaiMealNow() } : null; }
+  if (t === 'treino') { const tipo = ['A', 'B', 'C', 'Cardio', 'Leve'].find(x => x.toLowerCase() === String(a.tipo || '').toLowerCase()); return tipo ? { t, tipo, min: clamp(Math.round(+a.min || 60), 10, 240), completo: a.completo !== false } : null; }
+  if (t === 'descanso') return { t };
+  if (t === 'peso') { const kg = Math.round(+String(a.kg).replace(',', '.') * 10) / 10; return kg >= 30 && kg <= 300 ? { t, kg } : null; }
+  if (t === 'sono') { const h = Math.round(+a.h * 2) / 2; return h >= 1 && h <= 16 ? { t, h } : null; }
+  if (t === 'lembrete') { const hora = /^\d{1,2}:\d{2}$/.test(a.hora || '') ? String(a.hora).padStart(5, '0') : ''; const dias = (Array.isArray(a.dias) ? a.dias : [0, 1, 2, 3, 4, 5, 6]).map(Number).filter(x => x >= 0 && x <= 6); const texto = String(a.texto || '').trim().slice(0, 60); return texto && hora && dias.length ? { t, texto, hora, dias: [...new Set(dias)].sort() } : null; }
+  if (t === 'agenda') { const tipo = Object.keys(ZSP).includes(a.tipo) ? a.tipo : 'folga'; return /^\d{4}-\d{2}-\d{2}$/.test(a.data || '') && a.data >= T() ? { t, data: a.data, tipo, nota: String(a.nota || '').slice(0, 60) } : null; }
+  return null;
+}
+function z20Acts(m) {
+  const raw = String(m.t || ''); const i = raw.indexOf('[[ACOES]]'); if (i < 0) { m.t = z20Vis(raw); return; }
+  const j = raw.indexOf('[[/ACOES]]', i); const js = raw.slice(i + 9, j > -1 ? j : undefined);
+  m.t = (raw.slice(0, i) + (j > -1 ? raw.slice(j + 10) : '')).trim();
+  try { const o = JSON.parse(js.trim()); const list = (Array.isArray(o) ? o : o.acoes || []).map(z20Clean).filter(Boolean).slice(0, 6); if (list.length) m.acts = list; } catch (e) { }
+}
+const Z20_DOW = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+function z20ActLabel(a) {
+  const ml = MEALS.find(x => x.id === a.ref);
+  if (a.t === 'agua') return `💧 Água: +${a.ml} ml`;
+  if (a.t === 'refeicao') return `${ml.icon} ${ml.name}: ${a.plano === 'ok' ? 'no plano' : 'fora do plano'}`;
+  if (a.t === 'calorias') return `🔥 ${a.desc}: ${fmtInt(a.kcal)} kcal${a.prot ? ` · ${a.prot} g de proteína` : ''} (${ml.name})`;
+  if (a.t === 'treino') return `🏋️ ${a.tipo === 'Cardio' || a.tipo === 'Leve' ? a.tipo : 'Treino ' + a.tipo} · ${a.min} min · ${a.completo ? 'completo' : 'parcial'}`;
+  if (a.t === 'descanso') return '😴 Dia de descanso';
+  if (a.t === 'peso') return `⚖️ Pesagem: ${fmt1(a.kg)} kg`;
+  if (a.t === 'sono') return `🌙 Sono: ${zHr ? zHr(a.h) : a.h + 'h'}`;
+  if (a.t === 'lembrete') return `⏰ Lembrete ${a.hora.replace(':', 'h')} · ${a.dias.length === 7 ? 'todo dia' : a.dias.map(d => Z20_DOW[d]).join(', ')}: ${a.texto}`;
+  if (a.t === 'agenda') return `📅 ${fmtDay(a.data)} · ${ZSP[a.tipo][0]}${a.nota ? ': ' + a.nota : ''}`;
+  return '';
+}
+function z20ActsHTML(m) {
+  if (!m.acts || !m.acts.length) return '';
+  const list = `<ul class="z20-al">${m.acts.map(a => `<li>${esc(z20ActLabel(a))}</li>`).join('')}</ul>`;
+  if (m.actDone) return `<div class="z20-act done">${list}<div class="z20-ab"><span>✅ Registrado</span><button class="chip" data-act="z20-undo" data-id="${m.id}">Desfazer</button></div></div>`;
+  if (m.actX) return `<div class="z20-act off">${list}<div class="z20-ab"><span>Não registrado</span><button class="chip" data-act="z20-do" data-id="${m.id}">Registrar agora</button></div></div>`;
+  return `<div class="z20-act">${list}<div class="z20-ab"><button class="btn sm" data-act="z20-do" data-id="${m.id}">Registrar</button><button class="chip" data-act="z20-no" data-id="${m.id}">Agora não</button></div></div>`;
+}
+function z20Apply(m) {
+  const p = me(), t = T(); if (!m || !m.acts || m.actDone) return;
+  const snap = { day: JSON.stringify(p.days[t] || null), coins: p.coins, w: JSON.stringify(p.weighins || []), r: JSON.stringify(p.reminders || []), ag: JSON.stringify(p.agenda || []), ach: JSON.stringify(p.ach || {}), zch: JSON.stringify(p.zch || {}), sach: JSON.stringify(p.sach || {}), ll: p.lastLevel, t };
+  let needCommit = false, sched = false;
+  for (const a of m.acts) {
+    const d = dmut(p, t);
+    if (a.t === 'agua') { const prev = d.water || 0; if (prev + a.ml <= 5000) { d.water = prev + a.ml; d.waterLog = (d.waterLog || []).concat(a.ml); if (waterOk(p, d) && d.waterGoalAt == null) d.waterGoalAt = nowMin(); needCommit = true; } }
+    else if (a.t === 'refeicao') { d.meals = d.meals || {}; d.meals[a.ref] = a.plano; needCommit = true; }
+    else if (a.t === 'calorias') { d.kcal = d.kcal || []; d.kcal.push({ id: z16Id(), at: Date.now(), meal: a.ref, desc: a.desc, kcal: a.kcal, prot: a.prot || 0 }); }
+    else if (a.t === 'treino') { d.workout = { type: a.tipo, min: a.min, full: a.completo, feel: 'ok', at: nowMin(), proof: null }; d.rest = false; needCommit = true; }
+    else if (a.t === 'descanso') { if (!d.workout) { d.rest = true; needCommit = true; } }
+    else if (a.t === 'peso') { recordWeigh(p, t, { w: a.kg }); needCommit = true; }
+    else if (a.t === 'sono') { d.sleep = a.h; needCommit = true; }
+    else if (a.t === 'lembrete') { zRoutine(p); p.reminders.push({ id: Date.now().toString(36) + Math.floor(Math.random() * 1e3), text: a.texto, h: a.hora, dows: a.dias, on: true }); sched = true; }
+    else if (a.t === 'agenda') { zRoutine(p); p.agenda = p.agenda.filter(x => x.date !== a.data); p.agenda.push({ id: Date.now().toString(36), date: a.data, k: a.tipo, note: a.nota }); sched = true; }
+  }
+  m.actDone = snap; delete m.actX; zaiStore(); zaiRepaint(m);
+  if (needCommit) commit({ rerender: true }); else { save(); if ($('#main')) renderMain(true); }
+  if (sched && typeof zScheduleNativeSoon === 'function') zScheduleNativeSoon();
+  sfx('ding'); toast('Registrado! ✅', 'green', '✍️');
+}
+function z20Undo(m) {
+  const s = m && m.actDone; if (!s) return; const p = me();
+  const day = JSON.parse(s.day); if (day) p.days[s.t] = day; else delete p.days[s.t];
+  p.coins = s.coins; p.weighins = JSON.parse(s.w); p.reminders = JSON.parse(s.r); p.agenda = JSON.parse(s.ag); if (s.ach) { p.ach = JSON.parse(s.ach); p.zch = JSON.parse(s.zch); p.sach = JSON.parse(s.sach); } if (s.ll != null) p.lastLevel = s.ll;
+  delete m.actDone; m.actX = true; zaiStore(); zaiRepaint(m); CACHE = new Map(); save(); if ($('#main')) renderMain(true);
+  if (typeof zScheduleNativeSoon === 'function') zScheduleNativeSoon(); toast('Registro desfeito.', 'violet', '↩️');
+}
+
+/* ---------- Meta de calorias e proteína ---------- */
+const Z20_ACT = [['sed', 'Quase parado', 'Pouco movimento no dia', 1.2], ['leve', 'Leve', 'Exercício 1 a 3 vezes por semana', 1.375], ['mod', 'Moderado', 'Exercício 3 a 5 vezes por semana', 1.55], ['alto', 'Intenso', 'Exercício 6 a 7 vezes por semana', 1.725]];
+function z20Goal(p) {
+  const b = p && p.body; if (!b || !b.h || !b.age || !b.sex) return null;
+  const w = latestW(p, T()) || startW(p); if (!w) return null;
+  const bmr = 10 * w + 6.25 * b.h - 5 * b.age + (b.sex === 'm' ? 5 : -161);
+  const f = (Z20_ACT.find(x => x[0] === b.act) || Z20_ACT[1])[3]; const tdee = bmr * f; const o = zObj(p);
+  const floor = b.sex === 'm' ? 1500 : 1200;
+  let kcal = o === 'perder' ? Math.max(floor, tdee * 0.8, bmr) : o === 'ganhar' ? tdee * 1.1 : tdee;
+  kcal = Math.round(kcal / 10) * 10;
+  const prot = Math.round(w * (o === 'manter' ? 1.6 : 1.8));
+  return { kcal, tdee: Math.round(tdee / 10) * 10, bmr: Math.round(bmr), prot, o };
+}
+function z20MetaHTML() {
+  const p = me(); const b = session.z20b || (session.z20b = Object.assign({ sex: '', age: '', h: '', act: 'leve' }, p.body || {}));
+  const g = z20Goal(Object.assign({}, p, { body: { sex: b.sex, age: +b.age, h: +b.h, act: b.act } }));
+  const o = ZOBJ[zObj(p)];
+  return `<h2>🎯 Meta de calorias</h2><div class="sub">Com estes dados, o app calcula quanto você gasta por dia e ajusta pelo seu objetivo: <b>${o.ic} ${o.t}</b>. Eles ficam só no seu aparelho.</div>
+    <div class="field"><span>Sexo biológico</span><div class="grid2"><button class="opt center ${b.sex === 'f' ? 'sel' : ''}" data-act="z20-b" data-k="sex" data-v="f">Feminino</button><button class="opt center ${b.sex === 'm' ? 'sel' : ''}" data-act="z20-b" data-k="sex" data-v="m">Masculino</button></div></div>
+    <div class="grid2"><label class="field"><span>Idade</span><input class="input" id="z20Age" type="number" inputmode="numeric" min="14" max="90" value="${esc(b.age)}" placeholder="Ex.: 25"></label><label class="field"><span>Altura (cm)</span><input class="input" id="z20H" type="number" inputmode="numeric" min="130" max="220" value="${esc(b.h)}" placeholder="Ex.: 170"></label></div>
+    <div class="field"><span>Quanto você se exercita?</span>${Z20_ACT.map(([k, t, s]) => `<button class="opt ${b.act === k ? 'sel' : ''}" data-act="z20-b" data-k="act" data-v="${k}" style="margin-bottom:6px;width:100%"><span class="grow" style="text-align:left"><b>${t}</b><small style="display:block;font-weight:700;opacity:.8">${s}</small></span></button>`).join('')}</div>
+    ${g ? `<div class="card tint-green"><div class="kv"><span>Gasto estimado por dia</span><b>${fmtInt(g.tdee)} kcal</b></div><div class="kv"><span>Sua meta (${o.t.toLowerCase()})</span><b>${fmtInt(g.kcal)} kcal</b></div><div class="kv"><span>Proteína por dia</span><b>${g.prot} g</b></div></div>` : ''}
+    <div class="hint">É uma estimativa pela fórmula de Mifflin-St Jeor, usada por nutricionistas. Se você tem nutricionista, siga o plano dele.</div>
+    <div style="margin-top:12px"><button class="btn" data-act="z20-meta-save">Salvar meta</button></div>`;
+}
+function z20MetaKeep() { const b = session.z20b; if (!b) return; const a = $('#z20Age'), h = $('#z20H'); if (a) b.age = a.value; if (h) b.h = h.value; }
+function z20MetaOpen() { session.z20b = null; openSheet(`<div id="z20Meta">${z20MetaHTML()}</div>`, {}); const ov = $('#overlay'); if (ov && $('#zai')) ov.style.zIndex = '95'; }
+function z20KcalCard() {
+  const p = me(), d = dget(p, T()); const k = d.kcal || []; const tot = k.reduce((a, b) => a + (b.kcal || 0), 0); const pr = k.reduce((a, b) => a + (b.prot || 0), 0); const g = z20Goal(p);
+  const pct = g ? Math.min(100, tot / g.kcal * 100) : 0; const over = g && tot > g.kcal * (g.o === 'ganhar' ? 1.25 : 1.1);
+  const ppct = g ? Math.min(100, pr / g.prot * 100) : 0; const left = g ? g.kcal - tot : 0;
+  const list = k.length ? `<ul class="zai-kl">${k.map(i => { const ml = MEALS.find(x => x.id === i.meal) || MEALS[0]; return `<li><span>${ml.icon}</span><span class="grow"><b>${esc(i.desc)}</b><small>${ml.name}${i.prot ? ` · ${i.prot} g de proteína` : ''}</small></span><em>${fmtInt(i.kcal)} kcal</em><button data-act="zai-kcal-del" data-id="${i.id}" aria-label="Apagar">${IC.x}</button></li>`; }).join('')}</ul>` : '<div class="sub" style="margin:4px 0 10px">Tire foto do prato ou conte para a assistente o que comeu.</div>';
+  return `<div class="card zai-kcard"><div class="row" style="justify-content:space-between"><h3>🔥 Calorias de hoje</h3><b class="zai-kt">${fmtInt(tot)}${g ? `<small> / ${fmtInt(g.kcal)}</small>` : ''} kcal</b></div>
+    ${g ? `<div class="z20-bar ${over ? 'over' : ''}"><i style="width:${pct}%"></i></div><div class="z20-bl">${left >= 0 ? `Faltam <b>${fmtInt(left)} kcal</b> para a meta de hoje` : `<b>${fmtInt(-left)} kcal</b> acima da meta de hoje`}</div>
+      <div class="z20-pr"><span>💪 Proteína</span><div class="z20-bar sm prot"><i style="width:${ppct}%"></i></div><b>${pr} / ${g.prot} g</b></div>` : `<button class="z20-setgoal" data-act="z20-meta"><span>🎯</span><span class="grow"><b>Defina sua meta de calorias</b><small>Para ${ZOBJ[zObj(p)].t.toLowerCase()}, com proteína do dia</small></span><em>›</em></button>`}
+    ${list}
+    <div class="z20-kb"><button class="btn sec sm" data-act="zai-open-food">📷 Pela foto</button><button class="btn sec sm" data-act="z20-shop">🛒 Compras</button></div>
+    ${g ? '<button class="z20-link" data-act="z20-meta">🎯 Ajustar minha meta</button>' : ''}</div>`;
+}
+const __z20Meals = mealsTabHTML;
+mealsTabHTML = function () { const h = __z20Meals.apply(this, arguments); try { const i = h.indexOf('<div class="card zai-kcard">'); return (i > -1 ? h.slice(0, i) : h) + z20KcalCard(); } catch (e) { return h; } };
+const __z20Pub = zfbPublicJSON;
+zfbPublicJSON = function (p) { const q = Object.assign({}, p); delete q.body; delete q.shop; delete q.aiv; delete q.aic; return __z20Pub.call(this, q); };
+
+/* ---------- Lista de compras ---------- */
+const Z20_CATS = [['hort', '🥬 Hortifrúti'], ['frut', '🍎 Frutas'], ['carne', '🥩 Carnes, ovos e peixes'], ['lat', '🧀 Laticínios'], ['pad', '🥖 Padaria'], ['merc', '🍚 Mercearia'], ['beb', '☕ Bebidas'], ['outro', '📝 Outros']];
+function z20Cat(name, part) {
+  const n = String(name).toLowerCase();
+  if (/iogurte|queijo|leite|requeij|manteiga|coalhada|whey/.test(n)) return 'lat';
+  if (/pão|pao|torrada|bisnaga/.test(n)) return 'pad';
+  if (part === 'prot') return /pasta de amendoim|atum|grão|grao|feij/.test(n) ? 'merc' : 'carne';
+  if (part === 'veg') return 'hort'; if (part === 'fruta') return 'frut'; if (part === 'beb') return /café|cafe|chá|cha|suco|água de coco/.test(n) ? 'beb' : 'beb';
+  if (part === 'carb' || part === 'acomp') return /batata|mandioca|aipim|inhame|abóbora|abobora|legume|vinagrete|salada/.test(n) ? 'hort' : 'merc';
+  return 'outro';
+}
+function z20ShopBuild(p) {
+  const cnt = new Map();
+  const add = (name, part) => { const k = String(name).trim(); if (!k) return; const key = k.toLowerCase(); const o = cnt.get(key) || { t: k, n: 0, cat: z20Cat(k, part) }; o.n++; cnt.set(key, o); };
+  if (zHasWeek(p)) for (const dw of ZWEEK) for (const x of MEALS) { const o = zMealObj(p, dw, x.id); for (const [part] of (ZPARTS[x.id] || [])) (o[part] || []).forEach(n => add(n, part)); if (o.txt) String(o.txt).split(/[,;+]| e /).forEach(n => add(n, 'outro')); }
+  else for (const k of ['semana', 'fds']) for (const v of Object.values(((p.menu || {})[k]) || {})) String(v).split(/[,;+]| e /).forEach(n => add(n, 'outro'));
+  return [...cnt.values()].map(o => ({ id: z16Id() + Math.floor(Math.random() * 1e3), t: o.t, q: o.n > 1 ? `${o.n} refeições` : '', cat: o.cat, on: false }));
+}
+function z20Shop(p) { const wk = weekKey(T()); if (!p.shop || p.shop.wk !== wk) p.shop = { wk, items: z20ShopBuild(p), ai: false }; return p.shop; }
+function z20ShopHTML() {
+  const p = me(); const sh = z20Shop(p); const items = sh.items; const done = items.filter(i => i.on).length;
+  const groups = Z20_CATS.map(([k, t]) => [t, items.filter(i => i.cat === k)]).filter(([, l]) => l.length);
+  return `<h2>🛒 Lista de compras</h2><div class="sub">${zHasWeek(p) ? `Montada pelo seu cardápio da semana.` : 'Monte o cardápio da semana para a lista sair sozinha.'} ${items.length ? `${done} de ${items.length} no carrinho.` : ''}</div>
+    ${items.length ? groups.map(([t, l]) => `<div class="z20-sg"><div class="z20-sh">${t}</div>${l.map(i => `<button class="z20-si ${i.on ? 'on' : ''}" data-act="z20-si" data-id="${i.id}"><span class="z20-ck">${i.on ? '✓' : ''}</span><span class="grow"><b>${esc(i.t)}</b>${i.q ? `<small>${esc(i.q)}</small>` : ''}</span></button>`).join('')}</div>`).join('') : `<div class="card" style="text-align:center"><div style="font-size:40px">🛒</div><b>Sua lista está vazia</b><div class="sub">Monte o cardápio ou peça para a assistente sugerir.</div></div>`}
+    <div class="z20-add"><input class="input" id="z20It" maxlength="40" placeholder="Adicionar item (ex.: azeite)"><button class="btn sm" data-act="z20-si-add" style="width:auto">Adicionar</button></div>
+    <button class="btn sec" data-act="z20-shop-ai" style="margin-top:10px">✨ ${items.length ? 'Completar com quantidades' : 'Pedir uma lista para a assistente'}</button>
+    <div class="grid2" style="margin-top:8px"><button class="btn gray sm" data-act="z20-shop-clear">Tirar os marcados</button><button class="btn gray sm" data-act="z20-shop-redo">Refazer pelo cardápio</button></div>
+    ${zHasWeek(p) ? '' : '<button class="btn sec sm" data-act="menu-edit" style="margin-top:8px">Montar meu cardápio</button>'}`;
+}
+function z20ShopOpen() { openSheet(`<div id="z20Shop">${z20ShopHTML()}</div>`, {}); const ov = $('#overlay'); if (ov && $('#zai')) ov.style.zIndex = '95'; }
+function z20ShopPaint() { const el = $('#z20Shop'); if (el) el.innerHTML = z20ShopHTML(); }
+async function z20ShopAI(el) {
+  if (!zaiLeft()) return toast('As mensagens da assistente acabaram hoje.', 'red', '⏳');
+  const p = me(); const sh = z20Shop(p); if (el) { el.disabled = true; el.textContent = 'Montando a lista…'; }
+  const menu = []; if (zHasWeek(p)) for (const dw of ZWEEK) { const r = []; for (const x of MEALS) { const t = zMealText(zMealObj(p, dw, x.id), x.id); if (t) r.push(x.name + ': ' + t); } if (r.length) menu.push(ZDOW[dw] + ' — ' + r.join('; ')); }
+  const prompt = `Monte a lista de compras da semana para 1 pessoa, com quantidades práticas de mercado brasileiro (kg, g, unidades, dúzia, litro, pacote).\nObjetivo: ${ZOBJ[zObj(p)].t}.\n${menu.length ? 'Cardápio da semana:\n' + menu.join('\n') : 'Ainda não tem cardápio: sugira itens básicos e saudáveis para a semana.'}\nItens que a pessoa já tem na lista: ${sh.items.map(i => i.t).join(', ') || 'nenhum'}.\nResponda SOMENTE JSON: {"itens":[{"t":"Peito de frango","q":"1,5 kg","cat":"carne"}]}. cat é uma destas: hort, frut, carne, lat, pad, merc, beb, outro. No máximo 35 itens.`;
+  try {
+    const out = await zaiCall(ZAI_CHAT, { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.4, maxOutputTokens: 4096, responseMimeType: 'application/json' } });
+    const o = zaiJSON(out.text); const list = (o.itens || []).slice(0, 40).map(i => ({ t: String(i.t || '').slice(0, 40), q: String(i.q || '').slice(0, 20), cat: Z20_CATS.some(c => c[0] === i.cat) ? i.cat : 'outro' })).filter(i => i.t);
+    if (!list.length) throw zaiErr('json'); zaiUse(1);
+    const on = new Set(sh.items.filter(i => i.on).map(i => i.t.toLowerCase()));
+    const merged = list.map(i => ({ id: z16Id() + Math.floor(Math.random() * 1e4), t: i.t, q: i.q, cat: i.cat, on: on.has(i.t.toLowerCase()) }));
+    const have = new Set(merged.map(i => i.t.toLowerCase()));
+    for (const i of sh.items) if (i.own && !have.has(i.t.toLowerCase())) merged.push(i);
+    sh.items = merged; sh.ai = true; save(); z20ShopPaint(); toast('Lista completa com quantidades!', 'green', '🛒');
+  } catch (e) { toast(zaiErrText(e), 'red', '🛒'); if (el) { el.disabled = false; el.textContent = '✨ Completar com quantidades'; } }
+}
+
+/* ---------- Cabeçalho do chat e sugestões ---------- */
+const __z20Draw = zaiDraw;
+zaiDraw = function () { __z20Draw.apply(this, arguments); const d = $('#zai .zai-dots'); if (d && !$('#zai .z20-cb')) d.insertAdjacentHTML('beforebegin', `<button class="zai-dots z20-cb" data-act="z20-conv" aria-label="Modo conversa">🗣️</button>`); };
+ZAI_SUG.splice(3, 0, ['🗣️', 'Modo conversa', 'conv'], ['🛒', 'Minha lista de compras', 'shop']);
+const __z20Sug = ACT['zai-sug'];
+ACT['zai-sug'] = function (el) { const s = ZAI_SUG[+el.dataset.i]; if (s && s[2] === 'conv') return z20ConvStart(); if (s && s[2] === 'shop') return z20ShopOpen(); return __z20Sug.apply(this, arguments); };
+const __z20Close = zaiClose;
+zaiClose = function () { z20ConvStop(); return __z20Close.apply(this, arguments); };
+
+/* ---------- Ações ---------- */
+Object.assign(ACT, {
+  'z20-voices': () => { zaiFoot(); z20VoicesOpen(); },
+  'z20-voice': el => { try { localStorage.setItem('zenit-voz', el.dataset.v); } catch (e) { } const b = $('#z20Vs'); if (b) b.innerHTML = z20VoicesHTML(); toast('Voz escolhida!', 'green', '🎙️'); },
+  'z20-hear': async el => {
+    z20AC(); const v = el.dataset.v; const p = me(); const pet = petOf(p); const txt = `Oi, ${p.name.split(' ')[0]}! Eu sou ${pet.a === 'o' ? 'o' : 'a'} ${pet.name}. Bora cuidar da saúde hoje?`;
+    el.textContent = '…'; el.disabled = true;
+    try { if (v === 'aparelho') await z20Device(txt); else { if (!z20VLeft()) { toast('As falas com voz natural acabaram hoje.', 'red', '🎙️'); } else { const buf = await z20TTS(txt, v); z20VUse(); await z20Play(buf); } } }
+    catch (e) { toast(e && e.kind === 'quota' ? 'A voz natural está ocupada agora. Tente em 1 minuto.' : 'Não consegui tocar essa voz agora.', 'red', '🎙️'); }
+    finally { el.textContent = '▶'; el.disabled = false; }
+  },
+  'z20-install': () => { try { Capacitor.Plugins.TextToSpeech.openInstall(); } catch (e) { } },
+  'z20-conv': () => { zaiFoot(); z20ConvStart(); },
+  'z20-conv-x': () => z20ConvStop(),
+  'z20-do': el => { const m = zaiFind(el.dataset.id); if (m) z20Apply(m); },
+  'z20-no': el => { const m = zaiFind(el.dataset.id); if (!m) return; m.actX = true; zaiStore(); zaiRepaint(m); },
+  'z20-undo': el => { const m = zaiFind(el.dataset.id); if (m) z20Undo(m); },
+  'z20-meta': () => { if ($('#zai')) zaiFoot(); z20MetaOpen(); },
+  'z20-b': el => { z20MetaKeep(); session.z20b[el.dataset.k] = el.dataset.v; const b = $('#z20Meta'); if (b) b.innerHTML = z20MetaHTML(); },
+  'z20-meta-save': () => {
+    z20MetaKeep(); const b = session.z20b; const age = Math.round(+b.age), h = Math.round(+b.h);
+    if (!b.sex) return toast('Escolha o sexo biológico.', 'red', '🎯'); if (!(age >= 14 && age <= 90)) return toast('Digite a idade (14 a 90).', 'red', '🎯'); if (!(h >= 130 && h <= 220)) return toast('Digite a altura em cm, por exemplo 170.', 'red', '🎯');
+    me().body = { sex: b.sex, age, h, act: b.act || 'leve' }; save(); closeSheet(true); if ($('#main')) renderMain(true); const g = z20Goal(me()); toast(`Meta salva: ${fmtInt(g.kcal)} kcal e ${g.prot} g de proteína por dia!`, 'green', '🎯');
+  },
+  'z20-shop': () => z20ShopOpen(),
+  'z20-si': el => { const sh = z20Shop(me()); const i = sh.items.find(x => x.id === el.dataset.id); if (!i) return; i.on = !i.on; save(); z20ShopPaint(); if (i.on) sfx('tap'); },
+  'z20-si-add': () => { const inp = $('#z20It'); const t = String((inp && inp.value) || '').trim().slice(0, 40); if (!t) return; const sh = z20Shop(me()); sh.items.push({ id: z16Id(), t, q: '', cat: z20Cat(t, 'outro'), on: false, own: true }); save(); z20ShopPaint(); const i2 = $('#z20It'); if (i2) i2.focus(); },
+  'z20-shop-clear': () => { const sh = z20Shop(me()); sh.items = sh.items.filter(i => !i.on); save(); z20ShopPaint(); },
+  'z20-shop-redo': () => { const p = me(); p.shop = null; z20Shop(p); save(); z20ShopPaint(); toast('Lista refeita pelo cardápio.', 'green', '🛒'); },
+  'z20-shop-ai': el => z20ShopAI(el)
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement && document.activeElement.id === 'z20It') { e.preventDefault(); ACT['z20-si-add'](); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden && Z20.conv) z20ConvStop(); });
+
+/* ---------- Tour e novidades ---------- */
+(function () {
+  const st = Z18_TOUR.find(x => x.sel.includes('.zai-kcard')); if (st) st.d = 'Marque cada refeição como no plano ou fora dele. Aqui ficam as calorias e a proteína do dia, a sua meta e a lista de compras.';
+  const as = Z18_TOUR.find(x => x.sel.includes('#zaiFab.on')); if (as) as.d = 'Toque na bolinha para conversar sobre qualquer coisa, com voz natural ou no modo conversa. Ela também registra água, treino e refeições por você.';
+  Z18_NEW.splice(0, Z18_NEW.length,
+    { tab: 'home', sel: ['#zaiFab.on'], t: 'Assistente mais esperta', d: 'Agora ela fala com voz natural (escolha a voz no menu ⋮ do chat), conversa sem você tocar na tela e registra por você: é só contar o que fez.' },
+    { tab: 'reg', sub: 'refeicoes', sel: ['.zai-kcard'], t: 'Meta de calorias', d: 'Defina a sua meta uma vez e acompanhe as calorias e a proteína do dia, para o seu objetivo.' },
+    { tab: 'reg', sub: 'refeicoes', sel: ['[data-act="z20-shop"]'], t: 'Lista de compras', d: 'A lista do mercado sai do seu cardápio da semana. Vá marcando enquanto compra.' });
+})();
+ZNEWS.splice(0, ZNEWS.length,
+  ['🎙️', 'Voz natural', 'A assistente fala com voz natural. Escolha entre 4 vozes, de mulher ou de homem, no menu ⋮ do chat.'],
+  ['🗣️', 'Modo conversa', 'Toque no 🗣️ do chat e converse sem tocar na tela: você fala, ela responde falando e volta a ouvir.'],
+  ['✍️', 'Ela registra por você', 'Conte o que fez ("bebi 500 ml", "fiz o treino B") e confirme com um toque ou dizendo "sim".'],
+  ['🎯', 'Meta de calorias', 'Em Registrar › Refeições: meta do dia e de proteína para emagrecer, ganhar massa ou manter.'],
+  ['🛒', 'Lista de compras', 'Montada pelo seu cardápio da semana, com quantidades se você pedir para a assistente.']);
+</script>
+<style>
+.z20-voices .z20-v{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:2px solid var(--line)}.z20-voices .z20-v:last-child{border:0}
+.z20-play{width:42px;height:42px;border-radius:50%;background:#7B4DFF;color:#fff;font-size:15px;font-weight:900;display:grid;place-items:center;flex:none;box-shadow:0 3px 0 #5A31D6}
+.z20-pick{display:block;text-align:left;font:inherit;color:inherit;padding:4px 0}.z20-pick b{display:block;font-size:15.5px;font-weight:900}.z20-pick small{display:block;font-size:12.5px;color:var(--ink-3);font-weight:700}
+.z20-v.on .z20-pick b{color:#58CC02}
+.z20-cw{position:absolute;inset:0;z-index:5;background:var(--bg);display:flex}
+.z20-c{flex:1;display:flex;flex-direction:column;align-items:center;padding:14px 18px calc(18px + env(safe-area-inset-bottom, 0px));text-align:center}
+.z20-ct{display:flex;justify-content:space-between;align-items:center;width:100%}.z20-ct b{font-size:18px;font-weight:900}
+.z20-stage{position:relative;width:210px;height:210px;margin:30px auto 10px;display:grid;place-items:center}
+.z20-ring{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,rgba(123,77,255,.28),rgba(123,77,255,0) 70%)}
+.st-ouvindo .z20-ring{animation:z20P 1.4s ease-in-out infinite;background:radial-gradient(circle,rgba(88,204,2,.35),rgba(88,204,2,0) 70%)}
+.st-falando .z20-ring{animation:z20P .7s ease-in-out infinite}
+.st-pensando .z20-ring{animation:z20P 2.4s ease-in-out infinite;background:radial-gradient(circle,rgba(255,194,61,.35),rgba(255,194,61,0) 70%)}
+@keyframes z20P{50%{transform:scale(1.15);opacity:.65}}
+.z20-pet{width:150px;position:relative}
+.z20-st{font-size:18px;font-weight:900;margin:6px 0 10px}
+.z20-tx{flex:1;width:100%;overflow:auto}.z20-tx .you{font-size:15px;font-weight:800;color:var(--ink-2);margin-bottom:8px}.z20-tx .say{font-size:16.5px;font-weight:700;line-height:1.45}
+.z20-c .btn{max-width:320px}
+.z20-act{border-top:2px solid var(--line);margin-top:8px;padding-top:8px}.z20-act.done{opacity:.95}.z20-act.off{opacity:.7}
+.z20-al{list-style:none;padding:0!important;margin:0 0 8px!important}.z20-al li{background:var(--surface-2);border-radius:10px;padding:7px 10px;margin:4px 0;font-size:14px;font-weight:800}
+.z20-ab{display:flex;align-items:center;gap:8px}.z20-ab .btn{width:auto;margin:0;padding:8px 16px}.z20-ab span{font-weight:900;font-size:14px}
+.z20-bar{height:14px;border-radius:99px;background:var(--line);overflow:hidden;margin:8px 0 4px}.z20-bar i{display:block;height:100%;border-radius:99px;background:#58CC02;transition:width .6s}
+.z20-bar.over i{background:#FF9600}.z20-bar.sm{height:9px;flex:1;margin:0}.z20-bar.prot i{background:#7B4DFF}
+.z20-bl{font-size:13.5px;font-weight:700;color:var(--ink-2)}
+.z20-pr{display:flex;align-items:center;gap:8px;margin:10px 0 8px;font-size:13.5px;font-weight:800}.z20-pr b{white-space:nowrap}
+.zai-kt small{font-size:14px;opacity:.65}
+.z20-setgoal{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:2px dashed #FF9600;border-radius:16px;background:var(--orange-soft,#FFF0DB);padding:10px 12px;margin:8px 0;font:inherit;color:inherit}
+.z20-setgoal > span:first-child{font-size:24px}.z20-setgoal b{display:block;font-weight:900}.z20-setgoal small{display:block;font-size:12.5px;font-weight:700;color:var(--ink-2)}.z20-setgoal em{font-style:normal;font-weight:900;font-size:20px}
+.z20-kb{display:grid;grid-template-columns:1fr 1fr;gap:8px}.z20-kb .btn{margin:0}
+.z20-link{display:block;margin:10px auto 0;font:inherit;font-weight:900;font-size:13.5px;color:#7B4DFF}
+.z20-sg{margin:10px 0}.z20-sh{font-size:13px;font-weight:900;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em;margin:0 2px 4px}
+.z20-si{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 10px;border:2px solid var(--line);border-radius:14px;background:var(--card);margin:4px 0;font:inherit;color:inherit}
+.z20-si b{display:block;font-size:15px;font-weight:800}.z20-si small{display:block;font-size:12.5px;color:var(--ink-3);font-weight:700}
+.z20-ck{width:26px;height:26px;border-radius:8px;border:2px solid var(--line);display:grid;place-items:center;font-weight:900;color:#fff;flex:none}
+.z20-si.on{opacity:.55}.z20-si.on b{text-decoration:line-through}.z20-si.on .z20-ck{background:#58CC02;border-color:#58CC02}
+.z20-add{display:flex;gap:8px;margin-top:12px}.z20-add .input{flex:1}.z20-add .btn{margin:0}
 </style>
 
 </body>
