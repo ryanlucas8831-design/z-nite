@@ -3354,7 +3354,7 @@ function obFinish(code) {
   const ob = session.ob; const today = localToday();
   const p = { id: 'p' + Date.now().toString(36), name: ob.name, pin: ob.pin, pet: ob.pet, startWeight: ob.w, goalWeight: ob.goal, waterGoal: ob.water, coins: 0, freezes: 0, owned: [], equip: { head: null, face: null, neck: null }, menu: { semana: {}, fds: {} }, days: {}, weighins: [{ date: today, w: ob.w }], bonus: [], challengeDone: {}, ach: {}, photos: [], lastLevel: 0 };
   let end = '2026-12-31'; if (today > end) end = addDays(today, 95);
-  S = { v: 1, mode: 'real', room: { code, start: today, end, prize: PRIZE_DEFAULT }, settings: { levelTheme: 'A', sound: true }, players: [p], challengeWeeks: {}, rerolled: {}, seen: { week: {}, month: {} } };
+  S = { v: 1, mode: 'real', room: { code, start: today, end, prize: '' }, settings: { levelTheme: 'A', sound: true }, players: [p], challengeWeeks: {}, rerolled: {}, seen: { week: {}, month: {} } };
   session.ob = null; session.pid = p.id; session.pinFor = p.id;
   save(); onLogin();
   setTimeout(() => toast(`Sala ${code} pronta! Sua jornada começou.`, 'green', '🚀'), 400);
@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '2.9';
+const ZV = '2.9.1';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -6878,7 +6878,7 @@ const z14Uid = () => (ZFB.user && ZFB.user.uid) || '';
 const z14Max = () => (S && S.room && S.room.max) || 2;
 const z14Owner = () => (S && S.room && (S.room.owner || (S.room.members || [])[0])) || '';
 const z14IsOwner = () => !!z14Uid() && z14Owner() === z14Uid();
-const z14Title = r => (r && r.name) ? r.name : 'Sala ' + ((r && r.code) || '');
+const z14Title = r => (r && r.name) ? r.name : (r && r.names && r.owner && r.names[r.owner]) ? 'Sala de ' + String(r.names[r.owner]).split(' ')[0] : 'Sala ' + ((r && r.code) || '');
 const z14Icon = r => (r && r.icon) || '🏆';
 const z14Code = c => String(c || '').trim().toUpperCase().replace(/\s+/g, '');
 const z14Ord = n => n + 'º';
@@ -6993,13 +6993,14 @@ zfbLinkRoom = async function () {
   if (!snap.exists()) {
     if (S.room.wantJoin) return zfbRoomMissing(code);
     const max = S.room.max || Z14_MAXDEF;
-    await setDoc(ref, { code, start: S.room.start, end: S.room.end, prize: S.room.prize, members: [uid], names: { [uid]: p.name }, pets: { [uid]: p.pet }, joined: { [uid]: T() }, owner: uid, name: S.room.name || '', icon: S.room.icon || '🏆', max, cw: S.challengeWeeks || {}, rr: S.rerolled || {}, createdAt: serverTimestamp() });
-    Object.assign(S.room, { members: [uid], joined: { [uid]: T() }, owner: uid, max, icon: S.room.icon || '🏆', name: S.room.name || '' });
+    await setDoc(ref, { code, start: S.room.start, end: S.room.end, prize: S.room.prize == null ? '' : S.room.prize, members: [uid], names: { [uid]: p.name }, pets: { [uid]: p.pet }, joined: { [uid]: T() }, owner: uid, name: S.room.name || '', icon: S.room.icon || '🏆', max, appr: S.room.appr !== false, cw: S.challengeWeeks || {}, rr: S.rerolled || {}, createdAt: serverTimestamp() });
+    Object.assign(S.room, { members: [uid], joined: { [uid]: T() }, owner: uid, max, icon: S.room.icon || '🏆', name: S.room.name || '', names: { [uid]: p.name }, appr: S.room.appr !== false });
   } else {
     const d = snap.data() || {}; const mem = d.members || [];
     if (!mem.includes(uid)) {
       if ((d.kicked || []).includes(uid)) { if (S.room.wantJoin) return z14Blocked(code); return z14Removed(code, d); }
       if (mem.length >= (d.max || 2)) return zfbRoomFull(code, d);
+      if (typeof z19NeedReq === 'function' && z19NeedReq(d, uid)) return z19Request(code, d, true);
       await updateDoc(ref, { members: arrayUnion(uid), ['names.' + uid]: p.name, ['pets.' + uid]: p.pet, ['joined.' + uid]: T() });
       d.members = mem.concat(uid); d.joined = Object.assign({}, d.joined, { [uid]: T() }); d.names = Object.assign({}, d.names, { [uid]: p.name });
     } else if (!(d.pets || {})[uid] || (d.names || {})[uid] !== p.name) updateDoc(ref, { ['names.' + uid]: p.name, ['pets.' + uid]: p.pet }).catch(() => { });
@@ -9327,7 +9328,7 @@ async function z18Add(build) {
     S.myRooms = S.myRooms.filter(c => c !== code); zfbStop(); z18Use(prev); save(); z18Listen();
     if (zfbOn()) await zfbLinkRoom(); if ($('#main')) renderMain(true); return false;
   }
-  z18Listen(); if ($('#main')) renderMain(true); return true;
+  z18Listen(); if (typeof z19DropSolo === 'function') z18Codes().filter(c => c !== code).forEach(z19DropSolo); if ($('#main')) renderMain(true); return true;
 }
 async function z18Leave() {
   const code = S.room.code; const others = z18Others();
@@ -9337,7 +9338,7 @@ async function z18Leave() {
   z14Hist(false); S.myRooms = z18Codes().filter(c => c !== code); delete Z18.pushed[code];
   z18Use(others[0]); save(); z18Listen(); if (zfbOn()) await zfbLinkRoom(); z18Listen(); if ($('#main')) renderMain(true); return true;
 }
-function z18AfterSolo() { const p = me(); const X = z18X(p); S.myRooms = [S.room.code].concat((S.myRooms || []).filter(c => c !== S.room.code && (S.rooms || {})[c])); if (X) { X.since = X.since || {}; X.since[S.room.code] = T(); } save(); z18Listen(); }
+function z18AfterSolo() { const p = me(); const X = z18X(p); S.room.solo = true; S.room.prize = ''; S.myRooms = [S.room.code].concat((S.myRooms || []).filter(c => c !== S.room.code && (S.rooms || {})[c])); if (X) { X.since = X.since || {}; X.since[S.room.code] = T(); } save(); z18Listen(); }
 const __z18Move = z14Move;
 z14Move = async function (dest, opt) {
   opt = opt || {};
@@ -9347,8 +9348,8 @@ z14Move = async function (dest, opt) {
     if (!others.length) { const r = await __z18Move(null, opt); z18AfterSolo(); return r; }
     zfbStop(); z14Hist(true); S.myRooms = z18Codes().filter(c => c !== code); z18Use(others[0]); save(); z18Listen(); if (zfbOn()) await zfbLinkRoom(); z18Listen(); if ($('#main')) renderMain(true); return true;
   }
-  if (dest) { const d = dest.d || {}; return z18Add(keep => ({ start: d.start || keep.start, end: d.end || keep.end, prize: d.prize || keep.prize, code: dest.code, wantJoin: true })); }
-  return z18Add(keep => ({ start: T(), end: keep.end, prize: keep.prize, code: zfbNewCode(), name: opt.name || '', icon: opt.icon || '🏆', max: opt.max || Z14_MAXDEF, wantJoin: false }));
+  if (dest) { const d = dest.d || {}; return z18Add(keep => ({ start: d.start || keep.start, end: d.end || keep.end, prize: d.prize != null ? d.prize : '', code: dest.code, wantJoin: true })); }
+  return z18Add(keep => ({ start: T(), end: opt.end || keep.end, prize: opt.prize != null ? opt.prize : '', code: zfbNewCode(), name: opt.name || '', icon: opt.icon || '🏆', max: opt.max || Z14_MAXDEF, appr: opt.appr !== false, wantJoin: false }));
 };
 // Texto da prévia: entrar numa sala não tira você das outras
 function z18JoinNote() {
@@ -9707,6 +9708,484 @@ ZNEWS.splice(0, ZNEWS.length,
 .z18-sav{width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.22);display:grid;place-items:center;flex:none;overflow:hidden}.z18-sav svg{width:48px;height:50px}
 .z18-sum small{display:block;font-size:11.5px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;opacity:.85}.z18-sum b{display:block;font-size:17px;font-weight:900}.z18-sum .grow > span{display:block;font-size:13px;opacity:.92}
 .z18-sum em{font-style:normal;background:rgba(255,255,255,.25);border-radius:12px;padding:8px 12px;font-weight:900;font-size:13px}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 2.9.1 · Chat da sala, botão das salas, prêmio por sala,
+   aprovação para entrar, tela sem sala e bolinha que não atrapalha.
+   ========================================================= */
+const Z19 = { reqSubs: {}, menu: null, rep: null, prov: false, img: null, seenOpen: 0, lp: null, stick: true, newN: 0 };
+const z19Owner = r => (r && (r.owner || (r.members || [])[0])) || '';
+const z19IsOwner = r => !!z14Uid() && z19Owner(r || S.room) === z14Uid();
+const z19Solo = () => !!(S && S.room && S.room.solo && S.players.length <= 1 && z18Multi());
+const z19Waiting = () => !!(S && S.room && z18Multi() && (S.z19req || {})[S.room.code] && ZFB.linked !== S.room.code);
+async function z19Unplace(code) { if (!S.room || S.room.code !== code || ZFB.linked === code) return; await __z18Move(null, { noCloud: true, force: true }); z18AfterSolo(); if ($('#main')) renderMain(true); }
+const z19Color = pet => (PETS.find(x => x.id === pet) || PETS[0]).color;
+
+/* ---------- Sala na nuvem: guarda pedidos, aprovação e nomes ---------- */
+const __z19Adopt = zfbAdoptRoom;
+zfbAdoptRoom = function (d) {
+  const r = __z19Adopt.apply(this, arguments);
+  if (d && S && S.room) { S.room.req = Object.assign({}, d.req || {}); S.room.den = Object.assign({}, d.den || {}); S.room.names = Object.assign({}, d.names || {}); if (d.appr != null) S.room.appr = d.appr; if (d.prize != null) S.room.prize = d.prize; if (d.end) S.room.end = d.end; if ((d.members || []).length > 1 || d.name) S.room.solo = false; }
+  return r;
+};
+
+/* ---------- Prêmio de cada sala ---------- */
+z6Prize = function () { if (!S || !S.room) return Z6_PRIZE; if (S.room.prize === Z6_OLD_PRIZE) S.room.prize = Z6_PRIZE; if (S.room.prize == null) S.room.prize = Z6_PRIZE; return S.room.prize; };
+z6PrizeCard = function () {
+  if (!S || !S.room) return ''; const left = Math.max(0, diffDays(T(), S.room.end)); const pz = z6Prize(); const cloud = z18Multi() && ZFB.linked;
+  const own = !cloud || z19IsOwner(); const on = (S.room.names || {})[z19Owner(S.room)] || '';
+  const who = cloud ? (own ? 'toque para editar' : on ? `definido por ${esc(on.split(' ')[0])}, dono da sala` : 'definido pelo dono da sala') : 'toque para editar';
+  return `<button class="z6prize ${pz ? '' : 'none'}" data-act="prize-edit"><div class="z6p-ic">🏆</div><div class="z6p-tx"><div class="z6p-k">Prêmio do vencedor</div><div class="z6p-t">${pz ? esc(pz) : 'Prêmio ainda não definido'}</div><div class="z6p-s">Decidido em ${fmtDay(S.room.end)} · faltam ${left} ${left === 1 ? 'dia' : 'dias'} · ${pz || !own ? who : 'toque para definir'}</div></div></button>`;
+};
+const __z19Duel = zDuelHTML;
+zDuelHTML = function () { const h = __z19Duel.apply(this, arguments); return z6Prize() ? h : h.replace(/<div class="z6p-mini">[\s\S]*?<\/div>/, ''); };
+ACT['prize-edit'] = () => {
+  const cloud = z18Multi() && ZFB.linked;
+  if (cloud && !z19IsOwner()) return toast('Só o dono da sala muda o prêmio.', 'violet', '👑');
+  openSheet(`<h2>Prêmio do vencedor</h2><div class="sub">O que quem vencer nesta sala vai ganhar?${cloud ? ' Todo mundo da sala recebe o aviso no chat.' : ''}</div>
+    <label class="field"><span>Prêmio</span><textarea class="input" id="z6pr" rows="3" maxlength="140" placeholder="Ex.: quem perder paga um açaí">${esc(z6Prize())}</textarea></label>
+    <label class="field"><span>Termina em</span><input class="input" id="z19end" type="date" value="${esc(S.room.end)}" min="${addDays(T(), 1)}"></label>
+    <div style="margin-top:14px"><button class="btn" data-act="prize-save">Salvar</button></div>`);
+};
+ACT['prize-save'] = () => {
+  const el = $('#z6pr'); const v = el ? el.value.trim() : ''; const en = ($('#z19end') || {}).value || S.room.end;
+  if (v.length < 3) return toast('Escreva qual é o prêmio.', 'red', '🏆');
+  if (en <= T()) return toast('Escolha uma data depois de hoje.', 'red', '📅');
+  const changed = v !== S.room.prize; const endCh = en !== S.room.end;
+  S.room.prize = v; S.room.end = en; save(); closeSheet(true); renderMain(true); toast('Prêmio atualizado!', 'gold', '🏆');
+  if (z18Multi() && ZFB.linked) {
+    zfbRoomUpdate({ prize: v, end: en });
+    const p = me(); const txt = changed ? `${p.name.split(' ')[0]} mudou o prêmio: ${v}` : endCh ? `${p.name.split(' ')[0]} mudou o fim da sala para ${fmtDay(en)}` : '';
+    if (txt) z18Post(S.room.code, { auto: 1, ic: changed ? '🏆' : '📅', t: txt, ts: Date.now() }, 'a-prize-' + Date.now().toString(36)).catch(() => { });
+  }
+};
+
+/* ---------- Placar: cartão da sala no topo, chat embaixo ---------- */
+z18SwitchHTML = function () { return ''; };
+z18MuralCardHTML = function () { return ''; };
+function z19Badge() {
+  let n = 0;
+  try { for (const c of z18Others()) n += z18Unread(c) + z18PendX1(c); for (const c of z18Codes()) n += z19ReqList(c).length; } catch (e) { }
+  return n;
+}
+function z19RoomHTML() {
+  const r = S.room; const n = S.players.length; const max = z14Max(); const b = z18Multi() ? z19Badge() : 0;
+  return `<button class="z19-room" data-act="z19-rooms"><span class="z19-ric">${z14Icon(r)}</span><span class="grow"><small>${z18Multi() && z18Codes().length > 1 ? `Sala aberta · 1 de ${z18Codes().length}` : 'Sua sala'}</small><b>${esc(z14Title(r))}</b><span class="s">${n} de ${max} ${plural(max, 'pessoa', 'pessoas')} · termina em ${fmtDay(r.end)}</span></span><em>Trocar ▾</em>${b ? `<i class="z19-dot">${b}</i>` : ''}</button>`;
+}
+function z19ChatCardHTML() {
+  if (!z18Multi() || !ZFB.linked) return '';
+  const code = S.room.code; const ps = Z18.posts[code] || []; const last = ps[0]; const n = z18Unread(code);
+  const pets = S.players.slice(0, 6).map(q => `<span style="background:${z19Color(q.pet)}22">${petSVG(q.pet, { mood: 'feliz', stage: 1, anim: false })}</span>`).join('');
+  const txt = last ? (last.auto ? `${last.ic || '🎉'} ${last.t}` : `<b>${esc(String(last.name || '').split(' ')[0])}:</b> ${esc(last.t || (last.img ? '📷 Foto' : ''))}`) : 'Ninguém falou ainda. Que tal uma provocação? 😏';
+  return `<button class="z19-chat" data-act="z18-mural"><div class="z19-ch"><span>💬</span><b>Chat da sala</b>${n ? `<i>${n} ${plural(n, 'nova', 'novas')}</i>` : '<em>Abrir ›</em>'}</div><div class="z19-pets">${pets}</div><div class="z19-last">${last && last.auto ? esc(txt) : txt}</div></button>`;
+}
+function z19EmptyHTML() {
+  const p = me(); const t = T(); const xp = xpInfo(p, t).total; const req = Object.entries(S.z19req || {});
+  return `<div class="z19-empty"><div class="z19-ep">${petSVG(p.pet, { mood: 'ok', stage: 1 })}</div><h2>${z19Waiting() ? 'Quase lá! Seu pedido está com o dono da sala' : 'Você ainda não está em nenhuma sala'}</h2>
+    <div class="sub">${z19Waiting() ? 'Assim que o pedido for aceito, a sala aparece aqui sozinha. ' : ''}Numa sala você compete com amigos: placar, X1, chat e prêmio no final. Seu XP e seu nível continuam valendo do mesmo jeito.</div></div>
+    ${req.length ? `<div class="card">${req.map(([c, x]) => `<div class="z14-m"><span class="z14-ic sm">${x.icon || '⏳'}</span><div class="grow"><b>${esc(x.name || 'Sala ' + c)}</b><span>⏳ Aguardando o dono aprovar</span></div><button class="zmini" data-act="z19-req-x" data-c="${esc(c)}">Cancelar</button></div>`).join('')}</div>` : ''}
+    <div class="card"><button class="z14-row" data-act="z14-join"><span>🔑</span><span class="grow"><b>Entrar numa sala</b><small>Com o código ou o link que te mandaram</small></span><em>›</em></button>
+      <button class="z14-row" data-act="z14-new"><span>🏠</span><span class="grow"><b>Criar a minha sala</b><small>Você escolhe o nome, o prêmio e convida a turma</small></span><em>›</em></button></div>
+    <div class="card"><h3>🧍 Enquanto isso, só você</h3><div class="kv"><span class="muted">Seu XP</span><b>${fmtInt(xp)} XP</b></div><div class="kv"><span class="muted">Nível</span><b>${levelOf(xp) + 1} · ${esc(levelName(levelOf(xp)))}</b></div><div class="kv"><span class="muted">Sequência</span><b>🔥 ${streakInfo(p, t).current} ${plural(streakInfo(p, t).current, 'dia', 'dias')}</b></div></div>`;
+}
+const __z19Rank = rankHTML;
+rankHTML = function () {
+  if (z19Solo() || z19Waiting()) return z19EmptyHTML();
+  let h = __z19Rank.apply(this, arguments); if (!S || !S.room) return h;
+  try {
+    h = h.replace(/<div class="lb-hero">[\s\S]*?<button class="z14-hl"[^>]*>[\s\S]*?<\/button>\s*<\/div>/, '');
+    const chat = z19ChatCardHTML(); const i = h.lastIndexOf('<button class="z14-card"');
+    h = z19RoomHTML() + (i > -1 ? h.slice(0, i) + chat + h.slice(i) : h + chat);
+  } catch (e) { }
+  return h;
+};
+z18CardPaint = function () {
+  if ($('#overlay') || session.tab !== 'rank') return;
+  z18Swap($('.z19-chat'), z19ChatCardHTML()); z18Swap($('.z19-room'), z19RoomHTML());
+};
+function z19RoomsSheet() {
+  const codes = z18Multi() ? z18Codes() : [S.room.code]; const pend = Object.entries(S.z19req || {});
+  const row = c => {
+    const r = z18Room(c); const on = c === S.room.code; const ctx = (S.rooms || {})[c] || {};
+    const n = on ? S.players.length : ((ctx.players || []).length + 1);
+    const u = z18Multi() ? z18Unread(c) : 0, x = z18Multi() ? z18PendX1(c) : 0, rq = z19ReqList(c).length;
+    const pz = r.prize ? '🏆 ' + r.prize : 'Prêmio ainda não definido';
+    const tag = on ? '<span class="pill green">Aberta</span>' : rq ? `<span class="pill z19-pr">✋ ${rq}</span>` : x ? '<span class="pill z19-px">⚔️ X1</span>' : u ? `<span class="pill z19-pu">${u} ${plural(u, 'nova', 'novas')}</span>` : '<em class="z19-go">›</em>';
+    return `<button class="z19-rrow ${on ? 'on' : ''}" data-act="${on ? 'close' : 'z18-sw'}" data-c="${esc(c)}"><span class="z14-ic sm">${z14Icon(r)}</span><span class="grow"><b>${esc(z14Title(r))}</b><small>${n} ${plural(n, 'pessoa', 'pessoas')} · ${esc(pz.slice(0, 60))}</small></span>${tag}</button>`;
+  };
+  openSheet(`<h2>Suas salas</h2><div class="sub">Toque em uma sala para abrir. Você pode estar em até ${Z18_MAX}.</div>
+    <div class="card z19-rl" style="margin-top:12px">${codes.filter(c => !(c === S.room.code && S.room.solo)).map(row).join('') || '<div class="sub" style="padding:8px 0">Você ainda não está em nenhuma sala.</div>'}
+      ${pend.map(([c, x]) => `<div class="z19-rrow wait"><span class="z14-ic sm">${x.icon || '⏳'}</span><span class="grow"><b>${esc(x.name || 'Sala ' + c)}</b><small>⏳ Aguardando o dono aprovar</small></span><button class="zmini" data-act="z19-req-x" data-c="${esc(c)}">Cancelar</button></div>`).join('')}</div>
+    <div class="card" style="margin-top:4px">${z18Multi() ? `<button class="z14-row" data-act="z14-join"><span>🔑</span><span class="grow"><b>Entrar em outra sala</b><small>Com o código ou o link. O dono aprova.</small></span><em>›</em></button>
+      <button class="z14-row" data-act="z14-new"><span>🏠</span><span class="grow"><b>Criar uma sala nova</b><small>Você escolhe o nome, o prêmio e o tamanho</small></span><em>›</em></button>` : `<button class="z14-row" data-act="zfb-open"><span>☁️</span><span class="grow"><b>Entre na sua conta</b><small>Para ter até ${Z18_MAX} salas e o chat</small></span><em>›</em></button>`}
+      <button class="z14-row" data-act="z14-room"><span>⚙️</span><span class="grow"><b>Minha sala</b><small>Convidar, pedidos para entrar e configurações</small></span><em>›</em></button></div>`, {});
+}
+// Sair da sala solo quando entrar/criar outra
+function z19DropSolo(code) {
+  const c = (S.rooms || {})[code]; if (!c || !c.room || !c.room.solo || (c.players || []).length) return;
+  S.myRooms = z18Codes().filter(x => x !== code); delete S.rooms[code]; save(); z18Listen();
+  try { const { doc, updateDoc, arrayRemove, deleteField } = ZFB.m; const uid = z14Uid(); updateDoc(doc(ZFB.db, 'rooms', code), { members: arrayRemove(uid), ['names.' + uid]: deleteField(), ['pets.' + uid]: deleteField(), ['joined.' + uid]: deleteField() }).catch(() => { }); } catch (e) { }
+}
+
+/* ---------- Aprovação para entrar ---------- */
+function z19NeedReq(d, uid) { return !!d && d.appr !== false && z19Owner(d) !== uid && !(d.members || []).includes(uid); }
+function z19ReqList(code) {
+  const r = code === S.room.code ? S.room : z18Room(code); if (!r || z19Owner(r) !== z14Uid()) return [];
+  return Object.entries(r.req || {}).filter(([u, x]) => x && !(r.members || []).includes(u)).map(([u, x]) => Object.assign({ u }, x)).sort((a, b) => (a.at || 0) - (b.at || 0));
+}
+async function z19Request(code, d, inPlace) {
+  const { doc, updateDoc } = ZFB.m; const p = me(); const uid = z14Uid();
+  try { await z14Wait(updateDoc(doc(ZFB.db, 'rooms', code), { ['req.' + uid]: { name: p.name, pet: p.pet, at: Date.now() } })); }
+  catch (e) { toast('Sem internet agora. Conecte e tente de novo.', 'red', '📶'); return false; }
+  S.z19req = S.z19req || {}; S.z19req[code] = { at: Date.now(), name: z14Title(d), icon: z14Icon(d), owner: (d.names || {})[z19Owner(d)] || '', inPlace: !!inPlace, d: { start: d.start, end: d.end, prize: d.prize, name: d.name, icon: d.icon } };
+  if (inPlace) { S.room.wantJoin = false; }
+  save(); z19Watch(); closeSheet(true);
+  setTimeout(() => openSheet(`<div class="z19-wait"><div class="big">⏳</div><h2>Pedido enviado!</h2><div class="sub">${S.z19req[code].owner ? `${esc(S.z19req[code].owner.split(' ')[0])}, dono da` : 'O dono da'} <b>${esc(z14Title(d))}</b>, recebeu o seu pedido. Assim que ${S.z19req[code].owner ? 'ele aceitar' : 'aceitarem'}, a sala aparece sozinha nas suas salas.</div>
+    <div class="z19-steps"><i class="on"></i><i class="on"></i><i></i></div><div class="small muted">Pedido enviado · Aguardando o dono · Você entra</div></div>
+    <div style="margin-top:14px"><button class="btn" data-act="close">Entendi</button></div><div style="margin-top:8px"><button class="btn gray" data-act="z19-req-x" data-c="${esc(code)}">Cancelar pedido</button></div>`, { center: true }), 250);
+  return false;
+}
+function z19Watch() {
+  if (!z18Multi() || !ZFB.m) return; const want = Object.keys(S.z19req || {}); const uid = z14Uid();
+  for (const c of Object.keys(Z19.reqSubs)) if (!want.includes(c)) { try { Z19.reqSubs[c](); } catch (e) { } delete Z19.reqSubs[c]; }
+  for (const c of want) if (!Z19.reqSubs[c]) {
+    try {
+      Z19.reqSubs[c] = ZFB.m.onSnapshot(ZFB.m.doc(ZFB.db, 'rooms', c), s => {
+        const x = (S.z19req || {})[c]; if (!x || !s.exists()) return; const d = s.data() || {};
+        if ((d.members || []).includes(uid)) { delete S.z19req[c]; save(); z19Watch(); z19Accepted(c, d, x); return; }
+        const den = (d.den || {})[uid]; if (den && den >= x.at && !(d.req || {})[uid]) { delete S.z19req[c]; if (x.inPlace) z19Unplace(c); (S.z18notes = S.z18notes || []).unshift({ k: 'den|' + c + '|' + den, ic: '🙅', t: `Seu pedido para a ${z14Title(d)} não foi aceito`, s: 'Você pode pedir de novo ou entrar em outra sala.', at: Date.now() }); save(); z19Watch(); z18BellPaint(); toast(`Seu pedido para a ${z14Title(d)} não foi aceito.`, 'violet', '🙅'); if (session.tab === 'rank' && $('#main')) renderMain(true); }
+      }, () => { });
+    } catch (e) { }
+  }
+}
+async function z19Accepted(code, d, x) {
+  const nm = z14Title(d);
+  if (x.inPlace && S.room.code === code) { await zfbLinkRoom(); }
+  else if (!z18Codes().includes(code)) { await z14Move({ code, d }); }
+  if (ZFB.linked === code || z18Codes().includes(code)) { confetti(80); sfx('level'); toast(`Você entrou na ${nm}! 🎉`, 'green', z14Icon(d)); (S.z18notes = S.z18notes || []).unshift({ k: 'ok|' + code, ic: '🎉', t: `Você entrou na ${nm}`, s: 'O dono aceitou o seu pedido.', at: Date.now() }); save(); }
+  if ($('#main')) renderMain(true);
+}
+setInterval(() => { try { if (S && session.pid) z19Watch(); } catch (e) { } }, 4000);
+const __z19JoinOk = ACT['z14-join-ok'];
+ACT['z14-join-ok'] = async function (el) {
+  const pv = session.z14prev; if (!pv) return; const uid = z14Uid();
+  if (z18Multi() && z19NeedReq(pv.d, uid)) { if (z18Codes().length >= Z18_MAX) return toast(`Você já está em ${Z18_MAX} salas. Saia de uma para entrar em outra.`, 'red', '🏠'); if (el) { el.disabled = true; el.textContent = 'Enviando…'; } return z19Request(pv.code, pv.d, false); }
+  return __z19JoinOk.apply(this, arguments);
+};
+const __z19Prev = z14Preview;
+z14Preview = async function (code) {
+  const r = await __z19Prev.apply(this, arguments);
+  try {
+    const pv = session.z14prev; const box = $('#z14Prev'); if (!pv || !box || !z18Multi()) return r; const uid = z14Uid();
+    const btn = box.querySelector('[data-act="z14-join-ok"]');
+    if ((S.z19req || {})[pv.code]) { if (btn) btn.outerHTML = `<div class="card tint-water"><b>⏳ Pedido enviado</b><div class="sub">Aguardando o dono aprovar.</div></div><button class="btn gray" data-act="z19-req-x" data-c="${esc(pv.code)}">Cancelar pedido</button>`; }
+    else if (btn && z19NeedReq(pv.d, uid)) { btn.innerHTML = '✋ Pedir para entrar'; btn.insertAdjacentHTML('beforebegin', '<div class="hint" style="text-align:center">O dono da sala precisa aprovar a sua entrada.</div>'); }
+  } catch (e) { }
+  return r;
+};
+// Minha sala: pedidos, aprovação e prêmio
+const __z19RoomHTML = z14RoomHTML;
+z14RoomHTML = function () {
+  let h = __z19RoomHTML.apply(this, arguments); if (!z18Multi() || !ZFB.linked) return h;
+  const own = z19IsOwner(); const reqs = z19ReqList(S.room.code);
+  let add = '';
+  if (own && reqs.length) add += `<div class="h2">✋ Pedidos para entrar <span class="pill z19-pr">${reqs.length}</span></div><div class="card" style="margin-top:0">${reqs.map(x => `<div class="z19-req">${z14Av(x.pet, 44)}<div class="grow"><b>${esc(x.name || 'Alguém')}</b><small>Pediu ${z18Ago(x.at || Date.now())}</small></div><button class="z19-no" data-act="z19-den" data-u="${esc(x.u)}">Recusar</button><button class="z19-ok" data-act="z19-acc" data-u="${esc(x.u)}">Aceitar</button></div>`).join('')}</div>`;
+  if (own) add += `<div class="h2">Configurações da sala</div><div class="card" style="margin-top:0"><button class="z19-sw" data-act="z19-appr"><span class="grow"><b>✋ Aprovar quem entra</b><small>${S.room.appr !== false ? 'Ninguém entra só com o código: você aceita antes.' : 'Desligado: quem tem o código entra direto.'}</small></span><span class="z19-tg ${S.room.appr !== false ? 'on' : ''}"></span></button>
+    <button class="z14-row" data-act="prize-edit"><span>🏆</span><span class="grow"><b>Prêmio e data de fim</b><small>${esc((S.room.prize || 'Ainda não definido').slice(0, 60))} · até ${fmtDay(S.room.end)}</small></span><em>›</em></button></div>`;
+  const i = h.indexOf('<div class="h2">Quem está na sala</div>');
+  return i > -1 ? h.slice(0, i) + add + h.slice(i) : h + add;
+};
+// Criar sala: nome, ícone, prêmio, data de fim, limite e aprovação
+z14NewHTML = function () {
+  const e = session.z14n; if (e.prize == null) e.prize = ''; if (!e.end) e.end = S.room.end > T() ? S.room.end : T().slice(0, 4) + '-12-31'; if (e.appr == null) e.appr = true;
+  return `<h2>Criar uma sala nova</h2><div class="sub">Você vira o dono. Depois é só mandar o convite.</div>
+    <label class="field"><span>Nome da sala</span><input class="input" id="z14Name" maxlength="24" value="${esc(e.name)}" placeholder="Ex.: Galera da academia"></label>
+    <div class="field"><span>Ícone</span><div class="z14-icons">${Z14_ICONS.map(i => `<button class="${e.icon === i ? 'on' : ''}" data-act="z14-ic" data-v="${i}">${i}</button>`).join('')}</div></div>
+    <label class="field"><span>🏆 Prêmio do vencedor</span><input class="input" id="z19Prize" maxlength="140" value="${esc(e.prize)}" placeholder="Ex.: quem perder paga um açaí"></label>
+    <div class="grid2"><label class="field"><span>Termina em</span><input class="input" id="z19End" type="date" value="${esc(e.end)}" min="${addDays(T(), 1)}"></label>
+      <div class="field"><span>Máximo de pessoas</span><div class="zstep"><button data-act="z14-max" data-d="-1" ${e.max <= 2 ? 'disabled' : ''}>−</button><b>${e.max}</b><button data-act="z14-max" data-d="1" ${e.max >= 10 ? 'disabled' : ''}>+</button></div></div></div>
+    <button class="z19-sw" data-act="z19-new-appr"><span class="grow"><b>✋ Aprovar quem entra</b><small>${e.appr ? 'Ninguém entra só com o código: você aceita antes.' : 'Quem tiver o código entra direto.'}</small></span><span class="z19-tg ${e.appr ? 'on' : ''}"></span></button>
+    ${z18Multi() ? z18JoinNote() : ''}
+    <div style="margin-top:14px"><button class="btn" data-act="z14-new-ok">Criar sala</button></div>`;
+};
+function z19KeepNew() { const e = session.z14n; if (!e) return; const a = $('#z14Name'), b = $('#z19Prize'), c = $('#z19End'); if (a) e.name = a.value; if (b) e.prize = b.value; if (c && c.value) e.end = c.value; }
+const __z19Ic = ACT['z14-ic'], __z19Max = ACT['z14-max'];
+ACT['z14-ic'] = function (el) { if ($('#z14New')) z19KeepNew(); return __z19Ic.apply(this, arguments); };
+ACT['z14-max'] = function (el) { if ($('#z14New')) z19KeepNew(); return __z19Max.apply(this, arguments); };
+ACT['z14-new-ok'] = async el => {
+  z19KeepNew(); const e = session.z14n; e.name = String(e.name || '').trim().slice(0, 24); e.prize = String(e.prize || '').trim().slice(0, 140);
+  if (e.end <= T()) return toast('Escolha uma data de fim depois de hoje.', 'red', '📅');
+  if (el) { el.disabled = true; el.textContent = 'Criando…'; }
+  const ok = await z14Move(null, { name: e.name, icon: e.icon, max: e.max, prize: e.prize, end: e.end, appr: e.appr });
+  if (ok === false) { if (el) { el.disabled = false; el.textContent = 'Criar sala'; } return; }
+  closeSheet(true); confetti(60); toast(`Sala ${z14Title(S.room)} criada! Agora é só convidar.`, 'green', z14Icon(S.room)); setTimeout(z14Open, 600);
+};
+
+/* ---------- Chat da sala (estilo grupo) ---------- */
+const Z19_DAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+function z19DayLbl(ts) {
+  const d = new Date(ts); const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); const t = localToday();
+  if (k === t) return 'Hoje'; if (k === addDays(t, -1)) return 'Ontem'; if (diffDays(k, t) < 7) return Z19_DAYS[d.getDay()][0].toUpperCase() + Z19_DAYS[d.getDay()].slice(1);
+  return `${d.getDate()} de ${MONTHS[d.getMonth()]}`;
+}
+const z19Hm = ts => { const d = new Date(ts); return d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0'); };
+function z19Esc(t) { return esc(t).replace(/\n/g, '<br>'); }
+function z19ListHTML() {
+  const code = S.room.code; const uid = z14Uid(); const ps = (Z18.posts[code] || []).slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  const err = Z18.muralErr && /permission/i.test(Z18.muralErr) ? `<div class="z19-sys err">O chat ainda não está liberado no Firebase. Peça para o Ryan conferir as regras.</div>` : '';
+  if (!ps.length) return err + `<div class="z19-none"><div>💬</div><b>Comece a conversa!</b><span>Mande um recado, uma foto ou uma provocação para a turma.</span></div>`;
+  let h = err; let lastDay = '', prev = null, divided = false;
+  let hint = false; try { hint = !localStorage.getItem('zenit-chat-hint'); } catch (e) { }
+  if (hint && ps.length) h += `<div class="z19-sys tip">👆 Segure uma mensagem para reagir ou responder</div>`;
+  ps.forEach((x, i) => {
+    const dl = z19DayLbl(x.ts || Date.now()); if (dl !== lastDay) { h += `<div class="z19-day">${dl}</div>`; lastDay = dl; prev = null; }
+    if (!divided && Z19.seenOpen && x.ts > Z19.seenOpen && x.uid !== uid) { const n = ps.slice(i).filter(y => y.uid !== uid).length; h += `<div class="z19-new" id="z19New">${n} ${plural(n, 'mensagem nova', 'mensagens novas')}</div>`; divided = true; prev = null; }
+    const re = x.re || {}; const ems = [...new Set(Object.values(re))]; const rc = Object.keys(re).length;
+    const reH = rc ? `<button class="z19-re ${re[uid] ? 'mine' : ''}" data-act="z19-menu" data-id="${esc(x.id)}">${ems.slice(0, 4).join('')}${rc > 1 ? ` <b>${rc}</b>` : ''}</button>` : '';
+    if (x.auto) { h += `<div class="z19-auto" data-id="${esc(x.id)}"><span class="e">${esc(x.ic || '🎉')}</span>${esc(x.t)}<small>${z19Hm(x.ts)}</small></div>${reH ? `<div class="z19-rew c">${reH}</div>` : ''}`; prev = null; return; }
+    const mine = x.uid === uid; const next = ps[i + 1];
+    const first = !prev || prev.uid !== x.uid || prev.auto || (x.ts - prev.ts) > 5 * 60000;
+    const lastG = !next || next.uid !== x.uid || next.auto || (next.ts - x.ts) > 5 * 60000 || z19DayLbl(next.ts) !== dl;
+    const col = z19Color(x.pet);
+    const q = x.rp ? `<button class="z19-q" data-act="z19-jump" data-id="${esc(x.rp.id)}" style="border-color:${z19Color(x.rp.pet)}"><b style="color:${z19Color(x.rp.pet)}">${esc(String(x.rp.name || '').split(' ')[0])}</b>${esc(String(x.rp.t || '📷 Foto').slice(0, 90))}</button>` : '';
+    h += `<div class="z19-row ${mine ? 'me' : ''} ${first ? 'first' : ''}" data-id="${esc(x.id)}">${mine ? '' : `<span class="z19-pa ${lastG ? '' : 'sp'}" style="background:${col}22">${lastG ? petSVG(x.pet || 'gota', { mood: 'feliz', stage: 1, anim: false }) : ''}</span>`}
+      <div class="z19-b ${x.pend ? 'pend' : ''}" data-mid="${esc(x.id)}">${!mine && first ? `<span class="nm" style="color:${col}">${esc(String(x.name || 'Alguém').split(' ')[0])}</span>` : ''}${q}${x.img ? `<img src="${x.img}" alt="Foto" data-act="z18-zoom" data-id="${esc(x.id)}">` : ''}${x.t ? `<span class="tx">${z19Esc(x.t)}</span>` : ''}<span class="tm">${z19Hm(x.ts)}${mine ? (x.pend ? ' 🕓' : ' ✓') : ''}</span></div></div>${reH ? `<div class="z19-rew ${mine ? 'me' : ''}">${reH}</div>` : ''}`;
+    prev = x;
+  });
+  return h;
+}
+function z19FootHTML() {
+  const rep = Z19.rep ? `<div class="z19-rep" style="border-color:${z19Color(Z19.rep.pet)}"><div class="grow"><b style="color:${z19Color(Z19.rep.pet)}">Respondendo a ${esc(String(Z19.rep.name || '').split(' ')[0])}</b><span>${esc(String(Z19.rep.t || '📷 Foto').slice(0, 80))}</span></div><button data-act="z19-rep-x" aria-label="Cancelar resposta">${IC.x}</button></div>` : '';
+  const img = Z19.img ? `<div class="z19-att"><img src="${Z19.img}" alt="Foto anexada"><span class="grow">Foto pronta para enviar</span><button data-act="z19-img-x" aria-label="Tirar foto">${IC.x}</button></div>` : '';
+  const prov = Z19.prov ? `<div class="z19-prov">${Z18_PROV.map((t, i) => `<button class="chip" data-act="z19-prov" data-i="${i}">${esc(t)}</button>`).join('')}</div>` : '';
+  return `${rep}${img}${prov}<div class="z19-bar"><button class="z19-ib ${Z19.prov ? 'on' : ''}" data-act="z19-prov-t" aria-label="Provocações prontas">😏</button><textarea id="z19T" rows="1" maxlength="400" placeholder="Mensagem"></textarea><button class="z19-ib" data-act="z19-img" aria-label="Enviar foto">📷</button><button class="z19-ib go" data-act="z19-send" aria-label="Enviar">${ZAI_IC.send}</button></div>`;
+}
+function z19ChatShell() {
+  const r = S.room; const names = S.players.map(q => String(q.name).split(' ')[0]);
+  return `<div class="ck-in z19c-in"><div class="z19c-top"><button class="ck-x" data-act="z18-mural-x" aria-label="Voltar">${IC.x}</button><span class="z19-ric sm">${z14Icon(r)}</span><div class="grow"><b>${esc(z14Title(r))}</b><small>${esc(names.slice(0, 4).join(', '))}${names.length > 4 ? ' e +' + (names.length - 4) : ''} · ${names.length} ${plural(names.length, 'pessoa', 'pessoas')}</small></div><div class="z19-tp">${S.players.slice(0, 4).map(q => `<span style="background:${z19Color(q.pet)}33">${petSVG(q.pet, { mood: 'feliz', stage: 1, anim: false })}</span>`).join('')}</div></div>
+    <div class="z19c-list" id="z19cList"></div><button class="z19-down" id="z19Down" data-act="z19-down" hidden>↓ <b></b></button><div class="z19c-foot" id="z19cFoot"></div></div>`;
+}
+function z19PaintFoot(keep) {
+  const f = $('#z19cFoot'); if (!f) return; const ta = $('#z19T'); const v = ta ? ta.value : (keep || ''); const foc = document.activeElement === ta;
+  f.innerHTML = z19FootHTML(); const t2 = $('#z19T'); t2.value = v;
+  const grow = () => { t2.style.height = 'auto'; t2.style.height = Math.min(110, t2.scrollHeight) + 'px'; };
+  t2.addEventListener('input', grow); t2.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !/Android|iPhone|iPad/i.test(navigator.userAgent)) { e.preventDefault(); ACT['z19-send'](); } });
+  t2.addEventListener('focus', () => setTimeout(() => z19Bottom(), 300)); grow(); if (foc) t2.focus();
+}
+function z19Near() { const l = $('#z19cList'); return !l || l.scrollHeight - l.scrollTop - l.clientHeight < 80; }
+function z19Bottom() { const l = $('#z19cList'); if (l) l.scrollTop = l.scrollHeight; Z19.newN = 0; const d = $('#z19Down'); if (d) d.hidden = true; z18Seen(S.room.code); }
+function z19PaintList(first) {
+  const l = $('#z19cList'); if (!l) return; const near = z19Near(); const before = (Z18.posts[S.room.code] || []).length;
+  const st = l.scrollTop; l.innerHTML = z19ListHTML();
+  if (first) { const nw = $('#z19New'); if (nw) { l.scrollTop = Math.max(0, nw.offsetTop - 80); } else l.scrollTop = l.scrollHeight; if (z19Near()) z18Seen(S.room.code); }
+  else if (near) z19Bottom();
+  else { l.scrollTop = st; const unread = z18Unread(S.room.code); const d = $('#z19Down'); if (d && unread) { d.hidden = false; d.querySelector('b').textContent = unread; } }
+}
+z18MuralOpen = function () {
+  if (!z18Multi() || !ZFB.linked) return toast('Entre na sua conta para usar o chat da sala.', 'violet', '☁️');
+  closeSheet(true); let el = $('#z18m');
+  if (!el) { el = document.createElement('div'); el.className = 'ck z19c'; el.id = 'z18m'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); document.body.appendChild(el); document.body.style.overflow = 'hidden'; }
+  Z19.seenOpen = ((S.z18seen || {})[S.room.code]) || 0; Z19.rep = null; Z19.img = null; Z19.prov = false;
+  el.innerHTML = z19ChatShell(); z19PaintFoot(''); z19PaintList(true); z19Bind(); z19VV();
+};
+z18MuralPaint = function (code) { if (!$('#z18m') || code !== S.room.code) return; z19PaintList(false); };
+z18MuralClose = function () { z19MenuX(); const el = $('#z18m'); if (el) el.remove(); if (!$('#overlay') && !$('#zgym') && !$('#zai')) document.body.style.overflow = ''; if ($('#main')) renderMain(true); };
+function z19VV() {
+  const vv = window.visualViewport; if (!vv || Z19.vv) return; Z19.vv = true;
+  const fit = () => { const el = $('#z18m'); if (!el) return; el.style.height = vv.height + 'px'; el.style.top = vv.offsetTop + 'px'; if (z19Near()) z19Bottom(); };
+  vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
+}
+function z19Bind() {
+  const l = $('#z19cList'); if (!l) return;
+  l.addEventListener('scroll', () => { if (z19Near()) { const d = $('#z19Down'); if (d) d.hidden = true; z18Seen(S.room.code); } z19LpX(); }, { passive: true });
+  l.addEventListener('pointerdown', e => { const b = e.target.closest('.z19-b,.z19-auto'); if (!b || e.target.closest('[data-act]')) return; const id = b.dataset.mid || b.dataset.id; Z19.lp = { x: e.clientX, y: e.clientY, t: setTimeout(() => { Z19.lp = null; if (navigator.vibrate) try { navigator.vibrate(20); } catch (er) { } z19Menu(id); }, 430) }; });
+  l.addEventListener('pointermove', e => { if (Z19.lp && Math.hypot(e.clientX - Z19.lp.x, e.clientY - Z19.lp.y) > 10) z19LpX(); });
+  l.addEventListener('pointerup', z19LpX); l.addEventListener('pointercancel', z19LpX);
+  l.addEventListener('contextmenu', e => { const b = e.target.closest('.z19-b,.z19-auto'); if (!b) return; e.preventDefault(); z19LpX(); z19Menu(b.dataset.mid || b.dataset.id); });
+}
+function z19LpX() { if (Z19.lp) { clearTimeout(Z19.lp.t); Z19.lp = null; } }
+function z19Menu(id) {
+  z19MenuX(); const x = (Z18.posts[S.room.code] || []).find(y => y.id === id); if (!x || x.pend) return;
+  try { localStorage.setItem('zenit-chat-hint', '1'); } catch (e) { }
+  const row = document.querySelector(`#z19cList [data-id="${CSS.escape(id)}"]`) || document.querySelector(`#z19cList [data-mid="${CSS.escape(id)}"]`);
+  const r = row ? row.getBoundingClientRect() : { top: innerHeight / 2, bottom: innerHeight / 2 };
+  const mine = x.uid === z14Uid(); const cur = (x.re || {})[z14Uid()];
+  const who = Object.entries(x.re || {}).map(([u, e]) => { const q = S.players.find(p => (p.remote ? p.uid : z14Uid()) === u); return e + ' ' + (q ? String(q.name).split(' ')[0] : 'Alguém'); });
+  const m = document.createElement('div'); m.id = 'z19Menu'; m.className = 'z19-menuw';
+  m.innerHTML = `<div class="z19-dim" data-act="z19-menu-x"></div><div class="z19-menu" style="top:${Math.max(70, Math.min(innerHeight - 290, r.top - 70))}px"><div class="em">${Z18_RE.map(e => `<button class="${cur === e ? 'on' : ''}" data-act="z18-re" data-id="${esc(id)}" data-e="${e}">${e}</button>`).join('')}</div>
+    ${who.length ? `<div class="who">${esc(who.join(' · '))}</div>` : ''}
+    ${x.auto ? '' : `<button class="it" data-act="z19-reply" data-id="${esc(id)}">↩️ Responder</button>`}${x.t ? `<button class="it" data-act="z19-copy" data-id="${esc(id)}">📋 Copiar texto</button>` : ''}${mine && !x.auto ? `<button class="it red" data-act="z18-del" data-id="${esc(id)}">🗑️ Apagar</button>` : ''}</div>`;
+  document.body.appendChild(m);
+}
+function z19MenuX() { const m = $('#z19Menu'); if (m) m.remove(); }
+// Reações do mural antigo continuam; o menu fecha depois
+const __z19Re = ACT['z18-re'];
+ACT['z18-re'] = function () { const r = __z19Re.apply(this, arguments); z19MenuX(); return r; };
+const __z19Del = ACT['z18-del'];
+ACT['z18-del'] = function () { z19MenuX(); return __z19Del.apply(this, arguments); };
+Object.assign(ACT, {
+  'z19-rooms': () => z19RoomsSheet(),
+  'z19-menu': el => z19Menu(el.dataset.id),
+  'z19-menu-x': () => z19MenuX(),
+  'z19-reply': el => { const x = (Z18.posts[S.room.code] || []).find(y => y.id === el.dataset.id); z19MenuX(); if (!x) return; Z19.rep = { id: x.id, name: x.name, pet: x.pet, t: x.t || (x.img ? '📷 Foto' : '') }; z19PaintFoot(); const t = $('#z19T'); if (t) t.focus(); },
+  'z19-rep-x': () => { Z19.rep = null; z19PaintFoot(); },
+  'z19-copy': el => { const x = (Z18.posts[S.room.code] || []).find(y => y.id === el.dataset.id); z19MenuX(); if (x && x.t) copyText(x.t, 'Texto copiado!'); },
+  'z19-jump': el => { const t = document.querySelector(`#z19cList [data-id="${CSS.escape(el.dataset.id)}"]`); if (t) { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.classList.add('flash'); setTimeout(() => t.classList.remove('flash'), 1200); } },
+  'z19-down': () => z19Bottom(),
+  'z19-prov-t': () => { Z19.prov = !Z19.prov; z19PaintFoot(); },
+  'z19-prov': el => { const t = $('#z19T'); const v = Z18_PROV[+el.dataset.i]; if (!t || !v) return; t.value = t.value.trim() ? t.value.trim() + ' ' + v : v; Z19.prov = false; z19PaintFoot(); const t2 = $('#z19T'); if (t2) t2.focus(); },
+  'z19-img': () => { (typeof zaiPickImg === 'function' ? zaiPickImg : z16Pick)(img => { Z19.img = img; z19PaintFoot(); }, 720); },
+  'z19-img-x': () => { Z19.img = null; z19PaintFoot(); },
+  'z19-send': async () => {
+    const ta = $('#z19T'); const t = String((ta && ta.value) || '').trim().slice(0, 400);
+    if (!t && !Z19.img) return; const code = S.room.code; const p = me(); const uid = z14Uid();
+    const id = Date.now().toString(36) + uid.slice(0, 5) + Math.floor(Math.random() * 1e5).toString(36);
+    const data = { t, img: Z19.img || '' }; if (Z19.rep) data.rp = { id: Z19.rep.id, name: Z19.rep.name, pet: Z19.rep.pet, t: String(Z19.rep.t || '').slice(0, 120) };
+    const draft = Object.assign({ id, pend: true, uid, name: p.name, pet: p.pet, ts: Date.now(), auto: 0, re: {} }, data);
+    Z18.posts[code] = [draft].concat(Z18.posts[code] || []); if (ta) ta.value = ''; Z19.rep = null; Z19.img = null; Z19.prov = false;
+    z19PaintFoot(); z19PaintList(false); z19Bottom(); sfx('pop');
+    try { await z18Post(code, data, id); } catch (e) { Z18.posts[code] = (Z18.posts[code] || []).filter(x => x.id !== id); z19PaintList(false); const t2 = $('#z19T'); if (t2) t2.value = t; toast(z18PostErr(e), 'red', '💬'); }
+  },
+  // aprovação
+  'z19-acc': async el => {
+    const u = el.dataset.u; const r = S.room; const x = (r.req || {})[u]; if (!x || !z19IsOwner()) return;
+    if ((r.members || []).length >= z14Max()) return toast('A sala está cheia. Aumente o limite em Editar sala.', 'red', '👥');
+    const { doc, updateDoc, arrayUnion, deleteField } = ZFB.m; el.disabled = true;
+    try { await z14Wait(updateDoc(doc(ZFB.db, 'rooms', r.code), { members: arrayUnion(u), ['names.' + u]: x.name || 'Alguém', ['pets.' + u]: x.pet || 'gota', ['joined.' + u]: T(), ['req.' + u]: deleteField() })); }
+    catch (e) { el.disabled = false; return toast('Sem internet agora. Tente de novo.', 'red', '📶'); }
+    delete (r.req || {})[u]; z14Refresh(); toast(`${String(x.name || 'Alguém').split(' ')[0]} entrou na sala!`, 'green', '🎉'); z18BellPaint();
+  },
+  'z19-den': async el => {
+    const u = el.dataset.u; const r = S.room; if (!z19IsOwner()) return; const { doc, updateDoc, deleteField } = ZFB.m;
+    try { await z14Wait(updateDoc(doc(ZFB.db, 'rooms', r.code), { ['req.' + u]: deleteField(), ['den.' + u]: Date.now() })); } catch (e) { return toast('Sem internet agora. Tente de novo.', 'red', '📶'); }
+    delete (r.req || {})[u]; z14Refresh(); toast('Pedido recusado.', 'violet', '🙅'); z18BellPaint();
+  },
+  'z19-appr': () => { if (!z19IsOwner()) return; S.room.appr = S.room.appr === false; save(); zfbRoomUpdate({ appr: S.room.appr }); z14Refresh(); toast(S.room.appr ? 'Agora você aprova quem entra.' : 'Quem tiver o código entra direto.', 'violet', '✋'); },
+  'z19-new-appr': () => { z19KeepNew(); session.z14n.appr = !session.z14n.appr; z14Redraw(); },
+  'z19-req-x': async el => {
+    const c = el.dataset.c; const { doc, updateDoc, deleteField } = ZFB.m;
+    try { await z14Wait(updateDoc(doc(ZFB.db, 'rooms', c), { ['req.' + z14Uid()]: deleteField() })); } catch (e) { return toast('Sem internet agora. Tente de novo.', 'red', '📶'); }
+    const ip = S.z19req && S.z19req[c] && S.z19req[c].inPlace; if (S.z19req) delete S.z19req[c]; save(); z19Watch(); closeSheet(true); toast('Pedido cancelado.', 'violet', '↩️'); if (ip) await z19Unplace(c); if ($('#main')) renderMain(true);
+  }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#z19Menu')) { e.stopImmediatePropagation(); z19MenuX(); } }, true);
+
+/* ---------- Sininho ---------- */
+if (typeof z15Items === 'function') {
+  const __z19Items = z15Items;
+  z15Items = function () {
+    const out = __z19Items.apply(this, arguments);
+    try {
+      for (const it of out.agora) if (/^mural\|/.test(it.k)) it.t = it.t.replace('no mural', 'no chat');
+      if (z18Multi()) for (const c of z18Codes()) for (const x of z19ReqList(c)) out.agora.unshift({ k: 'req|' + c + '|' + x.u, ic: '✋', t: `${String(x.name || 'Alguém').split(' ')[0]} pediu para entrar na ${z14Title(z18Room(c))}`, s: 'Toque para aceitar ou recusar', go: 'z18:r:' + c });
+    } catch (e) { }
+    return out;
+  };
+}
+const __z19Go = ACT['z15-go'];
+ACT['z15-go'] = function (el) {
+  const g = (el && el.dataset && el.dataset.go) || '';
+  if (g.startsWith('z18:r:')) { closeSheet(true); const c = g.slice(6); const open = () => setTimeout(z14Open, 250); if (c !== S.room.code && (S.rooms || {})[c]) z18Switch(c).then(open); else open(); return; }
+  return __z19Go.apply(this, arguments);
+};
+
+/* ---------- Bolinha do assistente não atrapalha ---------- */
+let z19ST = null;
+addEventListener('scroll', () => { const f = $('#zaiFab'); if (!f) return; f.classList.add('dim'); clearTimeout(z19ST); z19ST = setTimeout(() => f.classList.remove('dim'), 700); }, { passive: true });
+
+/* ---------- Tour e novidades ---------- */
+(function () {
+  const swap = (sel, o) => { const s = Z18_TOUR.find(x => x.sel.includes(sel)); if (s) Object.assign(s, o); };
+  swap('.z18-rooms:not([hidden])', { sel: ['.z19-room'], t: 'Sua sala', d: 'O Placar mostra a sala aberta. Toque em Trocar para ver todas as suas salas, até 5, ou entrar em outra.' });
+  swap('.lb-hero', { sel: ['.seg', '#main .card'], t: 'O placar', d: 'Quem está na frente, no geral e na semana. Seu XP é o mesmo em todas as salas.' });
+  swap('.z18-mcard', { sel: ['.z19-chat'], t: 'Chat da sala', d: 'Converse com a turma, mande fotos, provocações e reações. Recordes e níveis aparecem sozinhos na conversa.' });
+  Z18_NEW.splice(0, Z18_NEW.length,
+    { tab: 'rank', sel: ['.z19-room'], t: 'Novo: botão das salas', d: 'O Placar abre na sua sala. Toque em Trocar para ver todas as suas salas, com prêmio e novidades de cada uma.' },
+    { tab: 'rank', sel: ['.z19-chat'], t: 'Novo: chat da sala', d: 'Agora é um chat de grupo: segure uma mensagem para reagir ou responder. As comemorações aparecem no meio da conversa.' },
+    { tab: 'rank', sel: ['.z6prize'], t: 'Prêmio de cada sala', d: 'Cada sala tem o seu prêmio e a sua data de fim. Só o dono muda, e todo mundo recebe o aviso no chat.' },
+    { tab: 'me', sel: ['[data-act="coach"]'], t: 'Quem entra, o dono aprova', d: 'Agora, para entrar numa sala, o dono precisa aceitar o pedido. Ele vê os pedidos em Minha sala e no sininho.' });
+})();
+ZNEWS.splice(0, ZNEWS.length,
+  ['💬', 'Chat da sala', 'O mural virou um chat de grupo, com respostas, reações, fotos, provocações e comemorações no meio da conversa.'],
+  ['🏠', 'Botão das salas', 'O Placar abre na sua sala. Toque em Trocar para ver e abrir as outras.'],
+  ['🏆', 'Prêmio por sala', 'Cada sala tem o seu prêmio e a sua data de fim. Só o dono muda.'],
+  ['✋', 'Aprovação para entrar', 'Quem tem o código pede para entrar e o dono aceita ou recusa.'],
+  ['💡', 'Bolinha mais discreta', 'A bolinha do assistente fica transparente enquanto você rola a tela.']);
+</script>
+<style>
+.z19-room{display:flex;align-items:center;gap:12px;width:100%;margin:14px 0 14px;padding:12px 14px;border:2px solid var(--line);border-bottom-width:4px;border-radius:20px;background:var(--card);font:inherit;color:inherit;text-align:left;position:relative}
+.z19-ric{width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#FF9600,#FF4B4B);display:grid;place-items:center;font-size:28px;flex:none}
+.z19-ric.sm{width:42px;height:42px;border-radius:13px;font-size:22px}
+.z19-room small{display:block;font-size:11.5px;font-weight:900;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase}.z19-room b{display:block;font-size:19px;font-weight:900;line-height:1.15}.z19-room .s{display:block;font-size:13px;color:var(--ink-2);font-weight:700}
+.z19-room em{font-style:normal;background:var(--surface-2);border-radius:12px;padding:8px 10px;font-weight:900;font-size:13px;white-space:nowrap}
+.z19-dot{position:absolute;top:-7px;right:-5px;background:#E0483C;color:#fff;border-radius:99px;font-size:11.5px;font-weight:900;font-style:normal;padding:2px 7px;border:2px solid var(--bg)}
+.z6prize.none .z6p-t{opacity:.7;font-style:italic}
+.z19-chat{display:block;width:100%;text-align:left;border:2px solid var(--line);border-bottom-width:4px;border-radius:20px;background:var(--card);padding:12px 14px;margin:12px 0;font:inherit;color:inherit}
+.z19-ch{display:flex;align-items:center;gap:8px}.z19-ch > span{font-size:22px}.z19-ch b{font-size:16px;font-weight:900}.z19-ch i{font-style:normal;background:#E0483C;color:#fff;border-radius:99px;padding:3px 9px;font-size:12px;font-weight:900;margin-left:auto}.z19-ch em{font-style:normal;color:#7B4DFF;font-weight:900;font-size:13.5px;margin-left:auto}
+.z19-pets{display:flex;margin:8px 0 2px;padding-left:4px}.z19-pets span{width:30px;height:30px;border-radius:50%;margin-left:-6px;border:2px solid var(--card);overflow:hidden;display:grid;place-items:center}.z19-pets svg{width:30px;height:32px}
+.z19-last{font-size:13.5px;color:var(--ink-2);font-weight:700;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.z19-last b{color:var(--ink)}
+.z19-empty{text-align:center;padding:22px 6px 6px}.z19-ep{width:140px;margin:0 auto}.z19-empty h2{margin:10px 0 6px}
+.z19-rl{padding:4px 12px}
+.z19-rrow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 0;border:0;border-bottom:2px solid var(--line);background:none;font:inherit;color:inherit}.z19-rrow:last-child{border-bottom:0}
+.z19-rrow b{display:block;font-size:15.5px;font-weight:900}.z19-rrow small{display:block;font-size:12.5px;color:var(--ink-3);font-weight:700}.z19-rrow .grow{min-width:0}
+.z19-go{font-style:normal;color:var(--ink-3);font-weight:900;font-size:20px}
+.pill.z19-pu,.pill.z19-pr{background:#E0483C;color:#fff}.pill.z19-px{background:#FF9600;color:#fff}
+.z19-wait{text-align:center;padding:6px 0}.z19-wait .big{font-size:56px}.z19-wait h2{margin:6px 0}
+.z19-steps{display:flex;justify-content:center;gap:6px;margin:12px 0 6px}.z19-steps i{width:30px;height:6px;border-radius:9px;background:var(--line)}.z19-steps i.on{background:#58CC02}
+.z19-req{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:2px solid var(--line)}.z19-req:last-child{border:0}.z19-req b{display:block;font-size:15px}.z19-req small{display:block;color:var(--ink-3);font-weight:700;font-size:12.5px}
+.z19-ok{background:#58CC02;color:#fff;font-weight:900;border-radius:12px;padding:8px 12px;font-size:13px;box-shadow:0 3px 0 #46A302}.z19-no{background:var(--surface-2);font-weight:900;border-radius:12px;padding:8px 10px;font-size:13px;color:var(--ink)}
+.z19-sw{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 0;border:0;background:none;font:inherit;color:inherit}.z19-sw b{display:block;font-size:15px;font-weight:900}.z19-sw small{display:block;color:var(--ink-3);font-weight:700;font-size:12.5px}
+.z19-tg{width:50px;height:30px;border-radius:99px;background:var(--line);position:relative;flex:none;transition:background .2s}.z19-tg:after{content:'';position:absolute;left:3px;top:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .2s}.z19-tg.on{background:#58CC02}.z19-tg.on:after{left:23px}
+/* chat */
+.ck.z19c{z-index:86;height:100%}
+.z19c-in{max-width:560px;position:relative}
+.z19c-top{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:2px solid var(--line);background:linear-gradient(135deg,rgba(255,150,0,.14),rgba(123,77,255,.10))}
+.z19c-top b{display:block;font-size:17px;font-weight:900;line-height:1.15}.z19c-top small{display:block;font-size:12.5px;color:var(--ink-3);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.z19c-top .grow{min-width:0}
+.z19-tp{display:flex;padding-left:8px}.z19-tp span{width:30px;height:30px;border-radius:50%;margin-left:-8px;border:2px solid var(--bg);overflow:hidden;display:grid;place-items:center}.z19-tp svg{width:30px;height:32px}
+.z19c-list{flex:1;overflow-y:auto;padding:10px 10px 8px;display:flex;flex-direction:column;gap:3px;overscroll-behavior:contain;background-image:radial-gradient(rgba(127,127,160,.10) 1px,transparent 1px);background-size:18px 18px}
+.z19c-list > :first-child{margin-top:auto}
+.z19-day{align-self:center;background:var(--surface-2);color:var(--ink-2);font-size:12px;font-weight:900;border-radius:10px;padding:4px 10px;margin:10px 0 6px}
+.z19-new{align-self:stretch;text-align:center;font-size:12px;font-weight:900;color:#E5A500;margin:8px 0;display:flex;align-items:center;gap:8px}.z19-new:before,.z19-new:after{content:'';flex:1;height:2px;background:#FFC23D66}
+.z19-row{display:flex;align-items:flex-end;gap:6px;max-width:86%;margin-top:1px}.z19-row.first{margin-top:6px}.z19-row.me{align-self:flex-end;flex-direction:row-reverse}
+.z19-row.flash .z19-b{box-shadow:0 0 0 3px #FFC23D}
+.z19-pa{width:30px;height:30px;border-radius:50%;overflow:hidden;flex:none;display:grid;place-items:center}.z19-pa svg{width:30px;height:32px}.z19-pa.sp{background:none!important}
+.z19-b{border-radius:16px 16px 16px 5px;padding:6px 10px 5px;font-size:15px;font-weight:600;line-height:1.38;position:relative;background:var(--card);border:2px solid var(--line);color:var(--ink);min-width:70px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overflow-wrap:anywhere}
+.z19-row.me .z19-b{border-radius:16px 16px 5px 16px;background:#D9F7C5;border-color:#B5E89A;color:#1E3A10}
+.z19-b.pend{opacity:.7}
+.z19-b .nm{display:block;font-size:12.5px;font-weight:900;margin-bottom:1px}
+.z19-b .tm{float:right;font-size:10.5px;opacity:.65;margin:6px 0 0 10px;font-weight:800;white-space:nowrap}
+.z19-b img{display:block;max-width:230px;width:100%;max-height:260px;object-fit:cover;border-radius:12px;margin:2px 0 4px;cursor:zoom-in}
+.z19-q{display:block;width:100%;text-align:left;border:0;border-left:4px solid #22AEFF;background:rgba(127,127,160,.14);border-radius:8px;padding:4px 8px;margin:2px 0 5px;font:inherit;font-size:13px;color:inherit;opacity:.9}.z19-q b{display:block;font-size:12px}
+.z19-rew{display:flex;margin:-7px 0 3px 40px;position:relative;z-index:1}.z19-rew.me{justify-content:flex-end;margin:-7px 6px 3px 0}.z19-rew.c{justify-content:center;margin:-6px 0 4px}
+.z19-re{display:inline-flex;align-items:center;gap:1px;background:var(--card);border:2px solid var(--line);border-radius:99px;padding:1px 7px;font-size:13px;font-weight:900;color:var(--ink)}.z19-re.mine{border-color:#7B4DFF}.z19-re b{font-size:12px;margin-left:3px}
+.z19-auto{align-self:center;max-width:90%;text-align:center;background:linear-gradient(135deg,#F1EBFF,#E3F4FF);border:2px solid #CDBDFF;border-radius:16px;padding:8px 12px;margin:8px 0 4px;font-size:14px;font-weight:800;color:#2B1D5C;user-select:none;-webkit-user-select:none}
+.z19-auto .e{display:block;font-size:22px}.z19-auto small{display:block;font-size:10.5px;opacity:.6;font-weight:800;margin-top:2px}
+.z19-sys{align-self:center;text-align:center;background:var(--surface-2);border-radius:12px;padding:6px 12px;margin:6px 0;font-size:12.5px;font-weight:800;color:var(--ink-2)}.z19-sys.err{background:#FFE3E3;color:#B4231A}
+.z19-none{margin:auto;text-align:center;padding:30px 20px;font-size:40px}.z19-none b{display:block;font-size:17px;margin-top:6px}.z19-none span{display:block;font-size:14px;color:var(--ink-3);font-weight:700}
+.z19-down{position:absolute;right:16px;bottom:86px;z-index:3;background:#7B4DFF;color:#fff;border-radius:99px;padding:8px 12px;font-weight:900;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.z19c-foot{border-top:2px solid var(--line);background:var(--bg);padding:8px 10px calc(8px + env(safe-area-inset-bottom, 0px))}
+.z19-bar{display:flex;align-items:flex-end;gap:6px}
+.z19-bar textarea{flex:1;resize:none;border:2px solid var(--line);border-radius:22px;padding:10px 14px;font:inherit;font-weight:600;font-size:16px;line-height:1.3;background:var(--card);color:var(--ink);max-height:110px;min-height:44px}
+.z19-bar textarea:focus{outline:none;border-color:#58CC02}
+.z19-ib{width:42px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:21px;flex:none;color:var(--ink-2)}.z19-ib.on{background:var(--surface-2)}
+.z19-ib.go{width:44px;background:#58CC02;color:#fff;box-shadow:0 3px 0 #46A302}.z19-ib.go svg{width:22px;height:22px}
+.z19-prov{display:flex;gap:6px;overflow-x:auto;padding:0 0 8px;scrollbar-width:none}.z19-prov::-webkit-scrollbar{display:none}.z19-prov .chip{flex:none;font-size:13px;padding:6px 10px}
+.z19-rep,.z19-att{display:flex;align-items:center;gap:8px;border-left:4px solid #22AEFF;background:var(--card);border-radius:10px;padding:6px 10px;margin-bottom:8px;font-size:13px}.z19-rep b{display:block;font-size:12px}.z19-rep span{display:block;color:var(--ink-2);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.z19-rep .grow{min-width:0}
+.z19-att{border-left-color:#58CC02}.z19-att img{width:44px;height:44px;border-radius:10px;object-fit:cover}
+.z19-rep button,.z19-att button{width:28px;height:28px;display:grid;place-items:center;color:var(--ink-3)}.z19-rep svg,.z19-att svg{width:15px;height:15px}
+.z19-menuw{position:fixed;inset:0;z-index:96}
+.z19-dim{position:absolute;inset:0;background:rgba(0,0,0,.45);animation:fadein .15s both}
+.z19-menu{position:absolute;left:50%;transform:translateX(-50%);width:min(320px,92vw);background:var(--card);border:2px solid var(--line);border-radius:20px;padding:8px;box-shadow:0 12px 34px rgba(0,0,0,.4);animation:zaiIn .2s both}
+.z19-menu .em{display:flex;justify-content:space-between;padding:2px 2px 8px;border-bottom:2px solid var(--line)}
+.z19-menu .em button{font-size:27px;width:44px;height:44px;border-radius:50%;display:grid;place-items:center}.z19-menu .em button.on{background:var(--purple-soft,#EEE8FF)}
+.z19-menu .who{font-size:12.5px;font-weight:800;color:var(--ink-3);padding:8px 6px 2px}
+.z19-menu .it{display:block;width:100%;text-align:left;padding:11px 8px;font:inherit;font-weight:800;font-size:15px;color:var(--ink);border-radius:12px}.z19-menu .it.red{color:#E0483C}
+.zai-fab.dim{transform:scale(.78);opacity:.42}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .z19-row.me .z19-b{background:#1F5C3A;border-color:#2C7A4E;color:#fff} :root:not([data-theme="light"]) .z19-auto{background:linear-gradient(135deg,#3B2A70,#22355F);border-color:#6B54C9;color:#fff} :root:not([data-theme="light"]) .z19-sys.err{background:#5A1F1F;color:#FFD5D5}}
+:root[data-theme="dark"] .z19-row.me .z19-b{background:#1F5C3A;border-color:#2C7A4E;color:#fff}:root[data-theme="dark"] .z19-auto{background:linear-gradient(135deg,#3B2A70,#22355F);border-color:#6B54C9;color:#fff}
 </style>
 
 </body>
