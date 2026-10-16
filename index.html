@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '2.7';
+const ZV = '2.8';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -7915,7 +7915,7 @@ function z16GymCardHTML(p) {
   let h = `<div class="card zg-card"><div class="card-head"><h3>🏋️ Treino da academia</h3><button class="link-btn" data-act="z16-edit">${z16HasFicha(p) ? 'Editar fichas' : ''}</button></div>`;
   if (done.length) { const e = done[done.length - 1]; h += `<div class="zg-today">✅ Hoje você fez o <b>Treino ${e.ficha}</b>: ${z16Sets(e)} séries · ${fmtInt(z16Vol(e))} kg levantados${e.prs ? ` · ${e.prs} ${plural(e.prs, 'recorde', 'recordes')} 🏆` : ''}</div>`; }
   if (!z16HasFicha(p)) return h + `<div class="sub">Monte sua ficha uma vez e treine com checklist de séries, cronômetro de descanso e controle de carga. O app mostra sua evolução e avisa quando dá para subir o peso.</div>
-    <div style="margin-top:12px"><button class="btn" data-act="z16-edit">Montar minha ficha</button></div><div class="hint">Na próxima atualização: tire foto da ficha da academia e a IA monta tudo sozinha.</div></div>`;
+    <div style="margin-top:12px"><button class="btn" data-act="z16-edit">Montar minha ficha</button></div><button class="btn sec sm" data-act="zai-open-ficha" style="margin-top:8px">📋 Tirar foto da ficha de papel</button></div>`;
   h += `<div class="zg-fichas">${Z16_FICHAS.filter(k => g.fichas[k].ex.length).map(k => { const f = g.fichas[k]; const today = plan === k; return `<button class="zg-fb ${today ? 'today' : ''}" data-act="z16-start" data-f="${k}"><b>${k}</b><span class="grow"><strong>${f.nome ? esc(f.nome) : 'Treino ' + k}</strong><small>${f.ex.length} ${plural(f.ex.length, 'exercício', 'exercícios')}${today ? ' · é o de hoje' : ''}</small></span><em>Começar</em></button>`; }).join('')}</div></div>`;
   return h;
 }
@@ -8020,7 +8020,7 @@ function z16EditorHTML() {
       <span class="zg-mv"><button data-act="z16-mv" data-id="${ex.id}" data-d="-1" ${i ? '' : 'disabled'} aria-label="Subir">▲</button><button data-act="z16-mv" data-id="${ex.id}" data-d="1" ${i < f.ex.length - 1 ? '' : 'disabled'} aria-label="Descer">▼</button></span></div>`).join('') : '<div class="sub" style="padding:10px 0">Nenhum exercício ainda.</div>'}</div>
     <div style="margin-top:12px"><button class="btn sec" data-act="z16-exedit" data-id="">+ Adicionar exercício</button></div>
     <div style="margin-top:10px"><button class="btn" data-act="z16-edit-done">Pronto</button></div>
-    <div class="hint">Na próxima atualização: tire foto da ficha da academia e a IA monta tudo sozinha.</div>`;
+    `;
 }
 function z16Editor() { closeSheet(true); openSheet(`<div id="z16Ed">${z16EditorHTML()}</div>`, {}); }
 function z16SaveFName() { const i = $('#z16FName'); if (i) { const g = zGym(me()); g.fichas[session.z16f || 'A'].nome = i.value.trim().slice(0, 30); } }
@@ -8346,6 +8346,794 @@ ZNEWS.splice(0, ZNEWS.length,
 .zevo-ban > span:first-child{font-size:30px}.zevo-ban b{display:block;font-size:16px;font-weight:900}.zevo-ban small{display:block;font-size:12.5px;color:var(--ink-2)}
 .zevo-ban em{font-style:normal;background:#FFC800;color:#5A3A00;font-weight:900;font-size:13px;border-radius:12px;padding:8px 12px}
 [data-idbwrap].nophoto img{display:none}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 2.8 · Assistente de IA
+   Bolinha flutuante com o mascote, conversa livre com o Gemini
+   (Firebase AI Logic, Gemini Developer API), voz, calorias pela
+   foto ou pela descrição do prato, ficha da academia pela foto
+   e limite de mensagens por pessoa por dia.
+   A conversa fica só neste aparelho. As fotos vão para a IA só
+   na hora da análise e não são guardadas.
+   ========================================================= */
+
+const ZAI_LIMIT = 20;
+const ZAI_CHAT = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'];
+const ZAI_FAST = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.5-flash'];
+const ZAI_HOST = 'https://firebasevertexai.googleapis.com/v1beta/projects/';
+const ZAI = { msgs: null, pid: null, busy: false, mode: null, attach: null, imgs: new Map(), bad: {}, rec: null, ctl: null, foodImg: new Map() };
+const zaiOk = () => !!(S && session.pid && me());
+
+/* ---------- Limite por dia ---------- */
+function zaiLeft() { const p = me(); if (!p) return 0; const a = p.ai || {}; return a.d === localToday() ? Math.max(0, ZAI_LIMIT - (a.n || 0)) : ZAI_LIMIT; }
+function zaiUse(n) { const p = me(); const t = localToday(); const a = (p.ai && p.ai.d === t) ? p.ai : { d: t, n: 0 }; a.n = Math.max(0, (a.n || 0) + n); p.ai = a; save(); zaiLeftPaint(); }
+function zaiLeftPaint() { const el = $('#zaiLeft'); if (!el) return; const n = zaiLeft(); el.textContent = n ? `Restam ${n} hoje` : 'Acabou por hoje'; el.classList.toggle('low', n <= 5); }
+
+/* ---------- Chamada ao Gemini (mesmo endereço e cabeçalhos do SDK do Firebase) ---------- */
+function zaiHeaders() {
+  return { 'Content-Type': 'application/json', 'x-goog-api-key': ZFB_CONFIG.apiKey, 'x-goog-api-client': 'gl-js/12.19.0 fire/12.19.0', 'X-Firebase-Appid': ZFB_CONFIG.appId };
+}
+function zaiPick(j) {
+  const c = j && j.candidates && j.candidates[0];
+  const parts = (c && c.content && c.content.parts) || [];
+  return { text: parts.filter(x => x && typeof x.text === 'string' && !x.thought).map(x => x.text).join(''), finish: c && c.finishReason, blocked: !!(j && j.promptFeedback && j.promptFeedback.blockReason) };
+}
+async function zaiStream(r, onText) {
+  if (!r.body || !r.body.getReader) { const raw = await r.text(); return zaiSSE(raw, onText, true); }
+  const rd = r.body.getReader(); const dec = new TextDecoder(); let buf = '', out = { text: '', finish: null, blocked: false };
+  for (;;) {
+    const { value, done } = await rd.read(); if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i; while ((i = buf.indexOf('\n')) > -1) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); zaiLine(line, out, onText); }
+  }
+  zaiLine(buf.trim(), out, onText);
+  return out;
+}
+function zaiSSE(raw, onText) { const out = { text: '', finish: null, blocked: false }; raw.split('\n').forEach(l => zaiLine(l.trim(), out, onText)); return out; }
+function zaiLine(line, out, onText) {
+  if (!line.startsWith('data:')) return;
+  let j; try { j = JSON.parse(line.slice(5).trim()); } catch (e) { return; }
+  const r = zaiPick(j); if (r.text) { out.text += r.text; if (onText) onText(out.text); }
+  if (r.finish) out.finish = r.finish; if (r.blocked) out.blocked = true;
+}
+function zaiErr(kind, msg) { const e = new Error(kind); e.kind = kind; e.msg = msg || ''; return e; }
+async function zaiCall(models, body, o) {
+  o = o || {};
+  if (navigator.onLine === false) throw zaiErr('net');
+  let last = zaiErr('model');
+  for (const m of models) {
+    if (ZAI.bad[m]) continue;
+    let r;
+    try { r = await fetch(ZAI_HOST + ZFB_CONFIG.projectId + '/models/' + m + (o.stream ? ':streamGenerateContent?alt=sse' : ':generateContent'), { method: 'POST', headers: zaiHeaders(), body: JSON.stringify(body), signal: o.signal }); }
+    catch (e) { if (e && e.name === 'AbortError') throw zaiErr('abort'); throw zaiErr('net'); }
+    if (r.ok) {
+      const out = o.stream ? await zaiStream(r, o.onText) : zaiPick(await r.json());
+      if (out.blocked || (!out.text && /SAFETY|PROHIBITED|BLOCK/.test(out.finish || ''))) throw zaiErr('blocked');
+      if (!out.text) { last = zaiErr('empty'); continue; }
+      out.model = m; return out;
+    }
+    let msg = ''; try { const j = await r.json(); msg = (j.error && j.error.message) || ''; } catch (e) { }
+    if (r.status === 404 || (r.status === 400 && /model|not found|not supported/i.test(msg))) { ZAI.bad[m] = 1; last = zaiErr('model', msg); continue; }
+    if (r.status === 429) { last = zaiErr('quota', msg); continue; }
+    if (r.status >= 500) { last = zaiErr('server', msg); continue; }
+    if (r.status === 401 || r.status === 403) throw zaiErr('off', msg);
+    throw zaiErr('bad', msg);
+  }
+  throw last;
+}
+function zaiErrText(e) {
+  const k = e && e.kind;
+  if (k === 'net') return 'Estou sem conexão agora. Confira a internet e tente de novo. 📶';
+  if (k === 'quota') return 'Muita gente falando comigo ao mesmo tempo. Espera um minutinho e tenta de novo. ⏳';
+  if (k === 'blocked') return 'Sobre isso eu não posso ajudar. Me pergunta outra coisa? 🙏';
+  if (k === 'off') return 'O assistente ainda não está liberado no Firebase do Zenit. Peça para o Ryan conferir o Firebase AI Logic. 🔧';
+  if (k === 'json') return 'Não consegui ler direito. Tenta mandar de novo, com a foto bem nítida e iluminada. 📸';
+  return 'Tive um probleminha para responder. Tenta de novo daqui a pouco. 🔄';
+}
+function zaiJSON(t) {
+  let s = String(t || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  const a = s.indexOf('{'), b = s.lastIndexOf('}'); if (a < 0 || b < a) throw zaiErr('json');
+  try { return JSON.parse(s.slice(a, b + 1)); } catch (e) { throw zaiErr('json'); }
+}
+const zaiB64 = url => String(url).split(',')[1] || '';
+const zaiImgPart = url => ({ inlineData: { mimeType: (String(url).match(/^data:([^;]+)/) || [])[1] || 'image/jpeg', data: zaiB64(url) } });
+
+/* ---------- O que a IA sabe da pessoa ---------- */
+function zaiContext() {
+  const p = me(), t = T(), d = dget(p, t); const L = [];
+  const x = (f) => { try { const v = f(); if (v) L.push(v); } catch (e) { } };
+  x(() => `Hoje é ${ZDOW[dow(t)].toLowerCase()}, ${fmtDay(t)}/${t.slice(0, 4)}. Faltam ${Math.max(0, diffDays(t, t.slice(0, 4) + '-12-31'))} dias para o Réveillon (31/12), quando a competição termina.`);
+  x(() => `Nome: ${p.name}. Objetivo: ${ZOBJ[zObj(p)].t} (${ZOBJ[zObj(p)].s}).`);
+  x(() => `Peso inicial ${fmt1(startW(p))} kg, peso atual ${fmt1(latestW(p, t))} kg, meta ${fmt1(+p.goalWeight)} kg. Última pesagem: ${(() => { const w = weighinsUpTo(p, t).pop(); return w ? fmtDay(w.date) : 'nenhuma'; })()}.`);
+  x(() => `Água hoje: ${fmtInt(d.water || 0)} ml de ${fmtInt(p.waterGoal)} ml (meta).`);
+  x(() => { const m = d.meals || {}; const menu = zMenuFor(p, t); return 'Refeições hoje: ' + MEALS.map(k => `${k.name} = ${m[k.id] === 'ok' ? 'no plano' : m[k.id] === 'fora' ? 'fora do plano' : 'ainda não registrado'}${menu[k.id] ? ' (cardápio: ' + menu[k.id] + ')' : ''}`).join('; ') + '.'; });
+  x(() => { const k = (d.kcal || []); if (!k.length) return 'Calorias registradas hoje: nenhuma ainda.'; return `Calorias registradas hoje: ${fmtInt(k.reduce((a, b) => a + (b.kcal || 0), 0))} kcal (${k.map(i => i.desc + ' ' + i.kcal + ' kcal').join('; ')}).`; });
+  x(() => { const pl = zPlan(p, t); const plano = pl.k === 'rest' ? 'descanso' : 'treino ' + pl.k + (pl.h ? ' às ' + pl.h : ''); const feito = d.workout ? `já registrou treino ${d.workout.type} (${d.workout.min} min)` : d.rest ? 'marcou descanso' : 'ainda não registrou treino'; return `Treino de hoje no planejamento: ${plano}; ${feito}.`; });
+  x(() => `Sequência atual: ${streakInfo(p, t).current} dias. XP total: ${xpInfo(p, t).total}.`);
+  x(() => { const g = zGym(p); const f = Z16_FICHAS.filter(k => g.fichas[k].ex.length).map(k => { const fi = g.fichas[k]; return `Treino ${k}${fi.nome ? ' (' + fi.nome + ')' : ''}: ` + fi.ex.map(e => `${e.nome} ${e.series}x${e.reps}${e.carga ? ' ' + z16Kg(e.carga) + ' kg' : ''}`).join(', '); }); return f.length ? 'Fichas da academia: ' + f.join(' | ') + '.' : 'Ainda não montou as fichas da academia no app.'; });
+  x(() => { const lg = zGym(p).log.slice().sort((a, b) => b.start - a.start).slice(0, 5); if (!lg.length) return ''; return 'Últimos treinos feitos no app: ' + lg.map(e => `${fmtDay(e.date)} treino ${e.ficha}, ${e.min} min, ${z16Sets(e)} séries, volume ${fmtInt(z16Vol(e))} kg${e.prs ? ', ' + e.prs + ' recorde(s)' : ''}`).join('; ') + '.'; });
+  x(() => { const o = S.players.filter(q => q.id !== p.id).map(q => q.name); return o.length ? `Compete na sala com: ${o.join(', ')}.` : ''; });
+  return L.join('\n');
+}
+function zaiSystem() {
+  const p = me(), pet = petOf(p); const art = pet.a === 'o' ? 'o' : 'a';
+  return `Você é ${art} ${pet.name}, mascote e assistente do Zenit, um app de competição de hábitos saudáveis entre amigos que vai até o Réveillon (31/12). Você está conversando com ${p.name}.
+
+Como você conversa:
+- Português do Brasil, jeito leve, amigo e animado, como um personal trainer parceiro. Use emojis com moderação.
+- Respostas curtas e diretas por padrão (até umas 120 palavras). Se a pessoa pedir detalhes, explique mais. Use listas curtas quando ajudar.
+- Converse de verdade: responda qualquer pergunta, inclusive fora do assunto, com naturalidade, e lembre do que já foi dito na conversa.
+- Nunca responda só "não sei". Tente ajudar com o que dá, explique o raciocínio e, se faltar informação, faça uma pergunta de volta. Se algo realmente não der para saber, diga com sinceridade e sugira como descobrir.
+- Não invente dados da pessoa: use só os dados abaixo. Se precisar de algo que não está aí (altura, idade, rotina), pergunte.
+
+Sua especialidade: musculação e execução correta dos exercícios, montagem e ajuste de treino, cardio, alimentação, calorias, hidratação, sono, descanso e motivação.
+
+Cuidados:
+- Você não substitui médico, nutricionista ou professor de educação física. Em caso de dor forte, lesão, tontura, doença ou remédios, oriente procurar um profissional.
+- Não recomende dietas abaixo de 1.200 kcal por dia, jejum prolongado, remédios para emagrecer, anabolizantes nem nada perigoso.
+- Se a pessoa mostrar uma relação difícil com a comida ou com o corpo, acolha com carinho e sugira conversar com alguém de confiança ou com um profissional.
+
+O que o app faz (para orientar a pessoa):
+- Aba Registrar: água, refeições (no plano ou fora do plano), treino (fichas A, B e C com checklist de séries e cronômetro de descanso) e pesagem semanal.
+- Neste chat: o botão da câmera calcula as calorias pela foto do prato e lê a ficha da academia pela foto; o botão do microfone manda áudio.
+- Missões diárias dão XP; há placar da sala, duelos X1 e um chefão por mês.
+
+Dados de ${p.name} agora:
+${zaiContext()}`;
+}
+
+/* ---------- Conversa guardada no aparelho ---------- */
+const zaiKey = () => 'zenit-ai-' + session.pid;
+function zaiLoad() {
+  if (ZAI.pid === session.pid && ZAI.msgs) return ZAI.msgs;
+  ZAI.pid = session.pid; ZAI.imgs = new Map(); ZAI.mode = null; ZAI.attach = null;
+  try { ZAI.msgs = JSON.parse(localStorage.getItem(zaiKey()) || '[]'); } catch (e) { ZAI.msgs = []; }
+  if (!Array.isArray(ZAI.msgs)) ZAI.msgs = [];
+  return ZAI.msgs;
+}
+function zaiStore() { const keep = ZAI.msgs.slice(-40).map(m => { const c = Object.assign({}, m); delete c.wait; return c; }); ZAI.msgs = ZAI.msgs.slice(-40); try { localStorage.setItem(zaiKey(), JSON.stringify(keep)); } catch (e) { } }
+const zaiId = () => 'm' + Date.now().toString(36) + Math.floor(Math.random() * 1e5).toString(36);
+function zaiPush(m) { m.id = m.id || zaiId(); m.at = m.at || Date.now(); ZAI.msgs.push(m); zaiStore(); return m; }
+function zaiHistory() {
+  const out = [];
+  for (const m of ZAI.msgs.slice(-16)) {
+    if (m.wait || m.err) continue;
+    let role = m.r === 'u' ? 'user' : 'model', text = m.t || '';
+    if (m.k === 'food' && m.data) text = 'Estimativa de calorias: ' + zaiFoodSummary(m.data);
+    if (m.k === 'ficha' && m.data) text = 'Li a ficha da academia: ' + (m.data.fichas || []).map(f => `${f.letra || ''} ${f.nome || ''} (${(f.ex || []).length} exercícios)`).join(', ') + (m.saved ? '. As fichas foram salvas no app.' : '.');
+    if (m.img && m.r === 'u') text = '[mandou uma foto] ' + text;
+    if (!text) continue;
+    const last = out[out.length - 1];
+    if (last && last.role === role) last.parts[0].text += '\n' + text; else out.push({ role, parts: [{ text }] });
+  }
+  while (out.length && out[0].role !== 'user') out.shift();
+  return out;
+}
+
+/* ---------- Texto simples com negrito e listas ---------- */
+function zaiMd(s) {
+  const lines = esc(String(s || '')).split('\n'); let h = '', list = null;
+  const inl = x => x.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>');
+  const close = () => { if (list) { h += `</${list}>`; list = null; } };
+  for (const raw of lines) {
+    const l = raw.trim();
+    let m;
+    if ((m = l.match(/^[-*•]\s+(.*)/))) { if (list !== 'ul') { close(); h += '<ul>'; list = 'ul'; } h += `<li>${inl(m[1])}</li>`; continue; }
+    if ((m = l.match(/^(\d+)[.)]\s+(.*)/))) { if (list !== 'ol') { close(); h += '<ol>'; list = 'ol'; } h += `<li>${inl(m[2])}</li>`; continue; }
+    close();
+    if ((m = l.match(/^#{1,4}\s+(.*)/))) { h += `<p><b>${inl(m[1])}</b></p>`; continue; }
+    if (l) h += `<p>${inl(l)}</p>`;
+  }
+  close(); return h;
+}
+
+/* ---------- Ícones ---------- */
+const ZAI_IC = {
+  send: '<svg viewBox="0 0 24 24"><path d="M3.4 20.4 21 12 3.4 3.6 3.3 10l12.6 2-12.6 2z" fill="currentColor"/></svg>',
+  mic: '<svg viewBox="0 0 24 24"><rect x="8.5" y="2.5" width="7" height="12" rx="3.5" fill="currentColor"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>',
+  cam: '<svg viewBox="0 0 24 24"><path d="M4 7.5h3l1.6-2.5h6.8L17 7.5h3a1.5 1.5 0 0 1 1.5 1.5v9.5A1.5 1.5 0 0 1 20 20H4a1.5 1.5 0 0 1-1.5-1.5V9A1.5 1.5 0 0 1 4 7.5z" fill="currentColor"/><circle cx="12" cy="13.5" r="3.6" fill="var(--card)"/></svg>',
+  stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor"/></svg>',
+  spk: '<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
+  dots: '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.2" fill="currentColor"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/><circle cx="12" cy="19" r="2.2" fill="currentColor"/></svg>'
+};
+
+/* ---------- Bolinha flutuante ---------- */
+const ZAI_FAB = { el: null, drag: null, pos: null };
+function zaiFabPos() { if (ZAI_FAB.pos) return ZAI_FAB.pos; try { ZAI_FAB.pos = JSON.parse(localStorage.getItem('zenit-ai-pos') || 'null'); } catch (e) { } return ZAI_FAB.pos || (ZAI_FAB.pos = { side: 'r', y: null }); }
+function zaiFabPlace() {
+  const el = ZAI_FAB.el; if (!el || ZAI_FAB.drag) return;
+  const pos = zaiFabPos(); const W = Math.min(innerWidth, 520), x0 = (innerWidth - W) / 2, size = 62;
+  const navH = ($('#nav') || { offsetHeight: 70 }).offsetHeight || 70;
+  const maxY = innerHeight - navH - size - 12, minY = 74;
+  const y = pos.y == null ? maxY : clamp(pos.y * innerHeight, minY, maxY);
+  el.style.left = (pos.side === 'l' ? x0 + 12 : x0 + W - size - 12) + 'px'; el.style.top = y + 'px';
+  el.classList.toggle('left', pos.side === 'l');
+}
+function zaiFabFace() {
+  const el = ZAI_FAB.el, p = zaiOk() && me(); if (!el || !p) return;
+  const key = p.id + '|' + p.pet + '|' + JSON.stringify(p.equip || {});
+  if (el.dataset.k === key) return; el.dataset.k = key;
+  $('.zai-face', el).innerHTML = petSVG(p.pet, { mood: 'feliz', stage: 1, equip: p.equip, anim: false });
+  el.setAttribute('aria-label', 'Conversar com ' + petOf(p).name);
+}
+function zaiFabSync() {
+  if (!ZAI_FAB.el) {
+    const el = document.createElement('button'); el.id = 'zaiFab'; el.className = 'zai-fab'; el.type = 'button';
+    el.innerHTML = '<span class="zai-face"></span><i class="zai-spark">✦</i>'; document.body.appendChild(el); ZAI_FAB.el = el; zaiFabDrag(el);
+  }
+  const others = $$('.ck').some(x => x.id !== 'zgym' && x.id !== 'zevo');
+  const show = zaiOk() && !!$('#nav') && !$('#overlay') && !$('#zai') && !others && !(typeof STORY !== 'undefined' && STORY);
+  ZAI_FAB.el.classList.toggle('on', show);
+  if (show) { zaiFabFace(); zaiFabPlace(); zaiHello(); }
+  else { const tip = $('#zaiTip'); if (tip) { tip.remove(); ZAI_FAB.hiShown = false; } }
+}
+function zaiFabDrag(el) {
+  el.addEventListener('pointerdown', e => { ZAI_FAB.drag = { x: e.clientX, y: e.clientY, ox: el.offsetLeft, oy: el.offsetTop, moved: false, id: e.pointerId }; try { el.setPointerCapture(e.pointerId); } catch (er) { } });
+  el.addEventListener('pointermove', e => {
+    const d = ZAI_FAB.drag; if (!d) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (!d.moved && Math.hypot(dx, dy) < 8) return;
+    if (!d.moved) { d.moved = true; el.classList.add('drag'); const tip = $('#zaiTip'); if (tip) tip.remove(); }
+    el.style.left = clamp(d.ox + dx, 4, innerWidth - 66) + 'px'; el.style.top = clamp(d.oy + dy, 60, innerHeight - 70) + 'px';
+  });
+  const end = () => {
+    const d = ZAI_FAB.drag; ZAI_FAB.drag = null; if (!d) return; el.classList.remove('drag');
+    if (!d.moved) { zaiOpen(); return; }
+    const cx = el.offsetLeft + 31; ZAI_FAB.pos = { side: cx < innerWidth / 2 ? 'l' : 'r', y: el.offsetTop / innerHeight };
+    try { localStorage.setItem('zenit-ai-pos', JSON.stringify(ZAI_FAB.pos)); } catch (er) { }
+    zaiFabPlace();
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', () => { ZAI_FAB.drag = null; el.classList.remove('drag'); zaiFabPlace(); });
+  el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); zaiOpen(); } });
+}
+function zaiHello() {
+  let seen = false; try { seen = !!localStorage.getItem('zenit-ai-hi'); } catch (e) { seen = true; }
+  if (seen || $('#zaiTip') || ZAI_FAB.hiShown) return; ZAI_FAB.hiShown = true;
+  const el = ZAI_FAB.el; const tip = document.createElement('div'); tip.id = 'zaiTip'; tip.className = 'zai-tip' + (zaiFabPos().side === 'l' ? ' left' : '');
+  tip.innerHTML = `<b>Oi! Agora eu converso 💬</b><span>Toque em mim para tirar dúvidas, calcular calorias e mais.</span>`;
+  document.body.appendChild(tip);
+  const r = el.getBoundingClientRect(); tip.style.top = Math.max(70, r.top - 78) + 'px';
+  if (zaiFabPos().side === 'l') tip.style.left = r.left + 'px'; else tip.style.left = Math.max(8, r.right - 250) + 'px';
+  tip.addEventListener('click', () => { tip.remove(); zaiOpen(); });
+  setTimeout(() => { tip.remove(); }, 9000);
+}
+setInterval(() => { try { zaiFabSync(); } catch (e) { } }, 450);
+addEventListener('resize', () => zaiFabPlace());
+
+/* ---------- Painel do chat ---------- */
+function zaiOpen(mode) {
+  if (!zaiOk()) return;
+  try { localStorage.setItem('zenit-ai-hi', '1'); } catch (e) { } const tip = $('#zaiTip'); if (tip) tip.remove();
+  zaiLoad();
+  let el = $('#zai');
+  if (!el) {
+    el = document.createElement('div'); el.className = 'ck zai'; el.id = 'zai'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'Assistente');
+    document.body.appendChild(el); document.body.style.overflow = 'hidden';
+    zaiDraw(); zaiVV();
+  }
+  zaiFabSync();
+  if (mode === 'food') zaiCamMenu('food');
+  else if (mode === 'ficha') ACT['zai-pick']({ dataset: { m: 'ficha' } });
+}
+function zaiClose() {
+  zaiMicCancel(); zaiHush();
+  if (ZAI.ctl) { try { ZAI.ctl.abort(); } catch (e) { } }
+  const el = $('#zai'); if (el) el.remove(); if (!$('#overlay') && !$('#zgym')) document.body.style.overflow = '';
+  if ($('#main')) renderMain(true);
+}
+function zaiVV() {
+  const vv = window.visualViewport; if (!vv || ZAI.vvOn) return; ZAI.vvOn = true;
+  const fit = () => { const el = $('#zai'); if (!el) return; el.style.height = vv.height + 'px'; el.style.top = vv.offsetTop + 'px'; zaiScroll(); };
+  vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
+}
+function zaiDraw() {
+  const el = $('#zai'); if (!el) return; const p = me(), pet = petOf(p);
+  el.innerHTML = `<div class="ck-in zai-in">
+    <div class="zai-top"><button class="ck-x" data-act="zai-close" aria-label="Fechar">${IC.x}</button>
+      <div class="zai-av">${petSVG(p.pet, { mood: 'feliz', stage: 1, equip: p.equip, anim: false })}</div>
+      <div class="grow"><b>${esc(pet.name)}</b><small>Assistente do Zenit</small></div>
+      <span class="zai-left" id="zaiLeft"></span>
+      <button class="zai-dots" data-act="zai-menu" aria-label="Opções">${ZAI_IC.dots}</button></div>
+    <div class="zai-list" id="zaiList" aria-live="polite"></div>
+    <div id="zaiFoot"></div></div>`;
+  zaiList(); zaiFoot(); zaiLeftPaint();
+  $('#zaiList').addEventListener('scroll', () => { const l = $('#zaiList'); ZAI.stick = l.scrollHeight - l.scrollTop - l.clientHeight < 60; });
+}
+function zaiWelcome() {
+  const p = me(), pet = petOf(p); const art = pet.a === 'o' ? 'o' : 'a';
+  return `Oi, ${p.name.split(' ')[0]}! Eu sou ${art} **${pet.name}** e agora eu converso 😄\n\nPode me perguntar qualquer coisa: treino, exercício, comida, água, sono... ou só bater papo.\n\nTambém calculo as **calorias do seu prato** e leio a sua **ficha da academia** pela foto 📷. Se preferir, toque no microfone e fale comigo 🎤`;
+}
+const ZAI_SUG = [
+  ['🏋️', 'O que eu treino hoje?', 'say'], ['🍽️', 'Calorias do prato', 'food'], ['📋', 'Ler minha ficha pela foto', 'ficha'],
+  ['💧', 'Como bato minha meta de água?', 'say'], ['🔥', 'Me dá uma motivação!', 'say'], ['🥗', 'O que comer antes do treino?', 'say']
+];
+function zaiMsgHTML(m) {
+  if (m.k === 'food') return zaiFoodHTML(m);
+  if (m.k === 'ficha') return zaiFichaHTML(m);
+  const me_ = m.r === 'u';
+  const img = m.img ? (ZAI.imgs.get(m.id) ? `<img class="zai-img" src="${ZAI.imgs.get(m.id)}" alt="Foto enviada">` : `<div class="zai-noimg">📷 Foto</div>`) : '';
+  if (m.wait) return `<div class="zai-m a" data-id="${m.id}"><div class="zai-b">${m.t ? zaiMd(m.t) : '<span class="zai-typing"><i></i><i></i><i></i></span>'}</div></div>`;
+  const spk = !me_ && !m.err && zaiTTSKind() ? `<button class="zai-spk" data-act="zai-say" data-id="${m.id}" aria-label="Ouvir resposta">${ZAI_IC.spk}</button>` : '';
+  return `<div class="zai-m ${me_ ? 'u' : 'a'} ${m.err ? 'err' : ''}" data-id="${m.id}"><div class="zai-b">${img}${m.voz ? '<span class="zai-voz">🎤 áudio</span>' : ''}${me_ ? (m.t ? `<p>${esc(m.t).replace(/\n/g, '<br>')}</p>` : '') : zaiMd(m.t)}</div>${spk}${m.err && m.retry ? `<button class="chip zai-retry" data-act="zai-retry" data-id="${m.id}">🔄 Tentar de novo</button>` : ''}</div>`;
+}
+function zaiList() {
+  const l = $('#zaiList'); if (!l) return;
+  let h = `<div class="zai-m a"><div class="zai-b">${zaiMd(zaiWelcome())}</div></div>`;
+  h += ZAI.msgs.map(zaiMsgHTML).join('');
+  if (!ZAI.msgs.length) h += `<div class="zai-sug">${ZAI_SUG.map(([ic, t, k], i) => `<button class="chip" data-act="zai-sug" data-i="${i}">${ic} ${esc(t)}</button>`).join('')}</div>`;
+  l.innerHTML = h; ZAI.stick = true; zaiScroll(true);
+}
+function zaiScroll(force) { const l = $('#zaiList'); if (l && (force || ZAI.stick !== false)) l.scrollTop = l.scrollHeight; }
+function zaiRepaint(m) { const l = $('#zaiList'); if (!l) return; const old = l.querySelector(`[data-id="${m.id}"]`); const tmp = document.createElement('div'); tmp.innerHTML = zaiMsgHTML(m); const nu = tmp.firstElementChild; if (old && nu) old.replaceWith(nu); else zaiList(); }
+function zaiAdd(m) { zaiPush(m); const l = $('#zaiList'); if (!l) return m; const s = l.querySelector('.zai-sug'); if (s) s.remove(); const tmp = document.createElement('div'); tmp.innerHTML = zaiMsgHTML(m); if (tmp.firstElementChild) l.appendChild(tmp.firstElementChild); ZAI.stick = true; zaiScroll(true); return m; }
+function zaiFoot() {
+  const f = $('#zaiFoot'); if (!f) return; const left = zaiLeft();
+  if (ZAI.rec) { f.innerHTML = `<div class="zai-bar rec"><button class="zai-cancel" data-act="zai-mic-cancel">Cancelar</button><div class="grow zai-rec"><i></i><span id="zaiRecT">0:00</span><small>Gravando... toque na seta para enviar</small></div><button class="zai-ib go" data-act="zai-mic-send" aria-label="Enviar áudio">${ZAI_IC.send}</button></div>`; return; }
+  if (!left) { f.innerHTML = `<div class="zai-out">⏳ Você usou as ${ZAI_LIMIT} mensagens de hoje. O assistente volta à meia-noite!</div>`; return; }
+  const mode = ZAI.mode === 'food' ? `<div class="zai-mode">🍽️ <span class="grow">Modo calorias: descreva o que você comeu (ex.: 2 conchas de arroz, 1 bife, salada)</span><button data-act="zai-mode-off" aria-label="Sair do modo calorias">${IC.x}</button></div>` : '';
+  const att = ZAI.attach ? `<div class="zai-att"><img src="${ZAI.attach}" alt="Foto anexada"><span class="grow">Foto anexada. Escreva sua pergunta ou só envie.</span><button data-act="zai-att-off" aria-label="Tirar foto">${IC.x}</button></div>` : '';
+  f.innerHTML = `${mode}${att}<div class="zai-bar"><button class="zai-ib cam" data-act="zai-cam" aria-label="Câmera e fotos">${ZAI_IC.cam}</button>
+    <textarea id="zaiIn" rows="1" maxlength="1200" placeholder="${ZAI.mode === 'food' ? 'O que tinha no prato?' : 'Pergunte qualquer coisa...'}" ${ZAI.busy ? 'disabled' : ''}></textarea>
+    <button class="zai-ib go" id="zaiGo" data-act="zai-go" aria-label="Enviar" ${ZAI.busy ? 'disabled' : ''}>${ZAI_IC.mic}</button></div>`;
+  const ta = $('#zaiIn'), go = $('#zaiGo');
+  const upd = () => { ta.style.height = 'auto'; ta.style.height = Math.min(120, ta.scrollHeight) + 'px'; const has = !!ta.value.trim() || !!ZAI.attach; go.innerHTML = has ? ZAI_IC.send : ZAI_IC.mic; go.setAttribute('aria-label', has ? 'Enviar' : 'Gravar áudio'); go.classList.toggle('mic', !has); };
+  ta.addEventListener('input', upd); ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ACT['zai-go'](); } });
+  ta.addEventListener('focus', () => setTimeout(() => zaiScroll(true), 300));
+  upd();
+}
+function zaiBusy(b) { ZAI.busy = b; const ta = $('#zaiIn'), go = $('#zaiGo'); if (ta) ta.disabled = b; if (go) go.disabled = b; $$('#zai [data-act="zai-cam"]').forEach(x => x.disabled = b); }
+
+/* ---------- Enviar mensagem (conversa livre) ---------- */
+async function zaiSend(text, o) {
+  o = o || {};
+  if (ZAI.busy) return;
+  if (!zaiLeft()) { zaiFoot(); return toast('As mensagens de hoje acabaram. Volta amanhã!', 'red', '⏳'); }
+  const img = o.img || null;
+  const um = { r: 'u', t: text, img: !!img, voz: !!o.voz }; if (img) { um.id = zaiId(); ZAI.imgs.set(um.id, img); }
+  if (!o.retry) zaiAdd(um);
+  const am = { r: 'a', t: '', wait: true, id: zaiId() }; zaiAdd(am);
+  zaiUse(1); zaiBusy(true);
+  const contents = zaiHistory();
+  if (img) { const last = contents[contents.length - 1]; if (last && last.role === 'user') last.parts.unshift(zaiImgPart(img)); }
+  ZAI.ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  try {
+    let lastPaint = 0;
+    const out = await zaiCall(ZAI_CHAT, { contents, systemInstruction: { role: 'system', parts: [{ text: zaiSystem() }] }, generationConfig: { temperature: 0.8, maxOutputTokens: 4096 } },
+      { stream: true, signal: ZAI.ctl && ZAI.ctl.signal, onText: t => { am.t = t; const now = Date.now(); if (now - lastPaint > 70) { lastPaint = now; zaiRepaint(am); zaiScroll(); } } });
+    am.t = out.text.trim(); delete am.wait; zaiRepaint(am); zaiStore(); zaiScroll();
+    if (o.voz && zaiVozOn()) zaiSpeak(am.t);
+  } catch (e) {
+    if (e.kind === 'abort') { ZAI.msgs = ZAI.msgs.filter(x => x !== am); zaiUse(-1); zaiStore(); return; }
+    if (e.kind !== 'blocked') zaiUse(-1);
+    am.t = zaiErrText(e); am.err = true; am.retry = e.kind !== 'blocked' && e.kind !== 'off' ? 1 : 0; am.again = { text, voz: !!o.voz, imgId: um.id && img ? um.id : null }; delete am.wait; zaiRepaint(am); zaiStore();
+  } finally { ZAI.ctl = null; zaiBusy(false); zaiFoot(); zaiLeftPaint(); }
+}
+
+/* ---------- Câmera: prato, ficha ou outra foto ---------- */
+function zaiCamMenu(only) {
+  const f = $('#zaiFoot'); if (!f || ZAI.busy) return;
+  const opts = [['food', '🍽️', 'Calorias do prato pela foto', 'Tire foto do prato e eu estimo as calorias'], ['foodtxt', '✍️', 'Calorias descrevendo o prato', 'Escreva ou fale o que comeu'], ['ficha', '📋', 'Ler minha ficha da academia', 'Eu monto os treinos A, B e C no app'], ['ask', '🖼️', 'Perguntar sobre uma foto', 'Um aparelho, um rótulo, um exercício...']]
+    .filter(o => !only || o[0] === only || (only === 'food' && o[0] === 'foodtxt'));
+  f.innerHTML = `<div class="zai-cam">${opts.map(([k, ic, t, s]) => `<button data-act="zai-pick" data-m="${k}"><span>${ic}</span><span class="grow"><b>${t}</b><small>${s}</small></span></button>`).join('')}<button class="zai-cam-x" data-act="zai-cam-x">Voltar</button></div>`;
+}
+function zaiPickImg(cb, max) {
+  let inp = document.getElementById('zaiFile');
+  if (!inp) { inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.id = 'zaiFile'; inp.style.display = 'none'; document.body.appendChild(inp); }
+  inp.value = '';
+  inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; try { cb(await compressImage(f, max || 1024)); } catch (e) { toast('Não consegui abrir essa imagem. Tente outra.', 'red', '📸'); } };
+  inp.click();
+}
+
+/* ---------- Calorias ---------- */
+const ZAI_FOOD_RULES = `Você é especialista em nutrição e estima calorias de refeições brasileiras de forma realista.
+Responda SOMENTE com um JSON válido, sem texto fora dele, neste formato:
+{"prato":"nome curto do prato","itens":[{"nome":"Arroz branco","porcao":"4 colheres de sopa (~100 g)","kcal":130}],"total":650,"min":550,"max":750,"perguntas":[{"id":"q1","texto":"A carne foi frita no óleo ou grelhada?","opcoes":["Frita no óleo","Grelhada","Assada"]}],"dica":"uma frase curta, amigável e útil","nao_comida":false}
+Regras:
+- Use porções caseiras brasileiras (colheres, conchas, fatias, unidades) com a estimativa em gramas.
+- "total" é a soma dos itens; "min" e "max" mostram a margem de erro.
+- Faça no máximo 3 perguntas, e só quando a resposta mudar bem as calorias (óleo, fritura, molho, tamanho da porção, açúcar na bebida). Cada pergunta com 2 a 4 opções curtas. Se não precisar, "perguntas": [].
+- Se a imagem ou o texto não for comida, use "nao_comida": true, itens vazios e total 0.
+- Não julgue a pessoa. Escreva em português do Brasil.`;
+function zaiFoodSummary(d) { if (!d) return ''; if (d.nao_comida) return 'não era comida'; return `${d.prato || 'prato'}: ${(d.itens || []).map(i => `${i.nome} ${i.porcao ? '(' + i.porcao + ') ' : ''}${Math.round(i.kcal || 0)} kcal`).join(', ')}. Total aproximado ${Math.round(d.total || 0)} kcal.`; }
+function zaiFoodClean(d) {
+  d = d && typeof d === 'object' ? d : {};
+  const itens = (Array.isArray(d.itens) ? d.itens : []).slice(0, 12).map(i => ({ nome: String(i && i.nome || 'Item').slice(0, 50), porcao: String(i && i.porcao || '').slice(0, 60), kcal: Math.max(0, Math.round(+(i && i.kcal) || 0)) }));
+  const sum = itens.reduce((a, b) => a + b.kcal, 0);
+  let total = Math.round(+d.total || 0); if (!total || Math.abs(total - sum) > Math.max(30, sum * 0.15)) total = sum;
+  const min = Math.round(+d.min || total * 0.85), max = Math.round(+d.max || total * 1.15);
+  const perguntas = (Array.isArray(d.perguntas) ? d.perguntas : []).slice(0, 3).map((q, i) => ({ id: 'q' + (i + 1), texto: String(q && q.texto || '').slice(0, 120), opcoes: (Array.isArray(q && q.opcoes) ? q.opcoes : []).slice(0, 4).map(x => String(x).slice(0, 40)) })).filter(q => q.texto && q.opcoes.length >= 2);
+  return { prato: String(d.prato || 'Refeição').slice(0, 60), itens, total, min: Math.min(min, total), max: Math.max(max, total), perguntas, dica: String(d.dica || '').slice(0, 200), nao_comida: !!d.nao_comida || (!itens.length && !total) };
+}
+function zaiMealNow() { const h = new Date().getHours() + new Date().getMinutes() / 60; return h < 10.5 ? 'cafe' : h < 15 ? 'almoco' : h < 18.5 ? 'lanche' : 'jantar'; }
+async function zaiFood(o) {
+  if (ZAI.busy) return;
+  if (!zaiLeft()) { zaiFoot(); return toast('As mensagens de hoje acabaram. Volta amanhã!', 'red', '⏳'); }
+  let m = o.msg;
+  if (!m) {
+    const um = { r: 'u', t: o.text || (o.img ? 'Quantas calorias tem esse prato?' : ''), img: !!o.img, voz: !!o.voz }; if (o.img) { um.id = zaiId(); ZAI.imgs.set(um.id, o.img); }
+    zaiAdd(um);
+    m = { r: 'a', k: 'food', id: zaiId(), data: null, ans: {}, meal: zaiMealNow(), plan: 'ok', wait: true, src: o.text || '' };
+    if (o.img) ZAI.foodImg.set(m.id, o.img);
+    zaiAdd(m);
+  } else { m.wait = true; zaiRepaint(m); }
+  zaiUse(1); zaiBusy(true);
+  const img = ZAI.foodImg.get(m.id);
+  const parts = [];
+  if (img) parts.push(zaiImgPart(img));
+  let ask = img ? 'Estime as calorias desta refeição.' : `Estime as calorias desta refeição descrita pela pessoa: "${m.src}".`;
+  if (img && m.src) ask += ` A pessoa comentou: "${m.src}".`;
+  if (o.refine && m.data) ask += `\nSua estimativa anterior foi: ${JSON.stringify({ prato: m.data.prato, itens: m.data.itens, total: m.data.total })}.\nRespostas da pessoa às suas perguntas: ${m.data.perguntas.map(q => `${q.texto} → ${m.ans[q.id] || 'não respondeu'}`).join(' | ')}.\nRefaça a estimativa considerando essas respostas e NÃO faça novas perguntas ("perguntas": []).`;
+  parts.push({ text: ask });
+  try {
+    const out = await zaiCall(ZAI_CHAT, { contents: [{ role: 'user', parts }], systemInstruction: { role: 'system', parts: [{ text: ZAI_FOOD_RULES }] }, generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: 'application/json' } });
+    const d = zaiFoodClean(zaiJSON(out.text));
+    if (o.refine) { d.perguntas = []; m.refined = true; }
+    m.data = d; m.kcal = d.total; delete m.wait; delete m.err;
+  } catch (e) {
+    if (e.kind !== 'blocked') zaiUse(-1);
+    delete m.wait; if (!m.data) { m.k = null; m.t = zaiErrText(e); m.err = true; } else toast(zaiErrText(e), 'red', '⚠️');
+  } finally { zaiRepaint(m); zaiStore(); zaiBusy(false); zaiFoot(); zaiLeftPaint(); zaiScroll(true); }
+}
+function zaiFoodHTML(m) {
+  const d = m.data;
+  if (m.wait && !d) return `<div class="zai-m a" data-id="${m.id}"><div class="zai-b zai-card"><div class="zai-ch">🍽️ Calculando as calorias...</div><span class="zai-typing"><i></i><i></i><i></i></span></div></div>`;
+  if (!d) return '';
+  if (d.nao_comida) return `<div class="zai-m a" data-id="${m.id}"><div class="zai-b"><p>Hmm, não consegui ver comida aí 🤔 Tenta uma foto do prato de cima, com boa luz, ou me descreve o que você comeu.</p></div></div>`;
+  const busy = m.wait ? ' busy' : '';
+  let h = `<div class="zai-m a" data-id="${m.id}"><div class="zai-b zai-card${busy}"><div class="zai-ch">🍽️ ${esc(d.prato)}</div>
+    <ul class="zai-items">${d.itens.map(i => `<li><span class="grow"><b>${esc(i.nome)}</b>${i.porcao ? `<small>${esc(i.porcao)}</small>` : ''}</span><em>${fmtInt(i.kcal)} kcal</em></li>`).join('')}</ul>
+    <div class="zai-total"><span>Total aproximado</span><b>${fmtInt(d.total)} kcal</b></div><div class="zai-range">Pode variar entre ${fmtInt(d.min)} e ${fmtInt(d.max)} kcal</div>`;
+  if (d.dica) h += `<div class="zai-tipline">💡 ${esc(d.dica)}</div>`;
+  if (m.saved) {
+    const ml = MEALS.find(x => x.id === m.saved.meal) || MEALS[0];
+    h += `<div class="zai-saved"><span>✅ Registrado em <b>${ml.name}</b>: ${fmtInt(m.saved.kcal)} kcal</span><button class="chip" data-act="zai-food-undo" data-id="${m.id}">Desfazer</button></div>`;
+  } else {
+    if (d.perguntas.length && !m.refined) {
+      h += `<div class="zai-qs"><div class="zai-qh">Para ficar mais certinho, me conta:</div>${d.perguntas.map(q => `<div class="zai-q"><b>${esc(q.texto)}</b><div class="chips">${q.opcoes.map(op => `<button class="chip ${m.ans[q.id] === op ? 'on' : ''}" data-act="zai-food-ans" data-id="${m.id}" data-q="${q.id}" data-v="${esc(op)}">${esc(op)}</button>`).join('')}</div></div>`).join('')}
+        <button class="btn sec sm" data-act="zai-food-refine" data-id="${m.id}" ${Object.keys(m.ans).length ? '' : 'disabled'}>Recalcular com as respostas</button></div>`;
+    }
+    h += `<div class="zai-reg"><div class="zai-qh">Registrar no dia de hoje</div>
+      <div class="chips four">${MEALS.map(x => `<button class="chip ${m.meal === x.id ? 'on' : ''}" data-act="zai-food-meal" data-id="${m.id}" data-v="${x.id}">${x.icon} ${x.name.replace(' da manhã', '')}</button>`).join('')}</div>
+      <div class="chips">${[['ok', '✅ No plano'], ['fora', '🙈 Fora do plano'], ['', 'Só as calorias']].map(([v, l]) => `<button class="chip ${m.plan === v ? 'on' : ''}" data-act="zai-food-plan" data-id="${m.id}" data-v="${v}">${l}</button>`).join('')}</div>
+      <label class="zai-kc"><span>Calorias</span><input class="input" type="number" inputmode="numeric" min="0" max="5000" step="10" value="${m.kcal != null ? m.kcal : d.total}" data-kc="${m.id}"><span>kcal</span></label>
+      <button class="btn sm" data-act="zai-food-save" data-id="${m.id}">Registrar</button></div>`;
+  }
+  return h + '</div></div>';
+}
+function zaiFind(id) { return (ZAI.msgs || []).find(x => x.id === id); }
+function zaiKcalKeep(m) { const i = document.querySelector(`[data-kc="${m.id}"]`); if (i && i.value !== '') m.kcal = clamp(Math.round(+i.value || 0), 0, 5000); }
+
+/* ---------- Ficha da academia pela foto ---------- */
+function zaiFichaRules() {
+  return `Você lê fotos de fichas de treino de academia (papel, quadro, tela de app ou print) e transforma em dados.
+Responda SOMENTE com um JSON válido, sem texto fora dele, neste formato:
+{"fichas":[{"letra":"A","nome":"Peito e tríceps","ex":[{"nome":"Supino reto","series":3,"reps":"12","carga":20,"desc":60,"obs":""}]}],"aviso":"","nao_ficha":false}
+Regras:
+- Uma ficha para cada treino (A, B, C...). Se não houver letras, numere na ordem: A, B, C.
+- Nomes em português. Quando o exercício for um destes, escreva exatamente assim: ${Z16_LIB.join(', ')}.
+- "series": número inteiro. "reps": texto curto (ex.: "12", "10-12", "15/12/10", "falha", "30s"). "carga": kg em número, 0 se não tiver. "desc": descanso em segundos, 60 se não tiver. "obs": observação curta (bi-set, drop-set, cadência), senão "".
+- Se algo estiver ilegível, use seu melhor palpite e explique em "aviso" (curto).
+- Se a foto não for uma ficha de treino, use "nao_ficha": true e "fichas": [].`;
+}
+function zaiFichaClean(d) {
+  d = d && typeof d === 'object' ? d : {};
+  const fichas = (Array.isArray(d.fichas) ? d.fichas : []).slice(0, 6).map((f, i) => ({
+    letra: String(f && f.letra || 'ABCDEF'[i]).slice(0, 2).toUpperCase(), nome: String(f && f.nome || '').slice(0, 30),
+    ex: (Array.isArray(f && f.ex) ? f.ex : []).slice(0, 15).map(e => ({ nome: String(e && e.nome || '').trim().slice(0, 40), series: clamp(Math.round(+(e && e.series) || 3), 1, 10), reps: String(e && e.reps != null ? e.reps : '12').slice(0, 10) || '12', carga: Math.max(0, Math.round((+(e && e.carga) || 0) * 2) / 2), desc: clamp(Math.round(+(e && e.desc) || 60), 15, 600), obs: String(e && e.obs || '').slice(0, 60) })).filter(e => e.nome)
+  })).filter(f => f.ex.length);
+  return { fichas, aviso: String(d.aviso || '').slice(0, 200), nao_ficha: !!d.nao_ficha || !fichas.length };
+}
+async function zaiFicha(img) {
+  if (ZAI.busy) return;
+  if (!zaiLeft()) { zaiFoot(); return toast('As mensagens de hoje acabaram. Volta amanhã!', 'red', '⏳'); }
+  const um = { r: 'u', t: 'Lê a minha ficha da academia?', img: true, id: zaiId() }; ZAI.imgs.set(um.id, img); zaiAdd(um);
+  const m = { r: 'a', k: 'ficha', id: zaiId(), data: null, map: {}, wait: true }; zaiAdd(m);
+  zaiUse(1); zaiBusy(true);
+  try {
+    const out = await zaiCall(ZAI_CHAT, { contents: [{ role: 'user', parts: [zaiImgPart(img), { text: 'Leia esta ficha de treino.' }] }], systemInstruction: { role: 'system', parts: [{ text: zaiFichaRules() }] }, generationConfig: { temperature: 0.1, maxOutputTokens: 8192, responseMimeType: 'application/json' } });
+    const d = zaiFichaClean(zaiJSON(out.text)); m.data = d;
+    const used = new Set();
+    d.fichas.forEach((f, i) => { let L = Z16_FICHAS.includes(f.letra) && !used.has(f.letra) ? f.letra : Z16_FICHAS.find(k => !used.has(k)); if (L && i < 6) { m.map[i] = L; used.add(L); } else m.map[i] = ''; });
+  } catch (e) {
+    if (e.kind !== 'blocked') zaiUse(-1); m.k = null; m.t = zaiErrText(e); m.err = true;
+  } finally { delete m.wait; zaiRepaint(m); zaiStore(); zaiBusy(false); zaiFoot(); zaiLeftPaint(); zaiScroll(true); }
+}
+function zaiFichaHTML(m) {
+  const d = m.data;
+  if (m.wait) return `<div class="zai-m a" data-id="${m.id}"><div class="zai-b zai-card"><div class="zai-ch">📋 Lendo a sua ficha...</div><span class="zai-typing"><i></i><i></i><i></i></span></div></div>`;
+  if (!d) return '';
+  if (d.nao_ficha) return `<div class="zai-m a" data-id="${m.id}"><div class="zai-b"><p>Não encontrei uma ficha de treino nessa foto 🤔 Tenta de novo com a folha inteira aparecendo, reta e com boa luz.</p></div></div>`;
+  const g = zGym(me());
+  let h = `<div class="zai-m a" data-id="${m.id}"><div class="zai-b zai-card"><div class="zai-ch">📋 Encontrei ${d.fichas.length} ${plural(d.fichas.length, 'treino', 'treinos')}</div>`;
+  if (d.aviso) h += `<div class="zai-tipline">⚠️ ${esc(d.aviso)}</div>`;
+  d.fichas.forEach((f, i) => {
+    const L = m.map[i] || ''; const cur = L && g.fichas[L] && g.fichas[L].ex.length;
+    h += `<div class="zai-fi ${L ? '' : 'off'}"><div class="zai-fih"><b>Treino ${esc(f.letra)}${f.nome ? ' · ' + esc(f.nome) : ''}</b><small>${f.ex.length} ${plural(f.ex.length, 'exercício', 'exercícios')}</small></div>
+      <ul>${f.ex.map(e => `<li>${z16Icon(e.nome)} <b>${esc(e.nome)}</b> <span>${e.series}×${esc(e.reps)}${e.carga ? ' · ' + z16Kg(e.carga) + ' kg' : ''}${e.obs ? ' · ' + esc(e.obs) : ''}</span></li>`).join('')}</ul>
+      ${m.saved ? '' : `<div class="zai-qh">Salvar como:</div><div class="chips">${Z16_FICHAS.map(k => `<button class="chip ${L === k ? 'on' : ''}" data-act="zai-ficha-map" data-id="${m.id}" data-i="${i}" data-v="${k}">Treino ${k}</button>`).join('')}<button class="chip ${L ? '' : 'on'}" data-act="zai-ficha-map" data-id="${m.id}" data-i="${i}" data-v="">Não salvar</button></div>
+      ${cur ? `<div class="zai-warn">Vai substituir o Treino ${L} atual (${g.fichas[L].ex.length} ${plural(g.fichas[L].ex.length, 'exercício', 'exercícios')}).</div>` : ''}`}</div>`;
+  });
+  if (m.saved) h += `<div class="zai-saved"><span>✅ Fichas salvas: ${m.saved.map(k => 'Treino ' + k).join(', ')}</span><button class="chip" data-act="zai-ficha-go">Ver meus treinos</button></div>`;
+  else h += `<div class="small muted" style="margin:8px 0">Confira se está tudo certo. Depois dá para editar cada exercício em Registrar › Treino.</div><button class="btn sm" data-act="zai-ficha-save" data-id="${m.id}" ${Object.values(m.map).some(Boolean) ? '' : 'disabled'}>Salvar no meu treino</button>`;
+  return h + '</div></div>';
+}
+
+/* ---------- Voz: gravar, transcrever e ouvir ---------- */
+function zaiRecMime() { if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return ''; return ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/aac'].find(t => { try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; } }) || ''; }
+const zaiIsApk = () => !!(window.Capacitor && Capacitor.getPlatform && Capacitor.getPlatform() === 'android');
+async function zaiMicStart() {
+  if (ZAI.busy || ZAI.rec) return;
+  if (!zaiLeft()) return toast('As mensagens de hoje acabaram. Volta amanhã!', 'red', '⏳');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return toast('Este aparelho não deixa gravar áudio aqui. Escreva a pergunta. ✍️', 'red', '🎤');
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch (e) {
+    if (zaiIsApk()) return toast('Para falar comigo, instale o APK novo do Zenit (com microfone) e permita o microfone.', 'red', '🎤');
+    return toast('Permita o uso do microfone para falar comigo. 🎤', 'red', '🎤');
+  }
+  zaiHush();
+  const mime = zaiRecMime(); let rec;
+  try { rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); } catch (e) { stream.getTracks().forEach(t => t.stop()); return toast('Não consegui gravar áudio neste aparelho.', 'red', '🎤'); }
+  const R = { rec, stream, chunks: [], t0: Date.now(), mime: rec.mimeType || mime, tick: null };
+  rec.ondataavailable = e => { if (e.data && e.data.size) R.chunks.push(e.data); };
+  rec.start(250); ZAI.rec = R; zaiFoot();
+  R.tick = setInterval(() => { const s = Math.floor((Date.now() - R.t0) / 1000); const el = $('#zaiRecT'); if (el) el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); if (s >= 60) zaiMicSend(); }, 250);
+  if (navigator.vibrate) try { navigator.vibrate(30); } catch (e) { }
+}
+function zaiMicStop() {
+  const R = ZAI.rec; if (!R) return Promise.resolve(null); ZAI.rec = null; clearInterval(R.tick);
+  return new Promise(res => { R.rec.onstop = () => { R.stream.getTracks().forEach(t => t.stop()); res(R.chunks.length ? new Blob(R.chunks, { type: R.mime || 'audio/webm' }) : null); }; try { R.rec.stop(); } catch (e) { R.stream.getTracks().forEach(t => t.stop()); res(null); } });
+}
+function zaiMicCancel() { if (!ZAI.rec) return; zaiMicStop(); zaiFoot(); }
+async function zaiWav(abuf) {
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) throw new Error('no-ac');
+  const ac = new AC(); let buf;
+  try { buf = await new Promise((res, rej) => { const pr = ac.decodeAudioData(abuf, res, rej); if (pr && pr.then) pr.then(res, rej); }); } finally { try { ac.close(); } catch (e) { } }
+  const rate = 16000; const n = Math.max(1, Math.ceil(buf.duration * rate));
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext; const oc = new OAC(1, n, rate);
+  const src = oc.createBufferSource(); src.buffer = buf; src.connect(oc.destination); src.start(0);
+  const out = await oc.startRendering(); const ch = out.getChannelData(0);
+  const ab = new ArrayBuffer(44 + ch.length * 2), v = new DataView(ab); const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + ch.length * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, ch.length * 2, true);
+  for (let i = 0; i < ch.length; i++) { const s = Math.max(-1, Math.min(1, ch[i])); v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true); }
+  return new Blob([ab], { type: 'audio/wav' });
+}
+const zaiBlob64 = b => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(b); });
+async function zaiMicSend() {
+  const R = ZAI.rec; const dur = R ? Date.now() - R.t0 : 0;
+  const blob = await zaiMicStop(); zaiFoot();
+  if (!blob || dur < 700) return toast('Áudio muito curto. Segure um pouquinho mais. 🎤', 'red', '🎤');
+  zaiBusy(true); const ph = zaiAdd({ r: 'u', t: '🎤 Ouvindo...', id: zaiId() });
+  let part;
+  try { const wav = await zaiWav(await blob.arrayBuffer()); part = { inlineData: { mimeType: 'audio/wav', data: await zaiBlob64(wav) } }; }
+  catch (e) { part = { inlineData: { mimeType: String(blob.type || 'audio/webm').split(';')[0], data: await zaiBlob64(blob) } }; }
+  let text = '';
+  try {
+    const out = await zaiCall(ZAI_FAST, { contents: [{ role: 'user', parts: [part, { text: 'Transcreva exatamente o que a pessoa falou neste áudio, em português do Brasil, com pontuação. Responda só com a transcrição, sem comentários. Se não houver fala, responda apenas: [silêncio]' }] }], generationConfig: { temperature: 0, maxOutputTokens: 2048 } });
+    text = out.text.trim().replace(/^["“]|["”]$/g, '');
+  } catch (e) { ZAI.msgs = ZAI.msgs.filter(x => x !== ph); zaiStore(); zaiList(); zaiBusy(false); zaiFoot(); return toast(zaiErrText(e), 'red', '🎤'); }
+  ZAI.msgs = ZAI.msgs.filter(x => x !== ph); zaiStore(); const el = document.querySelector(`#zaiList [data-id="${ph.id}"]`); if (el) el.remove();
+  zaiBusy(false);
+  if (!text || /^\[?sil[eê]ncio\]?\.?$/i.test(text)) { zaiFoot(); return toast('Não consegui ouvir nada. Tenta de novo mais perto do microfone. 🎤', 'red', '🎤'); }
+  if (ZAI.mode === 'food') { ZAI.mode = null; zaiFoot(); return zaiFood({ text, voz: true }); }
+  zaiSend(text, { voz: true });
+}
+function zaiTTSKind() {
+  const P = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.TextToSpeech;
+  if (P) return 'cap';
+  if (zaiIsApk()) return null;
+  return ('speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') ? 'web' : null;
+}
+function zaiVozOn() { try { return localStorage.getItem('zenit-ai-voz') !== '0'; } catch (e) { return true; } }
+function zaiPlain(t) { return String(t || '').replace(/\*\*?|__|#+\s|`/g, '').replace(/^[-*•]\s+/gm, '').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, '').replace(/\s+\n/g, '\n').trim(); }
+function zaiSpeak(t) {
+  const k = zaiTTSKind(); const text = zaiPlain(t).slice(0, 1500); if (!k || !text) return;
+  if (k === 'cap') { const P = Capacitor.Plugins.TextToSpeech; Promise.resolve(P.stop && P.stop()).catch(() => { }).then(() => P.speak({ text, lang: 'pt-BR', rate: 1.0, pitch: 1.0, volume: 1.0, category: 'playback' })).catch(() => { }); return; }
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = 'pt-BR'; const v = speechSynthesis.getVoices().find(x => /pt[-_]BR/i.test(x.lang)); if (v) u.voice = v; speechSynthesis.speak(u); } catch (e) { }
+}
+function zaiHush() { try { const k = zaiTTSKind(); if (k === 'cap') Capacitor.Plugins.TextToSpeech.stop().catch(() => { }); else if (k === 'web') speechSynthesis.cancel(); } catch (e) { } }
+
+/* ---------- Menu ---------- */
+function zaiMenu() {
+  const f = $('#zaiFoot'); if (!f) return;
+  const voz = zaiTTSKind() ? `<button data-act="zai-voz"><span>🔊</span><span class="grow"><b>Ler respostas dos áudios em voz alta</b><small>${zaiVozOn() ? 'Ligado' : 'Desligado'}. Quando você manda áudio, eu respondo falando.</small></span></button>` : '';
+  f.innerHTML = `<div class="zai-cam">${voz}<button data-act="zai-info"><span>ℹ️</span><span class="grow"><b>Como funciono</b><small>Limite, privacidade e dicas</small></span></button><button data-act="zai-clear"><span>🧹</span><span class="grow"><b>Apagar a conversa</b><small>Some só deste aparelho</small></span></button><button class="zai-cam-x" data-act="zai-cam-x">Voltar</button></div>`;
+}
+function zaiInfo() {
+  zaiAdd({ r: 'a', t: `**Como eu funciono** 🤖\n- Sou uma inteligência artificial (Gemini, do Google), então converso sobre qualquer assunto.\n- Cada pessoa tem **${ZAI_LIMIT} mensagens por dia**. Fotos e áudios também contam 1. O contador zera à meia-noite.\n- A conversa fica guardada **só neste aparelho**. As fotos e áudios vão para a IA só na hora e não são salvos.\n- As calorias são uma **estimativa**: fotos de cima e com boa luz ajudam muito.\n- Posso errar. Para dor, lesão ou dieta especial, fale com um profissional.` });
+  zaiFoot();
+}
+
+/* ---------- Ações ---------- */
+Object.assign(ACT, {
+  'zai-open': () => zaiOpen(),
+  'zai-open-food': () => { closeSheet(true); zaiOpen('food'); },
+  'zai-open-ficha': () => { closeSheet(true); zaiOpen('ficha'); },
+  'zai-close': () => zaiClose(),
+  'zai-go': () => {
+    const ta = $('#zaiIn'); const text = ta ? ta.value.trim() : '';
+    if (!text && !ZAI.attach) return zaiMicStart();
+    if (ta) ta.value = '';
+    if (ZAI.attach) { const img = ZAI.attach; ZAI.attach = null; zaiFoot(); return zaiSend(text || 'O que você me diz sobre essa foto?', { img }); }
+    if (ZAI.mode === 'food') { ZAI.mode = null; zaiFoot(); return zaiFood({ text }); }
+    zaiFoot(); zaiSend(text);
+  },
+  'zai-sug': el => { const s = ZAI_SUG[+el.dataset.i]; if (!s) return; if (s[2] === 'food') return zaiCamMenu('food'); if (s[2] === 'ficha') return ACT['zai-pick']({ dataset: { m: 'ficha' } }); zaiSend(s[1]); },
+  'zai-cam': () => zaiCamMenu(),
+  'zai-cam-x': () => zaiFoot(),
+  'zai-pick': el => {
+    const m = el.dataset.m; zaiFoot();
+    if (m === 'foodtxt') { ZAI.mode = 'food'; ZAI.attach = null; zaiFoot(); const ta = $('#zaiIn'); if (ta) ta.focus(); return; }
+    if (!zaiLeft()) return toast('As mensagens de hoje acabaram. Volta amanhã!', 'red', '⏳');
+    if (m === 'food') return zaiPickImg(img => zaiFood({ img }), 1024);
+    if (m === 'ficha') return zaiPickImg(img => zaiFicha(img), 1600);
+    zaiPickImg(img => { ZAI.attach = img; ZAI.mode = null; zaiFoot(); const ta = $('#zaiIn'); if (ta) ta.focus(); }, 1024);
+  },
+  'zai-mode-off': () => { ZAI.mode = null; zaiFoot(); },
+  'zai-att-off': () => { ZAI.attach = null; zaiFoot(); },
+  'zai-mic-send': () => zaiMicSend(),
+  'zai-mic-cancel': () => zaiMicCancel(),
+  'zai-say': el => { const m = zaiFind(el.dataset.id); if (m) zaiSpeak(m.t); },
+  'zai-retry': el => { const m = zaiFind(el.dataset.id); if (!m || !m.again || ZAI.busy) return; ZAI.msgs = ZAI.msgs.filter(x => x !== m); zaiStore(); const r = el.closest('.zai-m'); if (r) r.remove(); const img = m.again.imgId ? ZAI.imgs.get(m.again.imgId) : null; zaiSend(m.again.text, { voz: m.again.voz, img, retry: true }); },
+  'zai-menu': () => zaiMenu(),
+  'zai-info': () => zaiInfo(),
+  'zai-voz': () => { try { localStorage.setItem('zenit-ai-voz', zaiVozOn() ? '0' : '1'); } catch (e) { } zaiMenu(); },
+  'zai-clear': () => { zaiHush(); ZAI.msgs = []; ZAI.imgs = new Map(); ZAI.foodImg = new Map(); zaiStore(); zaiList(); zaiFoot(); toast('Conversa apagada.', 'green', '🧹'); },
+  'zai-food-ans': el => { const m = zaiFind(el.dataset.id); if (!m) return; zaiKcalKeep(m); m.ans[el.dataset.q] = m.ans[el.dataset.q] === el.dataset.v ? undefined : el.dataset.v; if (!m.ans[el.dataset.q]) delete m.ans[el.dataset.q]; zaiStore(); zaiRepaint(m); },
+  'zai-food-refine': el => { const m = zaiFind(el.dataset.id); if (!m || ZAI.busy) return; zaiFood({ msg: m, refine: true }); },
+  'zai-food-meal': el => { const m = zaiFind(el.dataset.id); if (!m) return; zaiKcalKeep(m); m.meal = el.dataset.v; zaiStore(); zaiRepaint(m); },
+  'zai-food-plan': el => { const m = zaiFind(el.dataset.id); if (!m) return; zaiKcalKeep(m); m.plan = el.dataset.v; zaiStore(); zaiRepaint(m); },
+  'zai-food-save': el => {
+    const m = zaiFind(el.dataset.id); if (!m || !m.data) return; zaiKcalKeep(m);
+    const kcal = clamp(Math.round(m.kcal != null ? m.kcal : m.data.total), 0, 5000); if (!kcal) return toast('Coloque as calorias antes de registrar.', 'red', '🔥');
+    const p = me(), t = T(), d = dmut(p, t); d.kcal = d.kcal || [];
+    const it = { id: z16Id(), at: Date.now(), meal: m.meal || zaiMealNow(), desc: m.data.prato, kcal };
+    d.kcal.push(it);
+    const ml = MEALS.find(x => x.id === it.meal) || MEALS[0];
+    m.saved = { meal: it.meal, kcal, item: it.id, date: t, prev: (d.meals || {})[it.meal] || null, plan: m.plan || '' };
+    if (m.plan) { d.meals = d.meals || {}; d.meals[it.meal] = m.plan; if (m.plan === 'ok') sfx('ding'); commit(); } else { save(); }
+    zaiStore(); zaiRepaint(m); toast(`${ml.name}: ${fmtInt(kcal)} kcal registradas!`, 'green', '🔥');
+  },
+  'zai-food-undo': el => {
+    const m = zaiFind(el.dataset.id); if (!m || !m.saved) return;
+    const p = me(), dd = p.days[m.saved.date];
+    if (dd) { dd.kcal = (dd.kcal || []).filter(x => x.id !== m.saved.item); if (m.saved.plan) { dd.meals = dd.meals || {}; if (m.saved.prev) dd.meals[m.saved.meal] = m.saved.prev; else delete dd.meals[m.saved.meal]; } }
+    m.saved = null; save(); zaiStore(); zaiRepaint(m); toast('Registro desfeito.', 'green', '↩️');
+  },
+  'zai-ficha-map': el => {
+    const m = zaiFind(el.dataset.id); if (!m) return; const i = +el.dataset.i, v = el.dataset.v;
+    if (v) for (const k of Object.keys(m.map)) if (m.map[k] === v) m.map[k] = '';
+    m.map[i] = v; zaiStore(); zaiRepaint(m);
+  },
+  'zai-ficha-save': el => {
+    const m = zaiFind(el.dataset.id); if (!m || !m.data) return; const g = zGym(me()); const saved = [];
+    m.data.fichas.forEach((f, i) => { const L = m.map[i]; if (!L) return; const old = g.fichas[L].ex; old.forEach(x => { if (x.foto) z16Del('maq|' + x.id); }); g.fichas[L] = { nome: f.nome, ex: f.ex.map(e => ({ id: z16Id() + i, nome: e.nome, series: e.series, reps: e.reps, carga: e.carga, desc: e.desc, obs: e.obs, foto: false })) }; saved.push(L); });
+    if (!saved.length) return; m.saved = saved.sort(); save(); zaiStore(); zaiRepaint(m); sfx('ding'); toast('Fichas salvas no seu treino!', 'green', '📋');
+  },
+  'zai-ficha-go': () => { zaiClose(); session.tab = 'reg'; session.sub = 'treino'; window.scrollTo(0, 0); renderMain(); renderNav(); },
+  'zai-kcal-del': el => { const p = me(), d = dget(p, T()); if (!d.kcal) return; const dd = dmut(p, T()); dd.kcal = dd.kcal.filter(x => x.id !== el.dataset.id); save(); renderMain(true); }
+});
+
+/* ---------- Calorias na aba Refeições ---------- */
+const __z17Meals = mealsTabHTML;
+mealsTabHTML = function () {
+  const h = __z17Meals.apply(this, arguments);
+  try {
+    const p = me(), d = dget(p, T()); const k = d.kcal || []; const tot = k.reduce((a, b) => a + (b.kcal || 0), 0);
+    const list = k.length ? `<ul class="zai-kl">${k.map(i => { const ml = MEALS.find(x => x.id === i.meal) || MEALS[0]; return `<li><span>${ml.icon}</span><span class="grow"><b>${esc(i.desc)}</b><small>${ml.name}</small></span><em>${fmtInt(i.kcal)} kcal</em><button data-act="zai-kcal-del" data-id="${i.id}" aria-label="Apagar">${IC.x}</button></li>`; }).join('')}</ul>` : '<div class="sub" style="margin:4px 0 10px">Tire foto do prato e o assistente estima as calorias para você.</div>';
+    return h + `<div class="card zai-kcard"><div class="row" style="justify-content:space-between"><h3>🔥 Calorias de hoje</h3>${k.length ? `<b class="zai-kt">${fmtInt(tot)} kcal</b>` : ''}</div>${list}
+      <div class="grid2"><button class="btn sec sm" data-act="zai-open-food">📷 Pela foto</button><button class="btn sec sm" data-act="zai-open">💬 Perguntar</button></div></div>`;
+  } catch (e) { return h; }
+};
+const __z17Pub = zfbPublicJSON;
+zfbPublicJSON = function (p) { const q = Object.assign({}, p); if (q.days) { q.days = Object.assign({}, q.days); for (const s of Object.keys(q.days)) if (q.days[s] && q.days[s].kcal) { q.days[s] = Object.assign({}, q.days[s]); delete q.days[s].kcal; } } return __z17Pub.call(this, q); };
+
+/* ---------- Atalhos: ficha pela foto no editor do treino ---------- */
+if (typeof z16EditorHTML === 'function') {
+  const __z17Ed = z16EditorHTML;
+  z16EditorHTML = function () { const h = __z17Ed.apply(this, arguments); return `<button class="zai-scan" data-act="zai-open-ficha"><span>📋</span><span class="grow"><b>Ficha de papel? Tire uma foto</b><small>O assistente monta os treinos A, B e C para você</small></span><em>Ler</em></button>` + h; };
+}
+if (typeof z15Items === 'function') {
+  const __z17Items = z15Items;
+  z15Items = function () { const out = __z17Items.apply(this, arguments); try { if (!localStorage.getItem('zenit-ai-hi')) out.agora.push({ k: 'ai|novo', ic: '💬', t: 'Conheça o assistente', s: 'Tire dúvidas, calcule calorias e mais', go: 'zai-open' }); } catch (e) { } return out; };
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#zai') && !$('#overlay')) { e.stopImmediatePropagation(); zaiClose(); } }, true);
+document.addEventListener('visibilitychange', () => { if (document.hidden && ZAI.rec) zaiMicCancel(); });
+ZNEWS.splice(0, ZNEWS.length,
+  ['💬', 'Assistente do Zenit', 'Toque na bolinha do seu mascote, em qualquer tela, e converse sobre qualquer assunto: treino, exercícios, comida, água, sono e motivação. Ele conhece os seus dados do app.'],
+  ['🎤', 'Fale com ele', 'Toque no microfone e mande um áudio. Ele entende e pode responder falando.'],
+  ['🍽️', 'Calorias pela foto', 'Fotografe o prato (ou descreva o que comeu): ele estima as calorias, pergunta o que faltar e registra na refeição do dia.'],
+  ['📋', 'Ficha pela foto', 'Fotografe a ficha de papel da academia e ele monta os treinos A, B e C com checklist.'],
+  ['⏳', `${ZAI_LIMIT} mensagens por dia`, 'Cada pessoa tem um limite diário, que aparece no topo do chat e zera à meia-noite.']);
+</script>
+<style>
+.zai-fab{position:fixed;z-index:62;width:62px;height:62px;border-radius:50%;padding:0;border:3px solid #fff;background:radial-gradient(circle at 35% 30%,#fff 0,var(--card) 60%);box-shadow:0 6px 18px rgba(35,20,90,.28),0 0 0 3px #7B4DFF;display:none;touch-action:none;cursor:pointer;transition:transform .15s}
+.zai-fab.on{display:grid;place-items:center;animation:zaiIn .35s cubic-bezier(.2,.9,.25,1.3) both}
+.zai-fab.drag{transform:scale(1.08);transition:none;box-shadow:0 10px 26px rgba(35,20,90,.35),0 0 0 3px #7B4DFF}
+.zai-fab .zai-face{width:50px;height:50px;display:block;overflow:hidden;border-radius:50%}
+.zai-fab .zai-face svg{width:56px;height:58px;margin:-2px 0 0 -3px}
+.zai-fab .zai-spark{position:absolute;top:-6px;right:-4px;width:22px;height:22px;border-radius:50%;background:#7B4DFF;color:#fff;font-style:normal;font-size:12px;display:grid;place-items:center;border:2px solid #fff}
+.zai-fab.left .zai-spark{right:auto;left:-4px}
+@keyframes zaiIn{from{transform:scale(.4);opacity:0}}
+.zai-tip{position:fixed;z-index:63;width:250px;background:#7B4DFF;color:#fff;border-radius:16px;padding:10px 12px;box-shadow:0 8px 20px rgba(60,30,160,.35);animation:zaiIn .35s both;cursor:pointer}
+.zai-tip b{display:block;font-size:15px;font-weight:900}.zai-tip span{display:block;font-size:13px;font-weight:700;opacity:.92}
+.ck.zai{z-index:86;height:100%}
+.zai-in{max-width:560px}
+.zai-top{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:2px solid var(--line)}
+.zai-av{width:44px;height:44px;border-radius:50%;background:var(--purple-soft,#EEE8FF);display:grid;place-items:center;overflow:hidden;flex:none}
+.zai-av svg{width:44px;height:46px}
+.zai-top .grow{min-width:0}.zai-top b{display:block;font-size:17px;font-weight:900;line-height:1.1}.zai-top small{display:block;font-size:12.5px;color:var(--ink-3);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zai-left{font-size:12.5px;font-weight:900;background:var(--green-soft);color:var(--green-d,#46A302);border-radius:99px;padding:6px 10px;white-space:nowrap}
+.zai-left.low{background:var(--red-soft,#FFE3E3);color:var(--red,#E0483C)}
+.zai-dots{width:36px;height:36px;display:grid;place-items:center;color:var(--ink-3);border-radius:10px}.zai-dots svg{width:22px;height:22px}
+.zai-list{flex:1;overflow-y:auto;padding:14px 12px 8px;display:flex;flex-direction:column;gap:10px;overscroll-behavior:contain}
+.zai-m{display:flex;flex-direction:column;align-items:flex-start;max-width:88%}
+.zai-m.u{align-self:flex-end;align-items:flex-end}
+.zai-b{background:var(--card);border:2px solid var(--line);border-radius:18px 18px 18px 6px;padding:10px 13px;font-size:15.5px;font-weight:600;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.zai-m.u .zai-b{background:#7B4DFF;border-color:#7B4DFF;color:#fff;border-radius:18px 18px 6px 18px}
+.zai-m.err .zai-b{background:var(--red-soft,#FFE3E3);border-color:transparent}
+.zai-b p{margin:0 0 6px}.zai-b p:last-child{margin-bottom:0}.zai-b b{font-weight:900}
+.zai-b ul,.zai-b ol{margin:2px 0 6px;padding-left:20px}.zai-b li{margin:2px 0}
+.zai-img{display:block;max-width:220px;max-height:220px;border-radius:12px;margin:-2px -4px 8px;object-fit:cover}
+.zai-noimg{font-size:13px;opacity:.8;margin-bottom:4px}
+.zai-voz{display:block;font-size:11.5px;font-weight:900;opacity:.8;margin-bottom:2px;text-transform:uppercase;letter-spacing:.05em}
+.zai-spk{margin-top:4px;width:34px;height:30px;border-radius:10px;display:grid;place-items:center;color:var(--ink-3)}.zai-spk svg{width:20px;height:20px}
+.zai-retry{margin-top:6px}
+.zai-typing{display:inline-flex;gap:4px;padding:4px 0}.zai-typing i{width:8px;height:8px;border-radius:50%;background:var(--ink-3);animation:zaiDot 1s infinite}.zai-typing i:nth-child(2){animation-delay:.15s}.zai-typing i:nth-child(3){animation-delay:.3s}
+@keyframes zaiDot{0%,60%,100%{transform:none;opacity:.4}30%{transform:translateY(-4px);opacity:1}}
+.zai-sug{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.zai-sug .chip{font-size:14px}
+#zaiFoot{border-top:2px solid var(--line);background:var(--bg);padding:8px 10px calc(8px + env(safe-area-inset-bottom, 0px))}
+.zai-bar{display:flex;align-items:flex-end;gap:8px}
+.zai-bar textarea{flex:1;resize:none;border:2px solid var(--line);border-radius:20px;padding:10px 14px;font:inherit;font-weight:600;font-size:16px;line-height:1.35;background:var(--card);color:var(--ink);max-height:120px;min-height:44px}
+.zai-bar textarea:focus{outline:none;border-color:#7B4DFF}
+.zai-ib{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;flex:none;color:var(--ink-2);background:var(--surface-2)}
+.zai-ib svg{width:24px;height:24px}
+.zai-ib.go{background:#7B4DFF;color:#fff;box-shadow:0 3px 0 #5A31D6}
+.zai-ib:disabled{opacity:.45}
+.zai-bar.rec{align-items:center}
+.zai-rec{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.zai-rec i{width:12px;height:12px;border-radius:50%;background:var(--red,#E0483C);animation:zgP 1.2s infinite}
+.zai-rec span{font-weight:900;font-variant-numeric:tabular-nums}.zai-rec small{width:100%;font-size:12px;color:var(--ink-3);font-weight:700;margin-top:-4px}
+.zai-cancel{font-weight:900;color:var(--red,#E0483C);padding:8px 6px}
+.zai-out{text-align:center;font-weight:800;color:var(--ink-2);padding:10px 6px}
+.zai-mode,.zai-att{display:flex;align-items:center;gap:8px;background:var(--orange-soft,#FFF0DB);border-radius:14px;padding:8px 10px;margin-bottom:8px;font-size:13.5px;font-weight:800}
+.zai-att{background:var(--purple-soft,#EEE8FF)}.zai-att img{width:42px;height:42px;border-radius:10px;object-fit:cover}
+.zai-mode button,.zai-att button{width:28px;height:28px;display:grid;place-items:center;color:var(--ink-3)}.zai-mode svg,.zai-att svg{width:16px;height:16px}
+.zai-cam{display:grid;gap:6px}
+.zai-cam > button{display:flex;align-items:center;gap:12px;text-align:left;padding:10px 12px;border:2px solid var(--line);border-radius:16px;background:var(--card);font:inherit;color:inherit}
+.zai-cam > button > span:first-child{font-size:24px}.zai-cam b{display:block;font-weight:900;font-size:15px}.zai-cam small{display:block;font-size:12.5px;color:var(--ink-3);font-weight:700}
+.zai-cam .zai-cam-x{justify-content:center;font-weight:900;color:var(--ink-3);border:0;background:none}
+.zai-card{width:100%;min-width:min(330px,80vw)}
+.zai-card.busy{opacity:.55;pointer-events:none}
+.zai-ch{font-weight:900;font-size:16.5px;margin-bottom:6px}
+.zai-items{list-style:none;padding:0!important;margin:0 0 6px!important}
+.zai-items li{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1.5px dashed var(--line)}
+.zai-items small{display:block;font-size:12.5px;color:var(--ink-3);font-weight:700}.zai-items em{font-style:normal;font-weight:900;white-space:nowrap}
+.zai-total{display:flex;justify-content:space-between;align-items:baseline;margin-top:6px}.zai-total b{font-size:22px;font-weight:900;color:#E07F00}
+.zai-range{font-size:12.5px;color:var(--ink-3);font-weight:700}
+.zai-tipline{background:var(--surface-2);border-radius:12px;padding:8px 10px;margin:8px 0;font-size:13.5px;font-weight:700}
+.zai-qs,.zai-reg{border-top:2px solid var(--line);margin-top:10px;padding-top:10px}
+.zai-qh{font-size:12.5px;font-weight:900;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em;margin:2px 0 6px}
+.zai-q{margin-bottom:8px}.zai-q > b{display:block;font-size:14.5px;margin-bottom:4px}
+.zai-card .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.zai-card .chip{font-size:13px;padding:7px 10px}
+.zai-kc{display:flex;align-items:center;gap:8px;margin:4px 0 10px;font-weight:800}.zai-kc .input{width:110px;text-align:center;font-weight:900;font-size:18px;padding:8px}
+.zai-saved{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--green-soft);border-radius:12px;padding:8px 10px;margin-top:10px;font-size:14px;font-weight:800}.zai-saved .chip{margin-left:auto}
+.zai-fi{border:2px solid var(--line);border-radius:14px;padding:10px;margin:8px 0}.zai-fi.off{opacity:.55}
+.zai-fih{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.zai-fih small{color:var(--ink-3);font-weight:800;font-size:12.5px;white-space:nowrap}
+.zai-fi ul{list-style:none;padding:0!important;margin:6px 0 8px!important}.zai-fi li{font-size:14px;padding:3px 0}.zai-fi li span{color:var(--ink-2);font-weight:700}
+.zai-warn{font-size:12.5px;font-weight:800;color:#C25E00;margin-top:-2px}
+.zai-kcard .zai-kt{font-size:20px;font-weight:900;color:#E07F00}
+.zai-kl{list-style:none;padding:0;margin:6px 0 12px}
+.zai-kl li{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:2px solid var(--line)}.zai-kl li > span:first-child{font-size:22px}
+.zai-kl b{display:block;font-size:15px}.zai-kl small{display:block;font-size:12.5px;color:var(--ink-3);font-weight:700}.zai-kl em{font-style:normal;font-weight:900;white-space:nowrap}
+.zai-kl button{width:30px;height:30px;display:grid;place-items:center;color:var(--ink-3)}.zai-kl button svg{width:16px;height:16px}
+.zai-scan{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:2px dashed #7B4DFF;border-radius:18px;background:var(--purple-soft,#EEE8FF);padding:12px 14px;margin:0 0 12px;font:inherit;color:inherit}
+.zai-scan > span:first-child{font-size:26px}.zai-scan b{display:block;font-weight:900;font-size:15px}.zai-scan small{display:block;font-size:12.5px;color:var(--ink-2);font-weight:700}
+.zai-scan em{font-style:normal;background:#7B4DFF;color:#fff;font-weight:900;font-size:13px;border-radius:12px;padding:8px 12px;box-shadow:0 3px 0 #5A31D6}
 </style>
 
 </body>

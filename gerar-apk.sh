@@ -24,11 +24,11 @@ for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
   cp "$RES/mipmap-$n/ic_launcher.png" "$RES/mipmap-$n/ic_launcher_round.png"
   rm -f "$RES/mipmap-$n/ic_launcher_foreground.png"
 done
-# Ícone das notificações (estrela branca) e permissões de lembrete exato
+# Ícone das notificações (estrela branca), permissões de lembrete exato e microfone (assistente por voz)
 mkdir -p "$RES/drawable"
 convert -size 96x96 xc:none -fill white -draw "polygon 48,6 59,36 92,37 66,57 75,89 48,70 21,89 30,57 4,37 37,36" "$RES/drawable/ic_stat_zenit.png"
 MAN=android/app/src/main/AndroidManifest.xml
-for perm in POST_NOTIFICATIONS USE_EXACT_ALARM RECEIVE_BOOT_COMPLETED WAKE_LOCK; do
+for perm in POST_NOTIFICATIONS USE_EXACT_ALARM RECEIVE_BOOT_COMPLETED WAKE_LOCK RECORD_AUDIO MODIFY_AUDIO_SETTINGS; do
   grep -q "android.permission.$perm" "$MAN" || sed -i "s#<application#<uses-permission android:name=\"android.permission.$perm\" />\n    <application#" "$MAN"
 done
 mkdir -p ~/.android
