@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '2.6';
+const ZV = '2.7';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -7811,6 +7811,541 @@ ZNEWS.splice(0, ZNEWS.length,
 .z15-n.late span:not(.zr-ic){color:#E0402C;font-weight:800}
 .z15-em{font-size:24px;width:40px;height:40px;display:grid;place-items:center;flex:none}
 .z15-n .zr-ok{flex:none}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 2.7 · Treino da academia, evolução dos treinos e Minha Evolução
+   Fichas A/B/C, checklist de séries, cronômetro de descanso, cargas,
+   fotos dos aparelhos, recordes, volume, medalhas e fotos antes/depois.
+   As fotos ficam numa área própria do aparelho (IndexedDB), comprimidas.
+   ========================================================= */
+
+/* ---------- Fotos no aparelho (IndexedDB) ---------- */
+const Z16DB = { p: null, mem: new Map() };
+function z16Open() {
+  if (Z16DB.p) return Z16DB.p;
+  Z16DB.p = new Promise((res, rej) => { try { const r = indexedDB.open('zenit-fotos', 1); r.onupgradeneeded = () => r.result.createObjectStore('f'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } });
+  Z16DB.p.catch(() => { Z16DB.p = null; });
+  return Z16DB.p;
+}
+async function z16Put(k, v) { Z16DB.mem.set(k, v); try { const db = await z16Open(); await new Promise((res, rej) => { const tx = db.transaction('f', 'readwrite'); tx.objectStore('f').put(v, k); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); } catch (e) { } }
+async function z16Get(k) { if (Z16DB.mem.has(k)) return Z16DB.mem.get(k); try { const db = await z16Open(); const v = await new Promise((res, rej) => { const r = db.transaction('f').objectStore('f').get(k); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); if (v) Z16DB.mem.set(k, v); return v || null; } catch (e) { return null; } }
+async function z16Del(k) { Z16DB.mem.delete(k); try { const db = await z16Open(); db.transaction('f', 'readwrite').objectStore('f').delete(k); } catch (e) { } }
+let z16HyT = null;
+function z16Hydrate() { clearTimeout(z16HyT); z16HyT = setTimeout(() => { document.querySelectorAll('img[data-idb]').forEach(async im => { const k = im.dataset.idb; if (im.dataset.done === k) return; im.dataset.done = k; const v = await z16Get(k); if (v) im.src = v; else im.closest('[data-idbwrap]') && im.closest('[data-idbwrap]').classList.add('nophoto'); }); }, 30); }
+new MutationObserver(() => z16Hydrate()).observe(document.body, { childList: true, subtree: true });
+function z16Pick(cb, max) {
+  let inp = document.getElementById('z16File');
+  if (!inp) { inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.id = 'z16File'; inp.style.display = 'none'; document.body.appendChild(inp); }
+  inp.value = '';
+  inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; try { cb(await compressImage(f, max || 900)); } catch (e) { toast('Não consegui abrir essa imagem. Tente outra.', 'red', '📸'); } };
+  inp.click();
+}
+const z16Id = () => Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+const z16Kg = v => (Math.round(v * 10) / 10).toLocaleString('pt-BR');
+const z16T = ms => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+
+/* ---------- Fichas e histórico ---------- */
+const Z16_FICHAS = ['A', 'B', 'C'];
+const Z16_LIB = ['Supino reto', 'Supino inclinado', 'Supino declinado', 'Crucifixo', 'Crossover', 'Peck deck', 'Flexão de braço', 'Desenvolvimento', 'Elevação lateral', 'Elevação frontal', 'Crucifixo invertido', 'Encolhimento', 'Remada curvada', 'Remada baixa', 'Remada unilateral', 'Puxada frontal', 'Pulldown', 'Barra fixa', 'Rosca direta', 'Rosca alternada', 'Rosca martelo', 'Rosca Scott', 'Tríceps pulley', 'Tríceps corda', 'Tríceps testa', 'Tríceps francês', 'Mergulho', 'Agachamento livre', 'Agachamento no smith', 'Leg press 45°', 'Hack', 'Cadeira extensora', 'Mesa flexora', 'Cadeira flexora', 'Stiff', 'Levantamento terra', 'Afundo', 'Agachamento búlgaro', 'Cadeira abdutora', 'Cadeira adutora', 'Elevação pélvica', 'Glúteo na polia', 'Panturrilha em pé', 'Panturrilha sentado', 'Abdominal supra', 'Abdominal infra', 'Prancha', 'Esteira', 'Bicicleta', 'Elíptico', 'Escada'];
+function z16Icon(n) {
+  n = String(n || '').toLowerCase();
+  if (/esteira|bicicleta|bike|el[ií]ptico|escada|corrida|cardio/.test(n)) return '🏃';
+  if (/agach|leg|hack|extensora|flexora|stiff|afundo|b[uú]lgaro|abdutora|adutora|p[eé]lvica|gl[uú]teo|panturrilha|terra/.test(n)) return '🦵';
+  if (/abdominal|prancha/.test(n)) return '🔥';
+  if (/rosca|tr[ií]ceps|mergulho/.test(n)) return '💪';
+  return '🏋️';
+}
+function zGym(p) {
+  p.gym = p.gym || { fichas: {}, log: [] };
+  if (!Array.isArray(p.gym.log)) p.gym.log = [];
+  for (const k of Z16_FICHAS) if (!p.gym.fichas[k]) p.gym.fichas[k] = { nome: '', ex: [] };
+  return p.gym;
+}
+const z16HasFicha = p => Z16_FICHAS.some(k => zGym(p).fichas[k].ex.length);
+const z16Reps = r => { const m = String(r || '').match(/\d+/); return m ? +m[0] : 10; };
+const z16Vol = e => Object.values(e.ex || {}).reduce((a, x) => a + x.sets.reduce((b, s) => b + (s.kg || 0) * (s.r || 0), 0), 0);
+const z16Sets = e => Object.values(e.ex || {}).reduce((a, x) => a + x.sets.length, 0);
+function z16Max(x) { return x && x.sets && x.sets.length ? Math.max(...x.sets.map(s => s.kg || 0)) : 0; }
+function z16Hist(p, exId) { return zGym(p).log.filter(e => e.ex && e.ex[exId] && e.ex[exId].sets.length).sort((a, b) => a.start - b.start).map(e => ({ date: e.date, max: z16Max(e.ex[exId]), sets: e.ex[exId].sets, full: e.ex[exId].full })); }
+function z16PRBefore(p, exId, ms) { let m = 0; for (const e of zGym(p).log) if (e.start < ms && e.ex && e.ex[exId]) m = Math.max(m, z16Max(e.ex[exId])); return m; }
+function z16Suggest(p, ex) {
+  const h = z16Hist(p, ex.id).slice(-2); if (h.length < 2 || !ex.carga) return null;
+  const ok = h.every(x => x.full && x.max >= ex.carga && x.sets.every(s => (s.r || 0) >= z16Reps(ex.reps)));
+  if (!ok) return null; return Math.round((ex.carga + (ex.carga < 30 ? 2.5 : 5)) * 10) / 10;
+}
+function z16Kcal(p, min) { const w = latestW(p, T()) || p.startWeight || 70; return Math.round(5 * w * min / 60); }
+
+/* ---------- Medalhas de treino e de fotos ---------- */
+const Z16_MED = [
+  { id: 'gym|primeiro', ic: '🎽', t: 'Primeira ficha', d: 'Terminar o primeiro treino com checklist.' },
+  { id: 'gym|recorde', ic: '🏆', t: 'Primeiro recorde', d: 'Bater a sua maior carga num exercício.' },
+  { id: 'gym|ferro', ic: '⛓️', t: 'Semana de ferro', d: 'Treinar 5 dias na mesma semana.' },
+  { id: 'gym|tonelada', ic: '🦾', t: 'Dez toneladas', d: 'Levantar 10.000 kg somados numa semana.' },
+  { id: 'gym|dez', ic: '🔟', t: 'Dez fichas', d: 'Completar 10 treinos com checklist.' },
+  { id: 'evo|tri', ic: '📸', t: 'Foto em dia', d: 'Tirar a foto do mês 3 meses seguidos.', xp: 30 }
+];
+function z16Award(p, id, xp, why, quiet) {
+  p.zch = p.zch || {}; if (p.zch[id]) return false;
+  p.zch[id] = { date: T(), xp: xp || 20, cat: id.startsWith('evo') ? 'evolucao' : 'treino' }; p.coins += 10; CACHE = new Map();
+  const m = Z16_MED.find(x => x.id === id);
+  if (!quiet) setTimeout(() => { toast(`${m ? m.ic + ' Medalha: ' + m.t : why}! +${xp || 20} XP`, 'gold', m ? m.ic : '🏅'); confetti(80); sfx('level'); }, 900);
+  return true;
+}
+function z16WeekVol(p, wk) { return zGym(p).log.filter(e => e.date >= wk && e.date <= addDays(wk, 6)).reduce((a, e) => a + z16Vol(e), 0); }
+function z16CheckMedals(p) {
+  const g = zGym(p); const wk = weekKey(T());
+  if (g.log.length >= 1) z16Award(p, 'gym|primeiro');
+  if (g.log.some(e => e.prs > 0)) z16Award(p, 'gym|recorde');
+  if (g.log.length >= 10) z16Award(p, 'gym|dez');
+  if (weekStats(p, wk).treinos >= 5) z16Award(p, 'gym|ferro');
+  if (z16WeekVol(p, wk) >= 10000) z16Award(p, 'gym|tonelada');
+}
+
+/* ---------- Cartão do treino da academia (Registrar › Treino) ---------- */
+function z16GymCardHTML(p) {
+  const g = zGym(p); const t = T(); const L = p.gymLive; const plan = zPlan(p, t).k;
+  if (L && L.date !== t) return `<div class="card zg-card"><div class="row"><div style="font-size:38px">⏸️</div><div class="grow"><h3>Treino ${L.ficha} ficou aberto</h3><div class="sub">Começou em ${fmtDay(L.date)}. Quer salvar o que você fez ou descartar?</div></div></div>
+    <div class="grid2" style="margin-top:12px"><button class="btn sm" data-act="z16-open">Ver e salvar</button><button class="btn gray sm" data-act="z16-discard">Descartar</button></div></div>`;
+  if (L) { const f = g.fichas[L.ficha]; const tot = f.ex.reduce((a, x) => a + (+x.series || 0), 0); const dn = Object.values(L.done || {}).reduce((a, v) => a + v.filter(Boolean).length, 0);
+    return `<button class="zg-live" data-act="z16-open"><span class="zg-pulse"></span><span class="grow"><small>Treino em andamento</small><b>Treino ${L.ficha}${f.nome ? ' · ' + esc(f.nome) : ''}</b><span>${dn} de ${tot} séries · ${Math.floor((Date.now() - L.start) / 60000)} min</span></span><em>Continuar</em></button>`; }
+  const done = g.log.filter(e => e.date === t);
+  let h = `<div class="card zg-card"><div class="card-head"><h3>🏋️ Treino da academia</h3><button class="link-btn" data-act="z16-edit">${z16HasFicha(p) ? 'Editar fichas' : ''}</button></div>`;
+  if (done.length) { const e = done[done.length - 1]; h += `<div class="zg-today">✅ Hoje você fez o <b>Treino ${e.ficha}</b>: ${z16Sets(e)} séries · ${fmtInt(z16Vol(e))} kg levantados${e.prs ? ` · ${e.prs} ${plural(e.prs, 'recorde', 'recordes')} 🏆` : ''}</div>`; }
+  if (!z16HasFicha(p)) return h + `<div class="sub">Monte sua ficha uma vez e treine com checklist de séries, cronômetro de descanso e controle de carga. O app mostra sua evolução e avisa quando dá para subir o peso.</div>
+    <div style="margin-top:12px"><button class="btn" data-act="z16-edit">Montar minha ficha</button></div><div class="hint">Na próxima atualização: tire foto da ficha da academia e a IA monta tudo sozinha.</div></div>`;
+  h += `<div class="zg-fichas">${Z16_FICHAS.filter(k => g.fichas[k].ex.length).map(k => { const f = g.fichas[k]; const today = plan === k; return `<button class="zg-fb ${today ? 'today' : ''}" data-act="z16-start" data-f="${k}"><b>${k}</b><span class="grow"><strong>${f.nome ? esc(f.nome) : 'Treino ' + k}</strong><small>${f.ex.length} ${plural(f.ex.length, 'exercício', 'exercícios')}${today ? ' · é o de hoje' : ''}</small></span><em>Começar</em></button>`; }).join('')}</div></div>`;
+  return h;
+}
+
+/* ---------- Tela do treino (checklist) ---------- */
+let z16Tick = null;
+function z16Live() { const p = me(); return p && p.gymLive; }
+function z16Start(fk) {
+  const p = me(); const g = zGym(p); const f = g.fichas[fk]; if (!f || !f.ex.length) return;
+  const L = { ficha: fk, date: T(), start: Date.now(), done: {}, sets: {}, kg: {}, reps: {}, rest: null };
+  for (const ex of f.ex) { L.done[ex.id] = Array(Math.max(1, +ex.series || 3)).fill(false); L.sets[ex.id] = []; L.kg[ex.id] = +ex.carga || 0; L.reps[ex.id] = z16Reps(ex.reps); }
+  p.gymLive = L; save(); z16OpenLive(); sfx('pop');
+}
+function z16OpenLive() {
+  const old = $('#zgym'); if (old) old.remove(); closeSheet(true);
+  const el = document.createElement('div'); el.className = 'ck zgym'; el.id = 'zgym'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
+  document.body.appendChild(el); document.body.style.overflow = 'hidden';
+  z16DrawLive(); clearInterval(z16Tick); z16Tick = setInterval(z16TickFn, 250);
+}
+function z16CloseLive() { clearInterval(z16Tick); const el = $('#zgym'); if (el) el.remove(); if (!$('#overlay')) document.body.style.overflow = ''; if ($('#main')) renderMain(true); }
+function z16DrawLive() {
+  const el = $('#zgym'); const p = me(); const L = p && p.gymLive; if (!el || !L) return;
+  const f = zGym(p).fichas[L.ficha]; const y = el.querySelector('.ck-body') ? el.querySelector('.ck-body').scrollTop : 0;
+  const tot = f.ex.reduce((a, x) => a + (L.done[x.id] || []).length, 0); const dn = f.ex.reduce((a, x) => a + (L.done[x.id] || []).filter(Boolean).length, 0);
+  const card = ex => {
+    const d = L.done[ex.id] || []; const all = d.length && d.every(Boolean); const h = z16Hist(p, ex.id); const last = h[h.length - 1]; const sug = z16Suggest(p, ex); const pr = z16PRBefore(p, ex.id, L.start);
+    const kg = L.kg[ex.id] || 0; const isPR = pr > 0 && kg > pr;
+    return `<div class="zg-ex ${all ? 'done' : ''}" id="zgx_${ex.id}"><div class="zg-top">
+      <button class="zg-ph" data-act="z16-exfoto" data-f="${L.ficha}" data-id="${ex.id}" data-idbwrap>${ex.foto ? `<img data-idb="maq|${ex.id}" alt="">` : `<span>${z16Icon(ex.nome)}</span><small>📷</small>`}</button>
+      <div class="grow"><b>${esc(ex.nome)}</b><span>${ex.series} × ${esc(String(ex.reps))}${ex.desc ? ' · descanso ' + ex.desc + 's' : ''}</span>
+      ${last ? `<span class="zg-last">Última vez: ${z16Kg(last.max)} kg</span>` : ''}${pr ? `<span class="zg-pr ${isPR ? 'on' : ''}">${isPR ? '🏆 Recorde!' : 'Recorde: ' + z16Kg(pr) + ' kg'}</span>` : ''}
+      ${sug && kg < sug ? `<button class="zg-sug" data-act="z16-sug" data-id="${ex.id}" data-v="${sug}">💡 Bora tentar ${z16Kg(sug)} kg?</button>` : ''}${ex.obs ? `<span class="zg-obs">${esc(ex.obs)}</span>` : ''}</div></div>
+      <div class="zg-ctl"><div class="zg-step"><button data-act="z16-kg" data-id="${ex.id}" data-d="-1" aria-label="Menos carga">−</button><label><input class="zg-in" data-k="kg" data-id="${ex.id}" inputmode="decimal" value="${z16Kg(kg)}"><span>kg</span></label><button data-act="z16-kg" data-id="${ex.id}" data-d="1" aria-label="Mais carga">+</button></div>
+        <div class="zg-step"><button data-act="z16-rp" data-id="${ex.id}" data-d="-1" aria-label="Menos repetições">−</button><label><input class="zg-in" data-k="reps" data-id="${ex.id}" inputmode="numeric" value="${L.reps[ex.id] || 0}"><span>reps</span></label><button data-act="z16-rp" data-id="${ex.id}" data-d="1" aria-label="Mais repetições">+</button></div></div>
+      <div class="zg-sets">${d.map((v, i) => `<button class="${v ? 'on' : ''}" data-act="z16-set" data-id="${ex.id}" data-i="${i}">${v ? '✓' : 'Série ' + (i + 1)}</button>`).join('')}</div></div>`;
+  };
+  el.innerHTML = `<div class="ck-in"><div class="ck-head"><button class="ck-x" data-act="z16-min" aria-label="Minimizar">${IC.x}</button><div class="grow"><div class="zg-h"><b>Treino ${L.ficha}${f.nome ? ' · ' + esc(f.nome) : ''}</b><span id="zgClock">${z16T(Date.now() - L.start)}</span></div><div class="ck-bar"><i style="width:${tot ? dn / tot * 100 : 0}%"></i></div></div></div>
+    <div class="ck-body">${f.ex.map(card).join('')}<div class="hint" style="text-align:center;margin-top:6px">${dn} de ${tot} séries. Toque na série quando terminar: o descanso começa sozinho.</div></div>
+    <div class="ck-foot"><div id="zgRest"></div><button class="btn ${dn === tot ? 'gold' : ''}" data-act="z16-finish">${dn === tot ? 'Finalizar treino 🎉' : 'Finalizar treino'}</button></div></div>`;
+  const b = el.querySelector('.ck-body'); if (b) b.scrollTop = y; z16TickFn();
+}
+function z16TickFn() {
+  const L = z16Live(); const c = $('#zgClock'); if (!L) return; if (c) c.textContent = z16T(Date.now() - L.start);
+  const r = $('#zgRest'); if (!r) return;
+  if (L.rest && L.rest.until) {
+    const left = L.rest.until - Date.now(); const tot = L.rest.len || 60000;
+    if (left <= 0) { L.rest = null; r.innerHTML = ''; try { navigator.vibrate && navigator.vibrate([220, 120, 220]); } catch (e) { } sfx('ding'); toast('Descanso acabou! Próxima série 💪', 'green', '⏱️'); save(); return; }
+    const pc = clamp(left / tot, 0, 1);
+    if (!r.firstChild) r.innerHTML = `<div class="zg-rest"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="19" class="bg"/><circle cx="22" cy="22" r="19" class="fg" id="zgRing"/></svg><div class="grow"><small>Descanso</small><b id="zgRestT"></b></div><button data-act="z16-rest" data-d="15">+15s</button><button data-act="z16-rest" data-d="0">Pular</button></div>`;
+    const t = $('#zgRestT'); if (t) t.textContent = z16T(left); const ring = $('#zgRing'); if (ring) ring.style.strokeDashoffset = (119.4 * (1 - pc)).toFixed(1);
+  } else if (r.firstChild) r.innerHTML = '';
+}
+function z16RestNotify(until) {
+  const LN = zLN(); if (!LN) return;
+  try { LN.cancel({ notifications: [{ id: 9996 }] }); } catch (e) { }
+  if (until) try { LN.schedule({ notifications: [{ id: 9996, title: '⏱️ Descanso acabou!', body: 'Bora para a próxima série 💪', schedule: { at: new Date(until), allowWhileIdle: true } }] }); } catch (e) { }
+}
+function z16Finish() {
+  const p = me(); const L = p.gymLive; if (!L) return; const f = zGym(p).fichas[L.ficha];
+  const min = Math.max(1, Math.round((Date.now() - L.start) / 60000)); const sets = f.ex.reduce((a, x) => a + (L.sets[x.id] || []).filter(Boolean).length, 0);
+  const tot = f.ex.reduce((a, x) => a + (L.done[x.id] || []).length, 0);
+  let vol = 0; const prs = [];
+  for (const ex of f.ex) { const ss = (L.sets[ex.id] || []).filter(Boolean); vol += ss.reduce((a, s) => a + s.kg * s.r, 0); const mx = ss.length ? Math.max(...ss.map(s => s.kg)) : 0; const pr = z16PRBefore(p, ex.id, L.start); if (ss.length && pr > 0 && mx > pr) prs.push(`${ex.nome}: ${z16Kg(mx)} kg`); }
+  session.z16feel = session.z16feel || 'ok';
+  openSheet(`<div style="text-align:center;font-size:54px">${sets === tot ? '🎉' : '💪'}</div><h2 style="text-align:center">${sets === tot ? 'Treino completo!' : 'Finalizar o treino?'}</h2>
+    <div class="zg-sum"><div><b>${min} min</b><small>tempo</small></div><div><b>${sets}/${tot}</b><small>séries</small></div><div><b>${fmtInt(vol)} kg</b><small>levantados</small></div><div><b>≈ ${z16Kcal(p, min)}</b><small>kcal</small></div></div>
+    ${prs.length ? `<div class="card tint-green" style="margin-top:12px"><b>🏆 ${prs.length} ${plural(prs.length, 'recorde novo', 'recordes novos')}</b><div class="sub">${prs.map(esc).join(' · ')}</div></div>` : ''}
+    <div class="field"><span>Como foi?</span><div class="chips">${[['pesado', '😓 Pesado'], ['ok', '🙂 Ok'], ['voei', '🔥 Voei']].map(([v, l]) => `<button class="chip ${session.z16feel === v ? 'on' : ''}" data-act="z16-feel" data-v="${v}">${l}</button>`).join('')}</div></div>
+    ${sets < tot ? `<div class="hint">Faltaram ${tot - sets} ${plural(tot - sets, 'série', 'séries')}: o treino entra como parcial (+5 XP). Completo vale +10 XP.</div>` : '<div class="hint">Treino completo vale +10 XP.</div>'}
+    <div style="margin-top:12px"><button class="btn" data-act="z16-save" ${sets ? '' : 'disabled'}>Salvar treino</button></div><div style="margin-top:8px"><button class="btn gray" data-act="close">Continuar treinando</button></div>`, { center: false });
+}
+function z16Save() {
+  const p = me(); const L = p.gymLive; if (!L) return; const g = zGym(p); const f = g.fichas[L.ficha];
+  const end = Date.now(); const min = Math.max(1, Math.round((end - L.start) / 60000));
+  const e = { id: z16Id(), date: L.date, ficha: L.ficha, start: L.start, end, min, feel: session.z16feel || 'ok', ex: {}, prs: 0 };
+  let tot = 0, dn = 0;
+  for (const ex of f.ex) {
+    const ss = (L.sets[ex.id] || []).filter(Boolean); tot += (L.done[ex.id] || []).length; dn += ss.length;
+    if (!ss.length) continue; const pr = z16PRBefore(p, ex.id, L.start); const mx = Math.max(...ss.map(s => s.kg));
+    if (pr > 0 && mx > pr) e.prs++;
+    e.ex[ex.id] = { nome: ex.nome, sets: ss, full: ss.length >= (L.done[ex.id] || []).length };
+    ex.carga = L.kg[ex.id];
+  }
+  g.log.push(e); if (g.log.length > 500) g.log = g.log.slice(-500);
+  const full = dn >= tot; const d = dmut(p, L.date);
+  if (!d.workout) d.workout = { type: L.ficha, min, full, feel: e.feel, at: nowMin(), gym: e.id };
+  else if (!d.workout.gym) { d.workout.gym = e.id; if (full && !d.workout.full) d.workout.full = true; }
+  d.rest = false; p.gymLive = null; session.z16feel = null; z16RestNotify(null);
+  clearInterval(z16Tick); const el = $('#zgym'); if (el) el.remove(); closeSheet(true); document.body.style.overflow = '';
+  z16CheckMedals(p);
+  if (L.date === T()) commit({ rerender: true }); else { save(); renderMain(true); }
+  confetti(full ? 140 : 60); sfx('level'); toast(full ? `Treino ${L.ficha} completo! +10 XP 💪` : `Treino ${L.ficha} registrado (+5 XP)`, 'green', '🏋️');
+}
+
+/* ---------- Editor das fichas ---------- */
+function z16EditorHTML() {
+  const p = me(); const g = zGym(p); const fk = session.z16f || 'A'; const f = g.fichas[fk];
+  return `<h2>Minhas fichas</h2><div class="sub">Monte o Treino A, B e C uma vez. Depois é só treinar marcando as séries.</div>
+    <div class="zseg zg-tabs">${Z16_FICHAS.map(k => `<button class="${k === fk ? 'on' : ''}" data-act="z16-tab" data-f="${k}">Treino ${k}<small>${g.fichas[k].ex.length || ''}</small></button>`).join('')}</div>
+    <label class="field"><span>Nome do treino ${fk} (opcional)</span><input class="input" id="z16FName" maxlength="30" value="${esc(f.nome || '')}" placeholder="Ex.: Peito e tríceps"></label>
+    <div class="zg-list">${f.ex.length ? f.ex.map((ex, i) => `<div class="zg-row"><span class="zg-th" data-idbwrap>${ex.foto ? `<img data-idb="maq|${ex.id}" alt="">` : z16Icon(ex.nome)}</span><button class="grow" data-act="z16-exedit" data-id="${ex.id}"><b>${esc(ex.nome)}</b><span>${ex.series} × ${esc(String(ex.reps))}${ex.carga ? ' · ' + z16Kg(ex.carga) + ' kg' : ''}${ex.desc ? ' · ' + ex.desc + 's' : ''}</span></button>
+      <span class="zg-mv"><button data-act="z16-mv" data-id="${ex.id}" data-d="-1" ${i ? '' : 'disabled'} aria-label="Subir">▲</button><button data-act="z16-mv" data-id="${ex.id}" data-d="1" ${i < f.ex.length - 1 ? '' : 'disabled'} aria-label="Descer">▼</button></span></div>`).join('') : '<div class="sub" style="padding:10px 0">Nenhum exercício ainda.</div>'}</div>
+    <div style="margin-top:12px"><button class="btn sec" data-act="z16-exedit" data-id="">+ Adicionar exercício</button></div>
+    <div style="margin-top:10px"><button class="btn" data-act="z16-edit-done">Pronto</button></div>
+    <div class="hint">Na próxima atualização: tire foto da ficha da academia e a IA monta tudo sozinha.</div>`;
+}
+function z16Editor() { closeSheet(true); openSheet(`<div id="z16Ed">${z16EditorHTML()}</div>`, {}); }
+function z16SaveFName() { const i = $('#z16FName'); if (i) { const g = zGym(me()); g.fichas[session.z16f || 'A'].nome = i.value.trim().slice(0, 30); } }
+function z16ExFormHTML() {
+  const e = session.z16e;
+  return `<h2>${e.isNew ? 'Novo exercício' : 'Editar exercício'}</h2><div class="sub">Treino ${session.z16f || 'A'}</div>
+    <label class="field"><span>Exercício</span><input class="input" id="z16Nome" list="z16Lib" maxlength="40" value="${esc(e.nome)}" placeholder="Ex.: Supino reto"><datalist id="z16Lib">${Z16_LIB.map(n => `<option value="${n}">`).join('')}</datalist></label>
+    <div class="grid2"><div class="field"><span>Séries</span><div class="zstep"><button data-act="z16-ef" data-k="series" data-d="-1">−</button><b>${e.series}</b><button data-act="z16-ef" data-k="series" data-d="1">+</button></div></div>
+      <label class="field"><span>Repetições</span><input class="input" id="z16Reps" maxlength="10" value="${esc(String(e.reps))}" placeholder="12 ou 10-12"></label></div>
+    <label class="field"><span>Carga inicial (kg)</span><input class="input" id="z16Carga" inputmode="decimal" value="${e.carga ? z16Kg(e.carga) : ''}" placeholder="0"></label>
+    <div class="field"><span>Descanso entre séries</span><div class="chips">${[30, 45, 60, 90, 120, 180].map(v => `<button class="chip ${e.desc === v ? 'on' : ''}" data-act="z16-ef" data-k="desc" data-v="${v}">${v < 60 ? v + 's' : v / 60 + (v % 60 ? ',5' : '') + ' min'}</button>`).join('')}</div></div>
+    <label class="field"><span>Observação (opcional)</span><input class="input" id="z16Obs" maxlength="60" value="${esc(e.obs || '')}" placeholder="Ex.: banco na posição 4, pegada fechada"></label>
+    <div class="field"><span>Foto do aparelho (opcional)</span><div class="row"><span class="zg-th big" data-idbwrap>${e.fotoSrc ? `<img src="${e.fotoSrc}" alt="">` : e.foto ? `<img data-idb="maq|${e.id}" alt="">` : z16Icon(e.nome)}</span><button class="btn sec sm" data-act="z16-ef-foto" style="width:auto;margin:0">${e.foto || e.fotoSrc ? 'Trocar foto' : '📷 Tirar foto'}</button>${e.foto || e.fotoSrc ? `<button class="zmini" data-act="z16-ef-nofoto">Remover</button>` : ''}</div><div class="hint">Fotografe a máquina na academia para lembrar qual é.</div></div>
+    <div style="margin-top:14px"><button class="btn" data-act="z16-ef-save">Salvar exercício</button></div>
+    ${e.isNew ? '' : `<div style="margin-top:8px"><button class="btn gray" data-act="z16-ef-del">Excluir exercício</button></div>`}
+    <div style="margin-top:8px"><button class="btn gray" data-act="z16-edit-back">Voltar</button></div>`;
+}
+function z16ExKeep() { const e = session.z16e; if (!e) return; const n = $('#z16Nome'), r = $('#z16Reps'), c = $('#z16Carga'), o = $('#z16Obs'); if (n) e.nome = n.value; if (r) e.reps = r.value; if (c) e.carga = parseFloat(String(c.value).replace(',', '.')) || 0; if (o) e.obs = o.value; }
+function z16ExForm() { const el = $('#z16Ed'); if (el) el.innerHTML = z16ExFormHTML(); else openSheet(`<div id="z16Ed">${z16ExFormHTML()}</div>`, {}); }
+
+/* ---------- Evolução dos treinos ---------- */
+function z16Spark(vals, w, h) {
+  w = w || 120; h = h || 34; if (vals.length < 2) return ''; const mn = Math.min(...vals), mx = Math.max(...vals); const r = mx - mn || 1;
+  const pts = vals.map((v, i) => [i / (vals.length - 1) * (w - 6) + 3, h - 4 - (v - mn) / r * (h - 8)]);
+  return `<svg class="zg-spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"><polyline points="${pts.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="#58CC02" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${pts[pts.length - 1][0].toFixed(1)}" cy="${pts[pts.length - 1][1].toFixed(1)}" r="3.6" fill="#58CC02"/></svg>`;
+}
+function z16WeekGym(p, wk) {
+  const L = zGym(p).log.filter(e => e.date >= wk && e.date <= addDays(wk, 6));
+  const prs = L.reduce((a, e) => a + (e.prs || 0), 0); const vol = L.reduce((a, e) => a + z16Vol(e), 0);
+  const ups = new Set(); for (const e of L) for (const [id, x] of Object.entries(e.ex || {})) { const before = z16PRBefore(p, id, new Date(wk + 'T00:00:00').getTime()); const prev = zGym(p).log.filter(o => o.start < e.start && o.ex && o.ex[id]).pop(); if (prev && z16Max(x) > z16Max(prev.ex[id])) ups.add(id); }
+  return { n: L.length, vol, prs, ups: ups.size, treinos: weekStats(p, wk).treinos };
+}
+function z16EvoTrainHTML(p) {
+  const g = zGym(p); const t = T(); const wk = weekKey(t); const pw = addDays(wk, -7);
+  const a = z16WeekGym(p, wk), b = z16WeekGym(p, pw);
+  const dlt = (x, y, u) => { const d = x - y; if (d > 0) return `<em class="up">+${u === 'kg' ? fmtInt(d) + ' kg' : d}</em>`; return y ? `<em class="prev">antes: ${u === 'kg' ? fmtInt(y) : y}</em>` : ''; };
+  let h = `<div class="card zg-week"><h3>📊 Sua semana de treino</h3>
+    <div class="zg-wgrid"><div><b>${a.treinos}</b><small>${plural(a.treinos, 'treino', 'treinos')}</small>${dlt(a.treinos, b.treinos)}</div><div><b>${fmtInt(a.vol)}</b><small>kg levantados</small>${dlt(a.vol, b.vol, 'kg')}</div><div><b>${a.prs}</b><small>${plural(a.prs, 'recorde', 'recordes')}</small></div><div><b>${a.ups}</b><small>subiu carga</small></div></div>
+    <div class="sub" style="margin-top:8px">${a.treinos >= 5 ? 'Semana de ferro! 5 treinos ou mais 🔥' : a.treinos > b.treinos ? `Você já treinou mais que na semana passada (${b.treinos}). Constância!` : a.treinos ? 'Cada treino conta. Bora manter o ritmo!' : 'Nenhum treino ainda nesta semana. O primeiro é o mais importante!'}</div></div>`;
+  const ids = {}; for (const e of g.log) for (const [id, x] of Object.entries(e.ex || {})) ids[id] = x.nome;
+  const rows = Object.entries(ids).map(([id, nome]) => ({ id, nome, h: z16Hist(p, id) })).filter(r => r.h.length >= 2).sort((x, y) => y.h[y.h.length - 1].date < x.h[x.h.length - 1].date ? -1 : 1).slice(0, 8);
+  if (rows.length) h += `<div class="card"><h3>📈 Evolução por exercício</h3><div class="zg-evo">${rows.map(r => { const v = r.h.map(x => x.max); const d = v[v.length - 1] - v[0]; return `<div class="zg-er"><div class="grow"><b>${esc(r.nome)}</b><span>${z16Kg(v[0])} → <strong>${z16Kg(v[v.length - 1])} kg</strong> ${d > 0 ? `<em class="up">+${z16Kg(d)} kg</em>` : ''}</span></div>${z16Spark(v.slice(-12))}</div>`; }).join('')}</div></div>`;
+  h += `<div class="card"><h3>🏅 Medalhas de treino</h3><div class="zg-meds">${Z16_MED.filter(m => m.id.startsWith('gym')).map(m => { const ok = (p.zch || {})[m.id]; return `<div class="zg-med ${ok ? 'on' : ''}"><span>${ok ? m.ic : '🔒'}</span><b>${m.t}</b><small>${m.d}</small></div>`; }).join('')}</div></div>`;
+  return h;
+}
+
+/* ---------- Ganchos na tela de treino e no relatório ---------- */
+const __z16Wo = workoutTabHTML;
+workoutTabHTML = function () {
+  const p = me(); let h = __z16Wo.apply(this, arguments);
+  h = h.replace('<h3>Check-in do treino</h3><div class="sub">O treino continua no app da academia. Aqui é só o registro.</div>', '<h3>Check-in rápido</h3><div class="sub">Treinou sem a ficha? Registre aqui em segundos.</div>');
+  let top = '', bottom = '';
+  try { top = z16GymCardHTML(p); bottom = z16EvoTrainHTML(p); } catch (e) { console.warn('z16', e); }
+  return top + h + bottom;
+};
+const __z16Wk = weekReportHTML;
+weekReportHTML = function (p, wk) {
+  const h = __z16Wk.apply(this, arguments);
+  try { const a = z16WeekGym(p, wk); if (!a.n) return h; return h + `<div class="rep-h" style="margin-top:22px"><span class="ri" style="background:var(--orange-soft)">🏋️</span>Academia</div><div class="zg-wgrid rep"><div><b>${a.n}</b><small>${plural(a.n, 'ficha feita', 'fichas feitas')}</small></div><div><b>${fmtInt(a.vol)}</b><small>kg levantados</small></div><div><b>${a.prs}</b><small>${plural(a.prs, 'recorde', 'recordes')}</small></div><div><b>${a.ups}</b><small>subiu carga</small></div></div>`; } catch (e) { return h; }
+};
+
+/* ---------- Minha Evolução (fotos antes e depois) ---------- */
+const Z16_POSE = [['frente', 'Frente'], ['lado', 'Lado'], ['costas', 'Costas']];
+function zEvo(p) { p.evo = p.evo || []; return p.evo; }
+async function z16Migrate() {
+  if (!S) return; let ch = false;
+  for (const p of S.players.filter(q => !q.remote)) {
+    if (!(p.photos || []).length) continue;
+    for (const ph of p.photos) { if (!ph || !ph.src) continue; const id = 'm' + z16Id(); await z16Put('evo|' + id, ph.src); zEvo(p).push({ id, date: ph.date, pose: 'frente' }); }
+    p.photos = []; ch = true;
+  }
+  if (ch) { save(); if ($('#main')) renderMain(true); }
+}
+setTimeout(() => { z16Migrate().catch(() => { }); }, 1500);
+const z16Sorted = p => zEvo(p).slice().sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : (a.at || 0) - (b.at || 0));
+function z16MonthDone(p, mk) { return zEvo(p).some(e => e.date.slice(0, 7) === mk); }
+photosCardHTML = function (p) {
+  const L = z16Sorted(p); const a = L[0], b = L.length > 1 ? L[L.length - 1] : null; const mk = monthKey(T());
+  const fig = (x, lbl) => x ? `<figure data-idbwrap><img data-idb="evo|${x.id}" alt="Foto de ${fmtDay(x.date)}"><figcaption>${lbl} ${fmtDay(x.date)}</figcaption></figure>` : `<figure><div class="muted small" style="padding:10px;text-align:center;font-weight:800">${lbl === 'Antes' ? 'Sua foto de largada' : 'A próxima foto do mês'}</div></figure>`;
+  return `<div class="card zevo-card"><div class="card-head"><h3>📷 Minha Evolução</h3><span class="pill">🔒 só você vê</span></div>
+    <div class="photo-pair">${fig(a, 'Antes')}${fig(b, 'Agora')}</div>
+    <div class="zevo-month ${z16MonthDone(p, mk) ? 'ok' : ''}">${z16MonthDone(p, mk) ? `✅ Foto de ${monthName(mk)} feita` : `📸 Falta a foto de ${monthName(mk)} · +20 XP`}</div>
+    <div class="grid2" style="margin-top:10px"><button class="btn sm" data-act="z16-evo">${L.length ? 'Abrir · ' + L.length + ' ' + plural(L.length, 'foto', 'fotos') : 'Abrir'}</button><button class="btn sec sm" data-act="z16-evo-add">+ Foto</button></div>
+    <div class="hint">Uma foto por mês, no mesmo lugar e com a mesma luz, deixa a comparação mais justa. As fotos ficam só neste aparelho.</div></div>`;
+};
+function z16EvoOpen() {
+  closeSheet(true); const old = $('#zevo'); if (old) old.remove();
+  const el = document.createElement('div'); el.className = 'ck zevo'; el.id = 'zevo'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
+  document.body.appendChild(el); document.body.style.overflow = 'hidden'; z16EvoDraw();
+}
+function z16EvoClose() { const el = $('#zevo'); if (el) el.remove(); if (!$('#overlay')) document.body.style.overflow = ''; if ($('#main')) renderMain(true); }
+function z16EvoPair(p) {
+  const pose = session.z16pose || 'all'; const L = z16Sorted(p).filter(e => pose === 'all' || e.pose === pose);
+  let A = L.find(e => e.id === session.z16A) || L[0]; let B = L.find(e => e.id === session.z16B) || L[L.length - 1];
+  if (A && B && A.date > B.date) [A, B] = [B, A]; return { L, A, B: L.length > 1 ? B : null };
+}
+function z16EvoDraw() {
+  const el = $('#zevo'); const p = me(); if (!el || !p) return; const { L, A, B } = z16EvoPair(p); const all = z16Sorted(p).slice().reverse(); const mk = monthKey(T());
+  const days = A && B ? diffDays(A.date, B.date) : 0; const wa = A ? latestW(p, A.date) : 0, wb = B ? latestW(p, B.date) : 0;
+  const cmp = A && B ? `<div class="zevo-cmp" id="zevoCmp" style="--x:50%"><img data-idb="evo|${A.id}" alt="Antes"><div class="zevo-top"><img data-idb="evo|${B.id}" alt="Depois"></div><div class="zevo-line"><i>⟷</i></div>
+      <span class="zevo-tag l">Antes · ${fmtDay(A.date)}</span><span class="zevo-tag r">Depois · ${fmtDay(B.date)}</span><input type="range" min="0" max="100" value="50" id="zevoRange" aria-label="Comparar antes e depois"></div>
+      <div class="zevo-stats"><div><b>${days}</b><small>dias entre as fotos</small></div>${wa && wb ? `<div><b>${wb < wa ? '−' : '+'}${fmt1(Math.abs(wb - wa))} kg</b><small>${fmt1(Math.abs((wb - wa) / wa * 100))}% ${wb < wa ? 'a menos' : 'a mais'}</small></div>` : ''}</div>
+      <button class="btn gold" data-act="z16-evo-card" style="margin-top:12px">✨ Gerar cartão Antes e Depois</button>`
+    : `<div class="zevo-empty"><div style="font-size:54px">📸</div><b>${L.length ? 'Falta só mais uma foto para comparar' : 'Comece com a sua foto de largada'}</b><span>Tire uma foto por mês, sempre no mesmo lugar e na mesma pose. Aqui você vai ver o antes e o depois lado a lado.</span></div>`;
+  el.innerHTML = `<div class="ck-in"><div class="ck-head"><button class="ck-x" data-act="z16-evo-x" aria-label="Fechar">${IC.x}</button><div class="grow" style="font-weight:900;font-size:19px">📷 Minha Evolução</div><span class="pill">🔒 só você vê</span></div>
+    <div class="ck-body">
+      <div class="zevo-month ${z16MonthDone(p, mk) ? 'ok' : ''}">${z16MonthDone(p, mk) ? `✅ Foto de ${monthName(mk)} feita. Recompensa garantida!` : `📸 Foto de ${monthName(mk)}: tire hoje e ganhe +20 XP e 10 moedas`}</div>
+      ${all.length > 1 ? `<div class="chips" style="margin:12px 0 4px">${[['all', 'Todas']].concat(Z16_POSE).map(([k, l]) => `<button class="chip ${(session.z16pose || 'all') === k ? 'on' : ''}" data-act="z16-pose" data-v="${k}">${l}</button>`).join('')}</div>` : ''}
+      ${cmp}
+      <div class="h2">Suas fotos</div><div class="zevo-grid">${all.map(e => `<button class="zevo-th ${A && e.id === A.id ? 'a' : ''} ${B && e.id === B.id ? 'b' : ''}" data-act="z16-evo-pick" data-id="${e.id}" data-idbwrap><img data-idb="evo|${e.id}" alt=""><span>${fmtDay(e.date)}${e.pose ? ' · ' + (Z16_POSE.find(x => x[0] === e.pose) || ['', ''])[1] : ''}</span>${A && e.id === A.id ? '<em>Antes</em>' : B && e.id === B.id ? '<em>Depois</em>' : ''}</button>`).join('')}<button class="zevo-add" data-act="z16-evo-add"><span>＋</span>Nova foto</button></div>
+      <div class="hint" style="margin-top:12px">Toque numa foto para escolher como Antes ou Depois, ou para apagar. As fotos ficam só neste aparelho e nunca vão para a sala.</div>
+    </div></div>`;
+  const rg = $('#zevoRange'); if (rg) rg.addEventListener('input', () => { const c = $('#zevoCmp'); if (c) c.style.setProperty('--x', rg.value + '%'); });
+}
+function z16EvoAdd() {
+  closeSheet(true); session.z16np = session.z16np || 'frente';
+  openSheet(`<h2>Nova foto de evolução</h2><div class="sub">Dica: mesmo lugar, mesma luz, mesma pose. Assim a comparação fica justa.</div>
+    <div class="field"><span>Qual pose?</span><div class="chips">${Z16_POSE.map(([k, l]) => `<button class="chip ${session.z16np === k ? 'on' : ''}" data-act="z16-np" data-v="${k}">${l}</button>`).join('')}</div></div>
+    <div style="margin-top:14px"><button class="btn" data-act="z16-evo-shoot">📷 Tirar ou escolher foto</button></div><div class="hint">A foto fica só neste aparelho. Ninguém da sala vê.</div>`, {});
+}
+async function z16EvoSaved(src) {
+  const p = me(); const id = z16Id(); await z16Put('evo|' + id, src);
+  zEvo(p).push({ id, date: T(), pose: session.z16np || 'frente', at: Date.now() }); session.z16B = id;
+  const mk = monthKey(T()); let msg = 'Foto salva na sua evolução 📸';
+  if (z16Award(p, 'evo|' + mk, 20, '', true)) { msg = `Foto de ${monthName(mk)} feita! +20 XP e 10 moedas`; confetti(90); sfx('level'); }
+  const m1 = monthKey(addDays(mk + '-01', -1)), m2 = monthKey(addDays(m1 + '-01', -1)); if (z16MonthDone(p, m1) && z16MonthDone(p, m2)) z16Award(p, 'evo|tri', 30);
+  closeSheet(true); save(); toast(msg, 'violet', '📸'); if ($('#zevo')) z16EvoDraw(); else z16EvoOpen();
+}
+async function z16EvoCard() {
+  const p = me(); const { A, B } = z16EvoPair(p); if (!A || !B) return;
+  const [sa, sb] = await Promise.all([z16Get('evo|' + A.id), z16Get('evo|' + B.id)]); if (!sa || !sb) return toast('Não achei as fotos neste aparelho.', 'red', '📸');
+  const load = s => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = s; });
+  const [ia, ib] = await Promise.all([load(sa), load(sb)]);
+  const c = document.createElement('canvas'); c.width = 1080; c.height = 1350; const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 1350); grd.addColorStop(0, '#0E1438'); grd.addColorStop(1, '#2B2F86'); g.fillStyle = grd; g.fillRect(0, 0, 1080, 1350);
+  const cover = (im, x, y, w, h) => { const r = Math.max(w / im.width, h / im.height); const sw = w / r, sh = h / r; g.save(); g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, 36) : g.rect(x, y, w, h); g.clip(); g.drawImage(im, (im.width - sw) / 2, (im.height - sh) / 2, sw, sh, x, y, w, h); g.restore(); };
+  cover(ia, 50, 230, 475, 860); cover(ib, 555, 230, 475, 860);
+  g.fillStyle = '#FFC800'; g.font = '900 64px Nunito, sans-serif'; g.textAlign = 'center'; g.fillText('MINHA EVOLUÇÃO', 540, 120);
+  g.fillStyle = 'rgba(255,255,255,.85)'; g.font = '700 34px Nunito, sans-serif'; g.fillText(`${diffDays(A.date, B.date)} dias de constância`, 540, 180);
+  const tag = (txt, x) => { g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.roundRect ? g.roundRect(x - 150, 1030, 300, 46, 23) : g.rect(x - 150, 1030, 300, 46); g.fill(); g.fillStyle = '#fff'; g.font = '800 26px Nunito, sans-serif'; g.fillText(txt, x, 1062); };
+  tag('Antes · ' + fmtDay(A.date), 287); tag('Depois · ' + fmtDay(B.date), 792);
+  const pa = startW(p), wb = latestW(p, B.date), wa = latestW(p, A.date);
+  g.fillStyle = '#fff'; g.font = '900 54px Nunito, sans-serif'; g.fillText(wa && wb && wb !== wa ? `${wb < wa ? '−' : '+'}${fmt1(Math.abs((wb - wa) / wa * 100))}% de peso` : 'Um passo de cada vez', 540, 1180);
+  g.fillStyle = '#58CC02'; g.font = '900 40px Nunito, sans-serif'; g.fillText('⭐ ZENIT · Chegue ao topo', 540, 1270);
+  const url = c.toDataURL('image/jpeg', .9);
+  openSheet(`<h2>Seu cartão Antes e Depois</h2><img src="${url}" alt="Cartão antes e depois" style="width:100%;border-radius:18px;margin-top:10px">
+    <div class="hint">O cartão mostra só a %, nunca os quilos.</div>
+    <div style="margin-top:12px"><button class="btn" data-act="z16-card-share">Compartilhar ou salvar</button></div>`, {});
+  session.z16card = url;
+}
+
+/* ---------- Ações ---------- */
+Object.assign(ACT, {
+  'z16-edit': () => { session.z16f = session.z16f || 'A'; z16Editor(); },
+  'z16-tab': el => { z16SaveFName(); session.z16f = el.dataset.f; const e = $('#z16Ed'); if (e) e.innerHTML = z16EditorHTML(); },
+  'z16-edit-done': () => { z16SaveFName(); save(); closeSheet(true); renderMain(true); toast('Fichas salvas!', 'green', '🏋️'); },
+  'z16-edit-back': () => { session.z16e = null; const e = $('#z16Ed'); if (e) e.innerHTML = z16EditorHTML(); },
+  'z16-mv': el => { z16SaveFName(); const f = zGym(me()).fichas[session.z16f || 'A']; const i = f.ex.findIndex(x => x.id === el.dataset.id); const j = i + (+el.dataset.d); if (i < 0 || j < 0 || j >= f.ex.length) return; [f.ex[i], f.ex[j]] = [f.ex[j], f.ex[i]]; save(); const e = $('#z16Ed'); if (e) e.innerHTML = z16EditorHTML(); },
+  'z16-exedit': el => { z16SaveFName(); const f = zGym(me()).fichas[session.z16f || 'A']; const ex = f.ex.find(x => x.id === el.dataset.id); session.z16e = ex ? Object.assign({}, ex) : { id: z16Id(), isNew: true, nome: '', series: 3, reps: '12', carga: 0, desc: 60, obs: '', foto: false }; z16ExForm(); },
+  'z16-ef': el => { z16ExKeep(); const e = session.z16e; if (el.dataset.k === 'series') e.series = clamp((+e.series || 3) + (+el.dataset.d), 1, 10); else e.desc = +el.dataset.v; z16ExForm(); },
+  'z16-ef-foto': () => { z16ExKeep(); z16Pick(src => { session.z16e.fotoSrc = src; z16ExForm(); }, 700); },
+  'z16-ef-nofoto': () => { z16ExKeep(); const e = session.z16e; e.fotoSrc = null; e.foto = false; e.dropFoto = true; z16ExForm(); },
+  'z16-ef-save': async () => {
+    z16ExKeep(); const e = session.z16e; if (!e) return; e.nome = String(e.nome || '').trim(); if (!e.nome) return toast('Digite o nome do exercício.', 'red', '🏋️');
+    const f = zGym(me()).fichas[session.z16f || 'A'];
+    if (e.fotoSrc) { await z16Put('maq|' + e.id, e.fotoSrc); e.foto = true; } else if (e.dropFoto) { await z16Del('maq|' + e.id); e.foto = false; }
+    const clean = { id: e.id, nome: e.nome.slice(0, 40), series: +e.series || 3, reps: String(e.reps || '12').slice(0, 10), carga: +e.carga || 0, desc: +e.desc || 60, obs: String(e.obs || '').slice(0, 60), foto: !!e.foto };
+    const i = f.ex.findIndex(x => x.id === e.id); if (i > -1) f.ex[i] = clean; else f.ex.push(clean);
+    session.z16e = null; save(); const el = $('#z16Ed'); if (el) el.innerHTML = z16EditorHTML(); toast('Exercício salvo!', 'green', '✅');
+  },
+  'z16-ef-del': () => { const e = session.z16e; const f = zGym(me()).fichas[session.z16f || 'A']; f.ex = f.ex.filter(x => x.id !== e.id); z16Del('maq|' + e.id); session.z16e = null; save(); const el = $('#z16Ed'); if (el) el.innerHTML = z16EditorHTML(); },
+  'z16-start': el => { const p = me(); if (p.gymLive) return z16OpenLive(); z16Start(el.dataset.f); },
+  'z16-open': () => z16OpenLive(),
+  'z16-discard': () => { openConfirm('Descartar o treino aberto? O que foi marcado nele não será salvo.', 'Descartar', () => { const p = me(); p.gymLive = null; z16RestNotify(null); save(); renderMain(true); }); },
+  'z16-min': () => { save(); z16CloseLive(); },
+  'z16-set': el => {
+    const L = z16Live(); if (!L) return; const id = el.dataset.id, i = +el.dataset.i; const d = L.done[id]; if (!d) return;
+    d[i] = !d[i]; L.sets[id] = L.sets[id] || [];
+    if (d[i]) {
+      L.sets[id][i] = { r: L.reps[id] || 0, kg: L.kg[id] || 0 };
+      const ex = zGym(me()).fichas[L.ficha].ex.find(x => x.id === id); const more = Object.values(L.done).some(v => v.some(x => !x));
+      if (ex && ex.desc && more) { L.rest = { until: Date.now() + ex.desc * 1000, len: ex.desc * 1000, id }; z16RestNotify(L.rest.until); }
+      try { navigator.vibrate && navigator.vibrate(30); } catch (e) { } sfx('ding');
+      if (!more) { L.rest = null; z16RestNotify(null); setTimeout(() => toast('Todas as séries feitas! Toque em Finalizar treino 🎉', 'gold', '🏁'), 300); }
+    } else L.sets[id][i] = null;
+    save(); z16DrawLive();
+  },
+  'z16-kg': el => { const L = z16Live(); if (!L) return; const id = el.dataset.id; const v = L.kg[id] || 0; const st = v < 10 ? 1 : 2.5; L.kg[id] = Math.max(0, Math.round((v + st * (+el.dataset.d)) * 10) / 10); save(); z16DrawLive(); },
+  'z16-rp': el => { const L = z16Live(); if (!L) return; const id = el.dataset.id; L.reps[id] = clamp((L.reps[id] || 0) + (+el.dataset.d), 1, 100); save(); z16DrawLive(); },
+  'z16-sug': el => { const L = z16Live(); if (!L) return; L.kg[el.dataset.id] = +el.dataset.v; save(); z16DrawLive(); toast('Carga ajustada. Bora! 💪', 'green', '💡'); },
+  'z16-rest': el => { const L = z16Live(); if (!L || !L.rest) return; if (+el.dataset.d) { L.rest.until += 15000; L.rest.len += 15000; z16RestNotify(L.rest.until); } else { L.rest = null; z16RestNotify(null); } const r = $('#zgRest'); if (r) r.innerHTML = ''; z16TickFn(); },
+  'z16-exfoto': el => { const id = el.dataset.id, fk = el.dataset.f; z16Pick(async src => { await z16Put('maq|' + id, src); const ex = zGym(me()).fichas[fk].ex.find(x => x.id === id); if (ex) ex.foto = true; save(); z16DrawLive(); toast('Foto do aparelho salva!', 'green', '📷'); }, 700); },
+  'z16-finish': () => z16Finish(),
+  'z16-feel': el => { session.z16feel = el.dataset.v; $$('#overlay [data-act="z16-feel"]').forEach(b => b.classList.toggle('on', b.dataset.v === el.dataset.v)); },
+  'z16-save': () => z16Save(),
+  'z16-evo': () => z16EvoOpen(),
+  'z16-evo-x': () => z16EvoClose(),
+  'z16-evo-add': () => z16EvoAdd(),
+  'z16-np': el => { session.z16np = el.dataset.v; $$('#overlay [data-act="z16-np"]').forEach(b => b.classList.toggle('on', b.dataset.v === el.dataset.v)); },
+  'z16-evo-shoot': () => z16Pick(src => z16EvoSaved(src), 900),
+  'z16-pose': el => { session.z16pose = el.dataset.v; session.z16A = session.z16B = null; z16EvoDraw(); },
+  'z16-evo-pick': el => {
+    const id = el.dataset.id; const e = zEvo(me()).find(x => x.id === id); if (!e) return;
+    openSheet(`<h2>Foto de ${fmtDay(e.date)}</h2><div class="zevo-big" data-idbwrap><img data-idb="evo|${id}" alt=""></div>
+      <div class="grid2" style="margin-top:12px"><button class="btn sm sec" data-act="z16-evo-as" data-id="${id}" data-w="A">Usar como Antes</button><button class="btn sm sec" data-act="z16-evo-as" data-id="${id}" data-w="B">Usar como Depois</button></div>
+      <div style="margin-top:8px"><button class="btn gray" data-act="z16-evo-del" data-id="${id}">Apagar foto</button></div>`, {});
+  },
+  'z16-evo-as': el => { if (el.dataset.w === 'A') session.z16A = el.dataset.id; else session.z16B = el.dataset.id; session.z16pose = 'all'; closeSheet(true); z16EvoDraw(); },
+  'z16-evo-del': el => { const id = el.dataset.id; closeSheet(true); openConfirm('Apagar esta foto? Não dá para desfazer.', 'Apagar', () => { const p = me(); p.evo = zEvo(p).filter(x => x.id !== id); z16Del('evo|' + id); save(); z16EvoDraw(); }); },
+  'z16-evo-card': () => z16EvoCard(),
+  'z16-card-share': async () => {
+    const url = session.z16card; if (!url) return;
+    try { const blob = await (await fetch(url)).blob(); const file = new File([blob], 'zenit-antes-depois.jpg', { type: 'image/jpeg' }); if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Minha evolução no Zenit' }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = url; a.download = 'zenit-antes-depois.jpg'; document.body.appendChild(a); a.click(); a.remove(); toast('Cartão salvo!', 'green', '✨');
+  }
+});
+document.addEventListener('change', e => {
+  const t = e.target; if (!t || !t.classList || !t.classList.contains('zg-in')) return; const L = z16Live(); if (!L) return;
+  const v = parseFloat(String(t.value).replace(',', '.')); const id = t.dataset.id;
+  if (t.dataset.k === 'kg' && v >= 0 && v < 1000) L.kg[id] = Math.round(v * 10) / 10; if (t.dataset.k === 'reps' && v >= 1 && v <= 100) L.reps[id] = Math.round(v);
+  save(); z16DrawLive();
+});
+// A sala não recebe fichas, histórico nem fotos
+const __z16Pub = zfbPublicJSON;
+zfbPublicJSON = function (p) { const q = Object.assign({}, p); delete q.gym; delete q.gymLive; delete q.evo; return __z16Pub.call(this, q); };
+// Lembrete da foto do mês no Início (primeira semana do mês) e no sininho
+const __z16Ban = bannersHTML;
+bannersHTML = function (p, t) {
+  let h = '';
+  try { if (p.gymLive && p.gymLive.date === t) { const L = p.gymLive; h += `<button class="zg-live home" data-act="z16-open"><span class="zg-pulse"></span><span class="grow"><small>Treino em andamento</small><b>Treino ${L.ficha}</b><span>${Math.floor((Date.now() - L.start) / 60000)} min · toque para continuar</span></span><em>Abrir</em></button>`; }
+    const mk = monthKey(t); if (+t.slice(8) <= 7 && !z16MonthDone(p, mk) && !(session.z16skip === mk)) h += `<button class="zevo-ban" data-act="z16-evo-add"><span>📸</span><span class="grow"><b>Foto de ${monthName(mk)}</b><small>Registre sua evolução e ganhe +20 XP</small></span><em>Tirar</em></button>`; } catch (e) { }
+  return h + __z16Ban.apply(this, arguments);
+};
+if (typeof z15Items === 'function') {
+  const __z16Items = z15Items;
+  z15Items = function () { const out = __z16Items.apply(this, arguments); try { const p = me(), t = T(); const mk = monthKey(t); if (p && !z16MonthDone(p, mk) && +t.slice(8) <= 10) out.agora.push({ k: 'evo|' + mk, ic: '📸', t: `Foto de ${monthName(mk)}`, s: 'Registre sua evolução · +20 XP', go: 'z16-evo-add' }); if (p && p.gymLive) out.agora.unshift({ k: 'gym|' + p.gymLive.start, ic: '🏋️', t: `Treino ${p.gymLive.ficha} em andamento`, s: 'Toque para continuar', go: 'z16-open' }); } catch (e) { } return out; };
+}
+// Voltar para o app com treino aberto: retoma o cronômetro
+document.addEventListener('visibilitychange', () => { if (!document.hidden && $('#zgym')) z16DrawLive(); });
+ZNEWS.splice(0, ZNEWS.length,
+  ['🏋️', 'Treino da academia', 'Em Registrar › Treino: monte o Treino A, B e C e treine com checklist de séries, cronômetro de descanso, controle de carga e foto do aparelho.'],
+  ['📈', 'Evolução dos treinos', 'Volume da semana, recordes, gráfico de carga por exercício, sugestão de subir o peso e medalhas de treino.'],
+  ['📷', 'Minha Evolução', 'No Perfil: fotos do antes e depois com comparador deslizante, lembrete da foto do mês (+20 XP) e um cartão para compartilhar.']);
+</script>
+<style>
+.zg-card .zg-today{background:var(--green-soft);border-radius:14px;padding:10px 12px;font-size:14px;font-weight:700;margin:6px 0 10px}
+.zg-fichas{display:grid;gap:8px;margin-top:6px}
+.zg-fb{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:2px solid var(--line);border-bottom-width:4px;border-radius:18px;background:var(--card);padding:12px 14px;font:inherit;color:inherit}
+.zg-fb > b{width:44px;height:44px;border-radius:14px;background:var(--orange-soft);color:#E07F00;display:grid;place-items:center;font-size:22px;font-weight:900;flex:none}
+.zg-fb strong{display:block;font-size:16px;font-weight:900}.zg-fb small{display:block;font-size:12.5px;color:var(--ink-2);font-weight:700}
+.zg-fb em{font-style:normal;background:#58CC02;color:#fff;font-weight:900;font-size:13px;border-radius:12px;padding:8px 12px;box-shadow:0 3px 0 #46A302}
+.zg-fb.today{border-color:#FF9600;background:linear-gradient(135deg,var(--card),var(--orange-soft))}
+.zg-live{display:flex;gap:12px;align-items:center;width:100%;text-align:left;border:0;border-radius:20px;padding:14px 16px;margin:0 0 14px;font:inherit;color:#fff;background:linear-gradient(135deg,#FF9600,#FF4B4B);box-shadow:0 4px 0 #C93A1F}
+.zg-live small{display:block;font-size:11.5px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;opacity:.85}.zg-live b{display:block;font-size:17px;font-weight:900}.zg-live .grow>span{display:block;font-size:13px;opacity:.9}
+.zg-live em{font-style:normal;background:rgba(255,255,255,.22);border-radius:12px;padding:8px 12px;font-weight:900;font-size:13px}
+.zg-pulse{width:14px;height:14px;border-radius:50%;background:#fff;flex:none;box-shadow:0 0 0 0 rgba(255,255,255,.7);animation:zgP 1.4s infinite}
+@keyframes zgP{70%{box-shadow:0 0 0 12px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
+.ck.zgym,.ck.zevo{z-index:60}
+.zgym .zg-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}.zgym .zg-h b{font-size:17px;font-weight:900}.zgym .zg-h span{font-weight:900;color:var(--orange,#FF9600);font-variant-numeric:tabular-nums}
+.zgym .ck-bar i{display:block;height:100%;background:#58CC02;border-radius:99px;transition:width .3s}
+.zg-ex{border:2px solid var(--line);border-radius:20px;padding:12px;margin:0 0 12px;background:var(--card)}
+.zg-ex.done{border-color:var(--green-line);background:linear-gradient(135deg,var(--card),var(--green-soft))}
+.zg-top{display:flex;gap:12px;align-items:flex-start}
+.zg-ph{width:72px;height:72px;flex:none;border-radius:16px;border:2px dashed var(--line);background:var(--surface-2);display:grid;place-items:center;overflow:hidden;position:relative;padding:0}
+.zg-ph img{width:100%;height:100%;object-fit:cover}.zg-ph span{font-size:30px}.zg-ph small{position:absolute;right:3px;bottom:2px;font-size:13px}
+.zg-top b{display:block;font-size:16.5px;font-weight:900;line-height:1.2}.zg-top .grow>span{display:block;font-size:13px;color:var(--ink-2);margin-top:2px}
+.zg-top .zg-last{color:var(--blue);font-weight:800}
+.zg-pr{display:inline-block!important;margin-top:4px;font-size:12px!important;font-weight:900;color:var(--gold-text)!important;background:var(--gold-soft);border-radius:99px;padding:2px 8px}
+.zg-pr.on{background:#FFC800;color:#5A3A00!important;animation:pop .4s}
+.zg-obs{font-style:italic}
+.zg-sug{display:block;margin-top:6px;border:0;background:var(--blue-soft);color:var(--blue);font:inherit;font-weight:900;font-size:13px;border-radius:12px;padding:6px 10px}
+.zg-ctl{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.zg-step{display:flex;align-items:center;border:2px solid var(--line);border-radius:14px;overflow:hidden}
+.zg-step button{width:38px;height:42px;border:0;background:var(--surface-2);font-size:22px;font-weight:900;color:var(--ink)}
+.zg-step label{flex:1;display:flex;align-items:baseline;justify-content:center;gap:3px}
+.zg-step input{width:56px;border:0;background:none;text-align:right;font:inherit;font-weight:900;font-size:18px;color:var(--ink);padding:0}
+.zg-step label span{font-size:12px;font-weight:800;color:var(--ink-3)}
+.zg-sets{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.zg-sets button{flex:1;min-width:64px;height:46px;border-radius:14px;border:2px solid var(--line);border-bottom-width:4px;background:var(--card);font:inherit;font-weight:900;font-size:14px;color:var(--ink-2)}
+.zg-sets button.on{background:#58CC02;border-color:#46A302;color:#fff;font-size:20px}
+.zg-rest{display:flex;align-items:center;gap:12px;background:var(--blue-soft);border-radius:16px;padding:10px 12px;margin-bottom:10px}
+.zg-rest svg{width:44px;height:44px;transform:rotate(-90deg)}.zg-rest circle{fill:none;stroke-width:5}.zg-rest .bg{stroke:var(--line)}.zg-rest .fg{stroke:#1CB0F6;stroke-dasharray:119.4;stroke-linecap:round}
+.zg-rest small{display:block;font-size:11.5px;font-weight:900;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3)}.zg-rest b{font-size:24px;font-weight:900;font-variant-numeric:tabular-nums}
+.zg-rest button{border:0;background:var(--card);border-radius:12px;padding:8px 10px;font:inherit;font-weight:900;font-size:13px;color:var(--blue)}
+.zg-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px;text-align:center}
+.zg-sum div{background:var(--surface-2);border-radius:14px;padding:10px 4px}.zg-sum b{display:block;font-size:17px;font-weight:900}.zg-sum small{font-size:11.5px;color:var(--ink-2);font-weight:800}
+.zg-tabs{grid-template-columns:repeat(3,1fr)}.zg-tabs small{margin-left:4px;font-size:11px;opacity:.7}
+.zg-list{display:grid;margin-top:6px}
+.zg-row{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}.zg-row:first-child{border-top:0}
+.zg-row > button.grow{background:none;border:0;padding:0;text-align:left;font:inherit;color:inherit}
+.zg-row b{display:block;font-size:15px;font-weight:900}.zg-row .grow span{display:block;font-size:12.5px;color:var(--ink-2)}
+.zg-th{width:46px;height:46px;flex:none;border-radius:13px;background:var(--surface-2);display:grid;place-items:center;font-size:22px;overflow:hidden}
+.zg-th img{width:100%;height:100%;object-fit:cover}.zg-th.big{width:72px;height:72px;font-size:30px;border-radius:16px}
+.zg-mv{display:flex;flex-direction:column;gap:2px}.zg-mv button{border:0;background:var(--surface-2);border-radius:8px;width:30px;height:22px;font-size:10px;color:var(--ink-2)}.zg-mv button:disabled{opacity:.3}
+.zg-wgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;text-align:center}
+.zg-wgrid div{background:var(--surface-2);border-radius:14px;padding:10px 4px}.zg-wgrid b{display:block;font-size:20px;font-weight:900}.zg-wgrid small{display:block;font-size:11px;color:var(--ink-2);font-weight:800;line-height:1.2}
+.zg-wgrid em,.zg-er em{font-style:normal;font-size:11.5px;font-weight:900}.zg-wgrid em.up,.zg-er em.up{color:var(--green-d,#58A700)}.zg-wgrid em.down{color:#E0402C}.zg-wgrid em.prev{color:var(--ink-3);font-weight:800}
+.zg-wgrid.rep{margin-top:0}
+.zg-evo{display:grid}.zg-er{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}.zg-er:first-child{border-top:0}
+.zg-er b{display:block;font-size:15px;font-weight:900}.zg-er span{font-size:13px;color:var(--ink-2)}
+.zg-meds{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:8px}
+.zg-med{border:2px dashed var(--line);border-radius:16px;padding:10px;text-align:center;opacity:.7}.zg-med.on{border-style:solid;border-color:var(--gold);background:var(--gold-soft);opacity:1}
+.zg-med span{font-size:28px;display:block}.zg-med b{display:block;font-size:14px;font-weight:900;margin-top:2px}.zg-med small{display:block;font-size:11.5px;color:var(--ink-2);line-height:1.25}
+.zevo-month{border-radius:14px;padding:10px 12px;font-weight:800;font-size:14px;background:var(--gold-soft);color:var(--gold-text);margin-top:10px}
+.zevo-month.ok{background:var(--green-soft);color:var(--green-d,#58A700)}
+.zevo-cmp{position:relative;margin-top:12px;border-radius:22px;overflow:hidden;aspect-ratio:3/4;background:#000;--x:50%}
+.zevo-cmp img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.zevo-top{position:absolute;inset:0;clip-path:inset(0 0 0 var(--x))}
+.zevo-line{position:absolute;top:0;bottom:0;left:var(--x);width:4px;margin-left:-2px;background:#fff;box-shadow:0 0 12px rgba(0,0,0,.4)}
+.zevo-line i{position:absolute;top:50%;left:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:#fff;color:#14161C;display:grid;place-items:center;font-style:normal;font-weight:900;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.zevo-tag{position:absolute;bottom:12px;background:rgba(0,0,0,.6);color:#fff;font-weight:900;font-size:12.5px;border-radius:99px;padding:5px 10px}.zevo-tag.l{left:12px}.zevo-tag.r{right:12px}
+.zevo-cmp input[type=range]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:ew-resize;margin:0}
+.zevo-stats{display:flex;gap:8px;margin-top:10px}.zevo-stats div{flex:1;background:var(--surface-2);border-radius:14px;padding:10px;text-align:center}.zevo-stats b{display:block;font-size:20px;font-weight:900}.zevo-stats small{font-size:12px;color:var(--ink-2);font-weight:800}
+.zevo-empty{text-align:center;padding:24px 10px;border:2px dashed var(--line);border-radius:22px;margin-top:12px}.zevo-empty b{display:block;font-size:17px;font-weight:900;margin-top:6px}.zevo-empty span{display:block;font-size:14px;color:var(--ink-2);margin-top:6px}
+.zevo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}
+.zevo-th{position:relative;aspect-ratio:3/4;border-radius:14px;overflow:hidden;border:3px solid transparent;padding:0;background:var(--surface-2)}
+.zevo-th img{width:100%;height:100%;object-fit:cover}.zevo-th span{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,.65));color:#fff;font-size:11px;font-weight:900;padding:14px 4px 4px}
+.zevo-th em{position:absolute;top:5px;left:5px;font-style:normal;font-size:10.5px;font-weight:900;color:#fff;background:#1CB0F6;border-radius:99px;padding:2px 7px}
+.zevo-th.a{border-color:#1CB0F6}.zevo-th.b{border-color:#58CC02}.zevo-th.b em{background:#58CC02}
+.zevo-add{aspect-ratio:3/4;border-radius:14px;border:2px dashed var(--line);background:none;font:inherit;font-weight:900;font-size:13px;color:var(--ink-2);display:grid;place-content:center;gap:4px}.zevo-add span{font-size:30px;color:var(--blue)}
+.zevo-big{border-radius:18px;overflow:hidden;margin-top:10px;aspect-ratio:3/4;background:var(--surface-2)}.zevo-big img{width:100%;height:100%;object-fit:cover}
+.zevo-ban{display:flex;gap:12px;align-items:center;width:100%;text-align:left;border:2px solid var(--gold);border-radius:20px;background:linear-gradient(135deg,var(--card),var(--gold-soft));padding:12px 14px;margin:0 0 14px;font:inherit;color:inherit;box-shadow:0 4px 0 var(--gold-d,#E5A500)}
+.zevo-ban > span:first-child{font-size:30px}.zevo-ban b{display:block;font-size:16px;font-weight:900}.zevo-ban small{display:block;font-size:12.5px;color:var(--ink-2)}
+.zevo-ban em{font-style:normal;background:#FFC800;color:#5A3A00;font-weight:900;font-size:13px;border-radius:12px;padding:8px 12px}
+[data-idbwrap].nophoto img{display:none}
 </style>
 
 </body>
