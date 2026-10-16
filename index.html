@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '3.0';
+const ZV = '3.1';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -4848,14 +4848,16 @@ const ZFB_CONFIG = {
   appId: '1:204859290335:web:57b85076836b2bd439af6a'
 };
 const ZFB_SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
+const ZAC_KEY = (typeof window !== 'undefined' && window.ZAC_TEST) || '';
 const ZFB = { ready: null, m: null, auth: null, db: null, user: null, offRoom: null, offPlayers: null, linked: null, pushT: null, backT: null, lastPush: '', lastBack: '', dirty: false, busy: false, err: '' };
 
 function zfbLoad() {
   if (ZFB.ready) return ZFB.ready;
-  ZFB.ready = Promise.all(['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js'].map(f => import(ZFB_SDK + f)))
-    .then(([a, au, fs]) => {
-      ZFB.m = Object.assign({}, a, au, fs);
+  ZFB.ready = Promise.all(['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js'].concat(ZAC_KEY ? ['firebase-app-check.js'] : []).map(f => import(ZFB_SDK + f)))
+    .then(([a, au, fs, ac]) => {
+      ZFB.m = Object.assign({}, a, au, fs, ac || {});
       const app = a.initializeApp(ZFB_CONFIG);
+      if (ac) try { ZFB.ac = ac.initializeAppCheck(app, { provider: new ac.ReCaptchaEnterpriseProvider(ZAC_KEY), isTokenAutoRefreshEnabled: true }); } catch (e) { ZFB.ac = null; }
       try { ZFB.auth = au.initializeAuth(app, { persistence: [au.indexedDBLocalPersistence, au.browserLocalPersistence] }); } catch (e) { ZFB.auth = au.getAuth(app); }
       try { ZFB.db = fs.initializeFirestore(app, { localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) }); } catch (e) { ZFB.db = fs.getFirestore(app); }
       return new Promise(res => {
@@ -8408,7 +8410,7 @@ async function zaiCall(models, body, o) {
   for (const m of models) {
     if (ZAI.bad[m]) continue;
     let r;
-    try { r = await fetch(ZAI_HOST + ZFB_CONFIG.projectId + '/models/' + m + (o.stream ? ':streamGenerateContent?alt=sse' : ':generateContent'), { method: 'POST', headers: zaiHeaders(), body: JSON.stringify(body), signal: o.signal }); }
+    try { r = await fetch(ZAI_HOST + ZFB_CONFIG.projectId + '/models/' + m + (o.stream ? ':streamGenerateContent?alt=sse' : ':generateContent'), { method: 'POST', headers: typeof zaiHdrs === 'function' ? await zaiHdrs() : zaiHeaders(), body: JSON.stringify(body), signal: o.signal }); }
     catch (e) { if (e && e.name === 'AbortError') throw zaiErr('abort'); throw zaiErr('net'); }
     if (r.ok) {
       const out = o.stream ? await zaiStream(r, o.onText) : zaiPick(await r.json());
@@ -8974,7 +8976,7 @@ Object.assign(ACT, {
     if (m === 'foodtxt') { ZAI.mode = 'food'; ZAI.attach = null; zaiFoot(); const ta = $('#zaiIn'); if (ta) ta.focus(); return; }
     if (!zaiLeft()) return toast('As mensagens de hoje acabaram. Volta amanhã!', 'red', '⏳');
     if (m === 'food') return zaiPickImg(img => zaiFood({ img }), 1024);
-    if (m === 'ficha') return zaiPickImg(img => zaiFicha(img), 1600);
+    if (m === 'ficha') return typeof z21PickFicha === 'function' ? z21PickFicha() : zaiPickImg(img => zaiFicha(img), 1600);
     zaiPickImg(img => { ZAI.attach = img; ZAI.mode = null; zaiFoot(); const ta = $('#zaiIn'); if (ta) ta.focus(); }, 1024);
   },
   'zai-mode-off': () => { ZAI.mode = null; zaiFoot(); },
@@ -10648,6 +10650,514 @@ ZNEWS.splice(0, ZNEWS.length,
 .z20-ck{width:26px;height:26px;border-radius:8px;border:2px solid var(--line);display:grid;place-items:center;font-weight:900;color:#fff;flex:none}
 .z20-si.on{opacity:.55}.z20-si.on b{text-decoration:line-through}.z20-si.on .z20-ck{background:#58CC02;border-color:#58CC02}
 .z20-add{display:flex;gap:8px;margin-top:12px}.z20-add .input{flex:1}.z20-add .btn{margin:0}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 3.1 · Treino no estilo "app de academia", treino de hoje,
+   assistente que monta o treino (fotos ou perguntas), vozes
+   consertadas e App Check. Sai o modo conversa e a lista de compras.
+   ========================================================= */
+const Z21 = { many: null, vErr: '' };
+const Z21_TEC = {
+  '': ['Normal', ''],
+  piramide_dec: ['Pirâmide decrescente', 'Comece com a carga mais alta e vá tirando peso a cada série, mantendo as repetições.'],
+  piramide_cre: ['Pirâmide crescente', 'A cada série, aumente a carga e diminua um pouco as repetições.'],
+  drop: ['Drop-set', 'Na última série, ao chegar na falha, tire uns 20 a 30% do peso e continue sem descansar.'],
+  biset: ['Bi-set', 'Faça este exercício e o próximo em seguida, sem descanso entre eles. Descanse só depois dos dois.'],
+  pico: ['Pico de contração', 'Segure 2 segundos na parte mais difícil do movimento, com o músculo bem contraído.'],
+  ocl: ['Oclusão vascular', 'Movimentos curtos e contínuos, sem relaxar o músculo, com carga leve e muitas repetições.'],
+  restpause: ['Rest-pause', 'Vá até a falha, descanse 10 a 15 segundos e faça mais repetições com a mesma carga.'],
+  cadencia: ['Cadência lenta', 'Desça o peso devagar, contando 3 a 4 segundos, e suba com controle.'],
+  falha: ['Até a falha', 'Faça repetições até não conseguir mais com boa técnica.']
+};
+const z21Tec = k => Z21_TEC[k] ? k : '';
+
+/* ---------- App Check: o "porteiro" que o Google vai exigir ---------- */
+async function zaiHdrs() {
+  const h = zaiHeaders();
+  try {
+    if (typeof ZAC_KEY !== 'undefined' && ZAC_KEY) {
+      if (!ZFB.ready) zfbLoad();
+      await Promise.race([ZFB.ready, new Promise(r => setTimeout(r, 4000))]);
+      if (ZFB.ac && ZFB.m && ZFB.m.getToken) { const t = await Promise.race([ZFB.m.getToken(ZFB.ac, false), new Promise(r => setTimeout(() => r(null), 5000))]); if (t && t.token) h['X-Firebase-AppCheck'] = t.token; }
+    }
+  } catch (e) { }
+  return h;
+}
+
+/* ---------- Vozes naturais: tempo máximo, nova tentativa e o motivo ---------- */
+z20TTS = async function (text, voice) {
+  if (navigator.onLine === false) throw zaiErr('net', 'sem internet');
+  const body = { contents: [{ role: 'user', parts: [{ text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } } };
+  let last = zaiErr('bad', 'sem resposta');
+  for (let tent = 0; tent < 3; tent++) {
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 25000);
+    let r;
+    try { r = await fetch(ZAI_HOST + ZFB_CONFIG.projectId + '/models/' + Z20_TTS[0] + ':generateContent', { method: 'POST', headers: await zaiHdrs(), body: JSON.stringify(body), signal: ctl.signal }); }
+    catch (e) { clearTimeout(to); last = zaiErr(e && e.name === 'AbortError' ? 'tempo' : 'net', e && e.name === 'AbortError' ? 'o Google demorou demais para responder' : 'falha de conexão'); continue; }
+    clearTimeout(to);
+    if (!r.ok) {
+      let msg = ''; try { const j = await r.json(); msg = (j.error && j.error.message) || ''; } catch (e) { }
+      last = zaiErr(r.status === 429 ? 'quota' : r.status === 403 ? 'off' : 'bad', `código ${r.status}${msg ? ': ' + msg.slice(0, 140) : ''}`);
+      if (r.status === 500 || r.status === 503 || r.status === 429) { await new Promise(res => setTimeout(res, 800 * (tent + 1))); continue; }
+      throw last;
+    }
+    let j; try { j = await r.json(); } catch (e) { last = zaiErr('bad', 'resposta inválida'); continue; }
+    const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
+    const a = parts.find(x => x.inlineData && x.inlineData.data);
+    if (!a) { last = zaiErr('empty', 'o Google respondeu sem áudio'); continue; }
+    const rate = +(((a.inlineData.mimeType || '').match(/rate=(\d+)/) || [])[1] || 24000);
+    return { b64: a.inlineData.data, rate };
+  }
+  throw last;
+};
+function z21Wav(b64, rate) {
+  const bin = atob(b64); const n = bin.length; const ab = new ArrayBuffer(44 + n), v = new DataView(ab); const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n, true);
+  const u8 = new Uint8Array(ab, 44); for (let i = 0; i < n; i++) u8[i] = bin.charCodeAt(i);
+  return new Blob([ab], { type: 'audio/wav' });
+}
+// Toca do jeito que o aparelho deixar e nunca fica travado nos três pontinhos
+async function z21PlayAudio(au) {
+  const dur = (atob(au.b64).length / 2) / au.rate * 1000;
+  const guard = ms => new Promise(r => setTimeout(r, ms));
+  const ac = z20AC();
+  if (ac) { try { await Promise.race([ac.resume(), guard(600)]); } catch (e) { } }
+  if (ac && ac.state === 'running') { const buf = z20Pcm(au.b64, au.rate); return Promise.race([z20Play(buf), guard(dur + 2500)]); }
+  return new Promise(res => {
+    const url = URL.createObjectURL(z21Wav(au.b64, au.rate)); const el = new Audio(url); Z21.audio = el;
+    const done = () => { URL.revokeObjectURL(url); if (Z21.audio === el) Z21.audio = null; res(); };
+    el.onended = el.onerror = done; setTimeout(done, dur + 3000);
+    el.play().catch(() => { Z21.vErr = 'o aparelho bloqueou o som. Toque de novo no ▶.'; done(); });
+  });
+}
+z20SpeakAwait = function (t) {
+  const text = zaiPlain(t).slice(0, 700); if (!text) return Promise.resolve();
+  const v = z20Voice();
+  if (v !== 'aparelho' && z20VLeft() > 0 && navigator.onLine !== false) {
+    return z20TTS(text, v).then(au => { z20VUse(); Z21.vErr = ''; return z21PlayAudio(au); }).catch(e => { Z21.vErr = (e && e.msg) || 'erro desconhecido'; return z20Device(text); });
+  }
+  return z20Device(text);
+};
+zaiSpeak = function (t) { z20SpeakAwait(t); };
+const __z21Hush = zaiHush;
+zaiHush = function () { if (Z21.audio) { try { Z21.audio.pause(); } catch (e) { } Z21.audio = null; } return __z21Hush.apply(this, arguments); };
+ACT['z20-hear'] = async el => {
+  z20AC(); const v = el.dataset.v; const p = me(); const pet = petOf(p); const txt = `Oi, ${p.name.split(' ')[0]}! Eu sou ${pet.a === 'o' ? 'o' : 'a'} ${pet.name}. Bora cuidar da saúde hoje?`;
+  const box = $('#z21VErr'); el.textContent = '…'; el.disabled = true; if (box) box.textContent = '';
+  try {
+    if (v === 'aparelho') await z20Device(txt);
+    else if (!z20VLeft()) toast('As falas com voz natural acabaram hoje.', 'red', '🎙️');
+    else { const au = await z20TTS(txt, v); z20VUse(); await z21PlayAudio(au); if (Z21.vErr && box) box.textContent = '⚠️ ' + Z21.vErr; }
+  } catch (e) { const m = (e && e.msg) || 'erro desconhecido'; Z21.vErr = m; if (box) box.textContent = '⚠️ A voz natural não respondeu: ' + m; toast('Não consegui tocar essa voz. O motivo aparece embaixo da lista.', 'red', '🎙️'); }
+  finally { el.textContent = '▶'; el.disabled = false; }
+};
+const __z21Voices = z20VoicesHTML;
+z20VoicesHTML = function () { return __z21Voices.apply(this, arguments).replace('<div class="hint">A voz natural', `<div class="z21-verr" id="z21VErr">${Z21.vErr ? '⚠️ ' + esc(Z21.vErr) : ''}</div><div class="hint">A voz natural`); };
+
+/* ---------- Sai o modo conversa e a lista de compras ---------- */
+(function () {
+  for (let i = ZAI_SUG.length - 1; i >= 0; i--) if (ZAI_SUG[i][2] === 'conv' || ZAI_SUG[i][2] === 'shop') ZAI_SUG.splice(i, 1);
+  ZAI_SUG.splice(1, 0, ['🏋️', 'Montar meu treino', 'plan']);
+})();
+zaiDraw = (function (orig) { return function () { orig.apply(this, arguments); const b = $('#zai .z20-cb'); if (b) b.remove(); }; })(zaiDraw);
+zaiMenu = (function (orig) { return function () { orig.apply(this, arguments); const c = $('#zaiFoot [data-act="z20-conv"]'); if (c) c.remove(); }; })(zaiMenu);
+ACT['z20-conv'] = () => { };
+z20KcalCard = (function (orig) { return function () { return orig.apply(this, arguments).replace('<button class="btn sec sm" data-act="z20-shop">🛒 Compras</button>', '<button class="btn sec sm" data-act="zai-open">💬 Perguntar</button>'); }; })(z20KcalCard);
+const __z21Sug = ACT['zai-sug'];
+ACT['zai-sug'] = function (el) { const s = ZAI_SUG[+el.dataset.i]; if (s && s[2] === 'plan') return z21PlanOpen(); return __z21Sug.apply(this, arguments); };
+
+/* ---------- Ficha: número do aparelho, técnica e cardio ---------- */
+const __z21ExForm = z16ExFormHTML;
+z16ExFormHTML = function () {
+  const e = session.z16e; if (e.tec == null) e.tec = ''; if (e.maq == null) e.maq = ''; if (e.tipo == null) e.tipo = 'musc'; if (e.min == null) e.min = 10;
+  let h = __z21ExForm.apply(this, arguments);
+  const tipo = `<div class="field"><span>Tipo</span><div class="grid2"><button class="opt center ${e.tipo !== 'cardio' ? 'sel' : ''}" data-act="z21-ef" data-k="tipo" data-v="musc">🏋️ Musculação</button><button class="opt center ${e.tipo === 'cardio' ? 'sel' : ''}" data-act="z21-ef" data-k="tipo" data-v="cardio">🏃 Cardio</button></div></div>`;
+  const extra = `<div class="grid2"><label class="field"><span>Nº do aparelho (opcional)</span><input class="input" id="z21Maq" maxlength="4" value="${esc(e.maq)}" placeholder="Ex.: 09"></label>
+      ${e.tipo === 'cardio' ? `<label class="field"><span>Minutos</span><input class="input" id="z21Min" type="number" inputmode="numeric" min="1" max="120" value="${esc(e.min)}"></label>` : '<div></div>'}</div>
+    ${e.tipo === 'cardio' ? '' : `<div class="field"><span>Técnica</span><div class="chips z21-tecs">${Object.entries(Z21_TEC).map(([k, [t]]) => `<button class="chip ${e.tec === k ? 'on' : ''}" data-act="z21-ef" data-k="tec" data-v="${k}">${t}</button>`).join('')}</div>${e.tec ? `<div class="hint">${esc(Z21_TEC[e.tec][1])}</div>` : ''}</div>`}`;
+  if (e.tipo === 'cardio') h = h.replace(/<div class="grid2"><div class="field"><span>Séries<\/span>[\s\S]*?(?=<label class="field"><span>Observação)/, '');
+  h = h.replace('<label class="field"><span>Exercício</span>', () => tipo + '<label class="field"><span>Exercício</span>');
+  h = h.replace('<label class="field"><span>Observação (opcional)</span>', () => extra + '<label class="field"><span>Observação (opcional)</span>');
+  return h;
+};
+function z21KeepEx() { const e = session.z16e; if (!e) return; const m = $('#z21Maq'), mi = $('#z21Min'); if (m) e.maq = m.value.trim().slice(0, 4); if (mi) e.min = clamp(Math.round(+mi.value || 10), 1, 120); }
+const __z21Keep = z16ExKeep;
+z16ExKeep = function () { const r = __z21Keep.apply(this, arguments); z21KeepEx(); return r; };
+const __z21EfSave = ACT['z16-ef-save'];
+ACT['z16-ef-save'] = async function (el) {
+  z16ExKeep(); const e = session.z16e; if (!e) return; const keep = { tec: z21Tec(e.tec), maq: e.maq || '', tipo: e.tipo === 'cardio' ? 'cardio' : 'musc', min: e.min || 10, id: e.id };
+  if (keep.tipo === 'cardio') { e.series = 1; e.reps = keep.min + ' min'; e.desc = 0; }
+  await __z21EfSave.apply(this, arguments);
+  const f = zGym(me()).fichas[session.z16f || 'A']; const x = f.ex.find(y => y.id === keep.id); if (x) { Object.assign(x, { tec: keep.tipo === 'cardio' ? '' : keep.tec, maq: keep.maq, tipo: keep.tipo }); if (keep.tipo === 'cardio') { x.min = keep.min; x.desc = 0; x.series = 1; x.reps = keep.min + ' min'; } else delete x.min; save(); const ed = $('#z16Ed'); if (ed) ed.innerHTML = z16EditorHTML(); }
+};
+ACT['z21-ef'] = el => { z16ExKeep(); session.z16e[el.dataset.k] = el.dataset.v; z16ExForm(); };
+
+/* ---------- Treino ao vivo, estilo app de academia ---------- */
+const z21IsC = ex => ex && ex.tipo === 'cardio';
+function z21Sync(L, f) {
+  for (const ex of f.ex) {
+    const n = z21IsC(ex) ? 1 : Math.max(1, +ex.series || 3);
+    if (!L.done[ex.id]) { L.done[ex.id] = Array(n).fill(false); L.sets[ex.id] = []; L.kg[ex.id] = +ex.carga || 0; L.reps[ex.id] = z16Reps(ex.reps); }
+    else if (L.done[ex.id].length !== n) { const d = L.done[ex.id]; L.done[ex.id] = Array.from({ length: n }, (_, i) => !!d[i]); }
+  }
+  L.pk = L.pk || {};
+}
+function z21Min(f) { return Math.max(10, Math.round(f.ex.reduce((a, x) => a + (z21IsC(x) ? (+x.min || 10) : (+x.series || 3) * (0.75 + (+x.desc || 60) / 60)), 0))); }
+function z21Thumb(ex, big) {
+  const inner = ex.foto ? `<img data-idb="maq|${ex.id}" alt="">` : `<span>${z21IsC(ex) ? '🏃' : z16Icon(ex.nome)}</span>`;
+  return `<span class="z21-th ${big ? 'big' : ''}" data-idbwrap>${inner}${ex.maq ? `<em>${esc(ex.maq)}</em>` : ''}</span>`;
+}
+function z21Line(ex, L) {
+  if (z21IsC(ex)) return `${+ex.min || z16Reps(ex.reps) || 10} minutos`;
+  const kg = L ? (L.kg[ex.id] || 0) : (+ex.carga || 0);
+  return `${ex.series} × ${esc(String(ex.reps))}${kg ? ' · ' + z16Kg(kg) + ' kg' : ''}`;
+}
+z16DrawLive = function () {
+  const el = $('#zgym'); const p = me(); const L = p && p.gymLive; if (!el || !L) return;
+  const f = zGym(p).fichas[L.ficha]; z21Sync(L, f);
+  const body = el.querySelector('.z21-body'); const y = body ? body.scrollTop : 0;
+  const tot = f.ex.reduce((a, x) => a + (L.done[x.id] || []).length, 0); const dn = f.ex.reduce((a, x) => a + (L.done[x.id] || []).filter(Boolean).length, 0);
+  const exDone = f.ex.filter(x => (L.done[x.id] || []).every(Boolean)).length;
+  const card = ex => {
+    const d = L.done[ex.id] || []; const all = d.length && d.every(Boolean); const c = z21IsC(ex); const tec = z21Tec(ex.tec);
+    const run = L.rest && L.rest.id === ex.id && L.rest.until > Date.now();
+    return `<div class="z21-c ${all ? 'done' : ''}" id="z21c_${ex.id}">${tec ? `<button class="z21-tag" data-act="z21-tec" data-v="${tec}">🔗 ${Z21_TEC[tec][0]} <i>i</i></button>` : ''}
+      <div class="z21-ex"><button class="z21-ck" data-act="z21-all" data-id="${ex.id}" aria-label="${all ? 'Desmarcar' : 'Marcar'} ${esc(ex.nome)}">${all ? '✓' : ''}</button>
+        <button class="z21-open" data-act="z21-det" data-id="${ex.id}">${z21Thumb(ex)}<span class="grow"><b>${esc(ex.nome)}</b><span class="s">${z21Line(ex, L)}</span>${c ? '' : `<span class="z21-dots">${d.map(v => `<i class="${v ? 'on' : ''}"></i>`).join('')}</span>`}</span><span class="z21-go">›</span></button></div>
+      ${c || !ex.desc ? '' : `<div class="z21-rest ${run ? 'run' : ''}" id="z21r_${ex.id}">${run ? z21RestRun(ex) : `<b>${z16T(ex.desc * 1000)}</b><span>(descanso entre séries)</span><button class="z21-pl" data-act="z21-rest" data-id="${ex.id}" aria-label="Começar descanso">▶</button>`}</div>`}</div>`;
+  };
+  el.innerHTML = `<div class="ck-in z21-in"><div class="z21-top"><button class="ck-x" data-act="z16-min" aria-label="Minimizar">${IC.x}</button><div class="z21-time"><b id="zgClock">${z16T(Date.now() - L.start)}</b><small>tempo de treino</small></div><button class="z21-ed" data-act="z21-edit">Editar</button></div>
+    <div class="z21-body"><div class="z21-h"><span class="z21-l">${L.ficha}</span><div class="grow"><b>${f.nome ? esc(f.nome) : 'Treino ' + L.ficha}</b><span>${exDone} de ${f.ex.length} ${plural(f.ex.length, 'exercício', 'exercícios')} · ${dn} de ${tot} séries</span></div></div>
+      <div class="z21-prog"><i style="width:${tot ? dn / tot * 100 : 0}%"></i></div>
+      ${f.ex.map(card).join('')}<div class="hint" style="text-align:center;margin:6px 0 14px">Toque no exercício para ver as séries, a carga e marcar cada série.</div></div>
+    <div class="z21-foot"><button class="btn z21-fin" data-act="z16-finish">Finalizar treino${dn === tot ? ' 🎉' : ''}</button></div></div>`;
+  const b2 = el.querySelector('.z21-body'); if (b2) b2.scrollTop = y; z16TickFn();
+};
+function z21RestRun(ex) { return `<b class="z21-rt" id="z21rt">--:--</b><span class="z21-rb"><i id="z21ri"></i></span><span>descansando</span><button class="z21-pl stop" data-act="z21-rest-x" aria-label="Parar descanso">■</button>`; }
+z16TickFn = function () {
+  const L = z16Live(); const c = $('#zgClock'); if (!L) return; if (c) c.textContent = z16T(Date.now() - L.start);
+  if (L.rest && L.rest.until) {
+    const left = L.rest.until - Date.now(); const tot = L.rest.len || 60000;
+    if (left <= 0) { const id = L.rest.id; L.rest = null; try { navigator.vibrate && navigator.vibrate([220, 120, 220]); } catch (e) { } sfx('ding'); toast('Descanso acabou! Próxima série 💪', 'green', '⏱️'); save(); if ($('#zgym')) z16DrawLive(); return; }
+    const t = $('#z21rt'), i = $('#z21ri'); if (t) t.textContent = z16T(left); if (i) i.style.width = (clamp(left / tot, 0, 1) * 100).toFixed(1) + '%';
+    if (!t && $('#z21r_' + L.rest.id) && $('#zgym')) z16DrawLive();
+  }
+};
+function z21MarkSet(L, ex, i, on) {
+  const d = L.done[ex.id]; if (!d) return; d[i] = on; L.sets[ex.id] = L.sets[ex.id] || [];
+  if (on) { const pk = (L.pk[ex.id] || [])[i] || {}; L.sets[ex.id][i] = { r: pk.r != null ? pk.r : (L.reps[ex.id] || 0), kg: pk.kg != null ? pk.kg : (L.kg[ex.id] || 0), at: Date.now() }; if (z21IsC(ex)) L.sets[ex.id][i] = { r: 1, kg: 0, at: Date.now(), min: +ex.min || 10 }; }
+  else L.sets[ex.id][i] = null;
+}
+function z21StartRest(L, ex) { if (!ex || !ex.desc || z21IsC(ex)) return; L.rest = { until: Date.now() + ex.desc * 1000, len: ex.desc * 1000, id: ex.id }; z16RestNotify(L.rest.until); }
+function z21Ex(L, id) { return zGym(me()).fichas[L.ficha].ex.find(x => x.id === id); }
+// Detalhe do exercício: séries uma a uma, carga, repetições, sugestão e recorde
+function z21DetHTML(id) {
+  const p = me(); const L = p.gymLive; const ex = z21Ex(L, id); if (!ex) return ''; const d = L.done[id] || []; L.pk[id] = L.pk[id] || [];
+  const h = z16Hist(p, id); const last = h[h.length - 1]; const sug = z16Suggest(p, ex); const pr = z16PRBefore(p, id, L.start); const tec = z21Tec(ex.tec);
+  const next = d.findIndex(v => !v);
+  if (z21IsC(ex)) return `<div class="z21-dh">${z21Thumb(ex, true)}<div class="grow"><h2>${esc(ex.nome)}</h2><div class="sub">${+ex.min || 10} minutos${ex.maq ? ' · aparelho ' + esc(ex.maq) : ''}</div></div></div>${ex.obs ? `<div class="z21-how">📝 ${esc(ex.obs)}</div>` : ''}
+    <div style="margin-top:14px"><button class="btn" data-act="z21-all" data-id="${id}" data-close="1">${d[0] ? 'Desmarcar' : '✓ Marcar como feito'}</button></div>`;
+  const rows = d.map((v, i) => { const pk = L.pk[id][i] || {}; const s = (L.sets[id] || [])[i]; const kg = s ? s.kg : pk.kg != null ? pk.kg : (L.kg[id] || 0); const r = s ? s.r : pk.r != null ? pk.r : (L.reps[id] || 0);
+    return `<div class="z21-sr ${v ? 'on' : ''}"><button class="z21-sn" data-act="z21-set" data-id="${id}" data-i="${i}">${v ? '✓' : i + 1}</button><span class="z21-sl">Série ${i + 1}</span>
+      <span class="z21-st"><button data-act="z21-sv" data-id="${id}" data-i="${i}" data-k="kg" data-d="-1">−</button><b>${z16Kg(kg)}<small> kg</small></b><button data-act="z21-sv" data-id="${id}" data-i="${i}" data-k="kg" data-d="1">+</button></span>
+      <span class="z21-st"><button data-act="z21-sv" data-id="${id}" data-i="${i}" data-k="r" data-d="-1">−</button><b>${r}<small> reps</small></b><button data-act="z21-sv" data-id="${id}" data-i="${i}" data-k="r" data-d="1">+</button></span></div>`; }).join('');
+  return `<div class="z21-dh"><button class="z21-thb" data-act="z16-exfoto" data-f="${L.ficha}" data-id="${id}" aria-label="Foto do aparelho">${z21Thumb(ex, true)}</button><div class="grow"><h2>${esc(ex.nome)}</h2><div class="sub">${ex.series} × ${esc(String(ex.reps))}${ex.maq ? ' · aparelho ' + esc(ex.maq) : ''}${ex.desc ? ' · descanso ' + ex.desc + 's' : ''}</div></div></div>
+    ${tec ? `<div class="z21-how"><b>🔗 ${Z21_TEC[tec][0]}</b><br>${esc(Z21_TEC[tec][1])}</div>` : ''}${ex.obs ? `<div class="z21-how plain">📝 ${esc(ex.obs)}</div>` : ''}
+    <div class="card z21-sets">${rows}</div>
+    ${sug && (L.kg[id] || 0) < sug ? `<button class="z21-tip" data-act="z21-sug" data-id="${id}" data-v="${sug}">📈 Na última vez você fez tudo com ${z16Kg(ex.carga)} kg. Que tal ${z16Kg(sug)} kg hoje? <b>Usar</b></button>` : ''}
+    ${last ? `<div class="kv"><span class="muted">Última vez</span><b>${z16Kg(last.max)} kg · ${fmtDay(last.date)}</b></div>` : ''}${pr ? `<div class="kv"><span class="muted">Seu recorde</span><b>🏆 ${z16Kg(pr)} kg</b></div>` : ''}
+    <div style="margin-top:12px">${next > -1 ? `<button class="btn" data-act="z21-next" data-id="${id}">✓ Marcar série ${next + 1}${ex.desc && d.some((v, k) => !v && k !== next) ? ' · descansar ' + ex.desc + 's' : ''}</button>` : `<button class="btn gray" data-act="close">Exercício completo ✓</button>`}</div>`;
+}
+function z21DetOpen(id) { session.z21det = id; openSheet(`<div id="z21Det">${z21DetHTML(id)}</div>`, {}); }
+function z21DetPaint() { const b = $('#z21Det'); if (b && session.z21det) b.innerHTML = z21DetHTML(session.z21det); }
+Object.assign(ACT, {
+  'z21-det': el => z21DetOpen(el.dataset.id),
+  'z21-tec': el => { const k = z21Tec(el.dataset.v); if (!k) return; openSheet(`<h2>🔗 ${Z21_TEC[k][0]}</h2><div class="sub" style="font-size:16px;margin-top:8px">${esc(Z21_TEC[k][1])}</div><div style="margin-top:14px"><button class="btn" data-act="close">Entendi</button></div>`, { center: true }); },
+  'z21-all': el => {
+    const L = z16Live(); if (!L) return; const ex = z21Ex(L, el.dataset.id); const d = L.done[el.dataset.id]; if (!ex || !d) return; z21Sync(L, zGym(me()).fichas[L.ficha]);
+    const all = d.every(Boolean); d.forEach((_, i) => z21MarkSet(L, ex, i, !all));
+    if (!all) { sfx('ding'); try { navigator.vibrate && navigator.vibrate(30); } catch (e) { } if (L.rest && L.rest.id === ex.id) { L.rest = null; z16RestNotify(null); } }
+    save(); if (el.dataset.close) closeSheet(true); z16DrawLive(); z21DetPaint(); z21AllDone(L);
+  },
+  'z21-set': el => { const L = z16Live(); if (!L) return; const ex = z21Ex(L, el.dataset.id); const i = +el.dataset.i; const d = L.done[ex.id]; z21MarkSet(L, ex, i, !d[i]); if (d[i]) { sfx('ding'); if (d.some(v => !v)) z21StartRest(L, ex); } save(); z21DetPaint(); z16DrawLive(); z21AllDone(L); },
+  'z21-next': el => { const L = z16Live(); if (!L) return; const ex = z21Ex(L, el.dataset.id); const d = L.done[ex.id]; const i = d.findIndex(v => !v); if (i < 0) return; z21MarkSet(L, ex, i, true); sfx('ding'); try { navigator.vibrate && navigator.vibrate(30); } catch (e) { } if (d.some(v => !v)) z21StartRest(L, ex); save(); closeSheet(true); z16DrawLive(); z21AllDone(L); },
+  'z21-sv': el => {
+    const L = z16Live(); if (!L) return; const id = el.dataset.id, i = +el.dataset.i, k = el.dataset.k, dd = +el.dataset.d; L.pk[id] = L.pk[id] || []; const pk = L.pk[id][i] = L.pk[id][i] || {};
+    const s = (L.sets[id] || [])[i];
+    if (k === 'kg') { const v = s ? s.kg : pk.kg != null ? pk.kg : (L.kg[id] || 0); const st = v < 10 ? 1 : 2.5; const nv = Math.max(0, Math.round((v + st * dd) * 10) / 10); pk.kg = nv; if (s) s.kg = nv; L.kg[id] = nv; for (let j = i + 1; j < (L.done[id] || []).length; j++) if (!(L.done[id][j]) && L.pk[id][j] && L.pk[id][j].kg != null && !z21Tec(z21Ex(L, id).tec).startsWith('piramide')) delete L.pk[id][j].kg; }
+    else { const v = s ? s.r : pk.r != null ? pk.r : (L.reps[id] || 0); const nv = clamp(v + dd, 1, 100); pk.r = nv; if (s) s.r = nv; L.reps[id] = nv; }
+    save(); z21DetPaint(); z16DrawLive();
+  },
+  'z21-sug': el => { const L = z16Live(); if (!L) return; const id = el.dataset.id; L.kg[id] = +el.dataset.v; if (L.pk[id]) L.pk[id].forEach(x => { if (x) delete x.kg; }); save(); z21DetPaint(); z16DrawLive(); toast('Carga ajustada. Bora! 💪', 'green', '📈'); },
+  'z21-rest': el => { const L = z16Live(); if (!L) return; z21StartRest(L, z21Ex(L, el.dataset.id)); save(); z16DrawLive(); },
+  'z21-rest-x': () => { const L = z16Live(); if (!L) return; L.rest = null; z16RestNotify(null); save(); z16DrawLive(); },
+  'z21-edit': () => { const L = z16Live(); if (!L) return; session.z16f = L.ficha; ACT['z16-edit'](); session.z21editLive = true; }
+});
+function z21AllDone(L) { const f = zGym(me()).fichas[L.ficha]; if (f.ex.every(x => (L.done[x.id] || []).every(Boolean))) { L.rest = null; z16RestNotify(null); setTimeout(() => toast('Tudo feito! Toque em Finalizar treino 🎉', 'gold', '🏁'), 300); } }
+// Ao fechar o editor durante o treino, a lista se atualiza
+const __z21Done = ACT['z16-edit-done'];
+if (__z21Done) ACT['z16-edit-done'] = function () { const r = __z21Done.apply(this, arguments); if (session.z21editLive && z16Live()) { session.z21editLive = false; setTimeout(() => { if (!$('#zgym')) z16OpenLive(); else z16DrawLive(); }, 50); } return r; };
+// Cardio conta minutos no resumo
+const __z21Start = z16Start;
+z16Start = function (fk) { const r = __z21Start.apply(this, arguments); const p = me(); const L = p.gymLive; if (L) { const f = zGym(p).fichas[fk]; for (const ex of f.ex) if (z21IsC(ex)) { L.done[ex.id] = [false]; } L.pk = {}; save(); z16DrawLive(); } return r; };
+
+// No treino ao vivo a bolinha da assistente sai da frente dos botões de descanso
+const __z21Fab = zaiFabSync;
+zaiFabSync = function () { const r = __z21Fab.apply(this, arguments); if ($('#zgym') && ZAI_FAB.el) { ZAI_FAB.el.classList.remove('on'); const tp = $('#zaiTip'); if (tp) { tp.remove(); ZAI_FAB.hiShown = false; } } return r; };
+
+/* ---------- Treino de hoje: atalho na tela inicial e no Registrar ---------- */
+function z21Today(p) {
+  const t = T(); const pl = zPlan(p, t); const g = zGym(p); const d = dget(p, t);
+  if (p.gymLive && p.gymLive.date === t) { const f = g.fichas[p.gymLive.ficha]; return { live: true, k: p.gymLive.ficha, f }; }
+  if (d.workout || d.rest || !['A', 'B', 'C'].includes(pl.k)) return null;
+  const f = g.fichas[pl.k]; if (!f || !f.ex.length || g.log.some(e => e.date === t)) return null;
+  return { k: pl.k, f, h: pl.h };
+}
+function z21TodayHTML(p) {
+  const x = z21Today(p); if (!x) return '';
+  if (x.live) return `<button class="z21-today live" data-act="z16-open"><span class="z21-tl">${x.k}</span><span class="grow"><small>Treino em andamento</small><b>${x.f && x.f.nome ? esc(x.f.nome) : 'Treino ' + x.k}</b><span class="s">${Math.floor((Date.now() - p.gymLive.start) / 60000)} min de treino</span></span><em>Continuar</em></button>`;
+  return `<button class="z21-today" data-act="z16-start" data-f="${x.k}"><span class="z21-tl">${x.k}</span><span class="grow"><small>Treino de hoje${x.h ? ' · ' + x.h.replace(':', 'h') : ''}</small><b>${x.f.nome ? esc(x.f.nome) : 'Treino ' + x.k}</b><span class="s">${x.f.ex.length} ${plural(x.f.ex.length, 'exercício', 'exercícios')} · uns ${z21Min(x.f)} min</span></span><em>Começar</em></button>`;
+}
+const __z21After = afterMain;
+afterMain = function () {
+  const r = __z21After.apply(this, arguments);
+  try { if (session.tab === 'home' && !$('.z21-today')) { const cta = $('#zCheckBtn'); const h = z21TodayHTML(me()); if (cta && h) cta.insertAdjacentHTML('afterend', h); } } catch (e) { }
+  return r;
+};
+const __z21Gym = z16GymCardHTML;
+z16GymCardHTML = function (p) {
+  let h = __z21Gym.apply(this, arguments);
+  if (!p.gymLive) h = z21TodayHTML(p) + h;
+  const ai = `<div class="z21-ai"><button data-act="z21-plan"><span>✨</span><span class="grow"><b>${z16HasFicha(p) ? 'Refazer meu treino com a IA' : 'Montar meu treino com a IA'}</b><small>Ela pergunta seu objetivo, nível e rotina e monta o A, B e C</small></span><em>›</em></button><button data-act="zai-open-ficha"><span>📸</span><span class="grow"><b>Ler fotos da ficha ou dos aparelhos</b><small>Até 20 fotos de uma vez</small></span><em>›</em></button></div>`;
+  h = h.replace('<button class="btn sec sm" data-act="zai-open-ficha" style="margin-top:8px">📋 Tirar foto da ficha de papel</button>', '');
+  return h.replace(/<\/div>$/, ai + '</div>');
+};
+
+/* ---------- A assistente lê várias fotos de uma vez ---------- */
+function z21PickMany(cb, max) {
+  let inp = document.getElementById('z21Files');
+  if (!inp) { inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true; inp.id = 'z21Files'; inp.style.display = 'none'; document.body.appendChild(inp); }
+  inp.value = '';
+  inp.onchange = async () => {
+    const fs = Array.from(inp.files || []).slice(0, 60); if (!fs.length) return;
+    if ((inp.files || []).length > 60) toast('Peguei as primeiras 60 fotos.', 'violet', '📸');
+    const out = []; for (const f of fs) { try { out.push(await compressImage(f, max || 1280)); } catch (e) { } }
+    if (out.length) cb(out); else toast('Não consegui abrir essas imagens.', 'red', '📸');
+  };
+  inp.click();
+}
+function z21PickFicha() { if (!zaiLeft()) return toast('As mensagens de hoje acabaram. Volta amanhã!', 'red', '⏳'); z21PickMany(imgs => { Z21.many = imgs; ZAI.mode = 'ficha'; zaiFoot(); const ta = $('#zaiIn'); if (ta) ta.focus(); }, 1280); }
+const __z21Foot = zaiFoot;
+zaiFoot = function () {
+  __z21Foot.apply(this, arguments);
+  if (!Z21.many || ZAI.rec) return; const f = $('#zaiFoot'); if (!f) return; const bar = f.querySelector('.zai-bar'); if (!bar) return;
+  bar.insertAdjacentHTML('beforebegin', `<div class="z21-many"><div class="z21-mh"><b>📸 ${Z21.many.length} ${plural(Z21.many.length, 'foto', 'fotos')} para montar o treino</b><button data-act="z21-many-x" aria-label="Tirar as fotos">${IC.x}</button></div><div class="z21-mt">${Z21.many.slice(0, 12).map(s => `<img src="${s}" alt="">`).join('')}${Z21.many.length > 12 ? `<span>+${Z21.many.length - 12}</span>` : ''}</div><div class="z21-mx">Se quiser, diga o que você quer (ex.: "monta um ABC para ganhar massa") e envie.</div></div>`);
+  const ta = $('#zaiIn'); if (ta) ta.placeholder = 'O que você quer com essas fotos? (opcional)';
+  const go = $('#zaiGo'); if (go) { go.innerHTML = ZAI_IC.send; go.classList.remove('mic'); }
+};
+const __z21Go = ACT['zai-go'];
+ACT['zai-go'] = function () { if (Z21.many) { const ta = $('#zaiIn'); const text = ta ? ta.value.trim() : ''; if (ta) ta.value = ''; const imgs = Z21.many; Z21.many = null; ZAI.mode = null; zaiFoot(); return z21Ficha(imgs, text); } return __z21Go.apply(this, arguments); };
+ACT['z21-many-x'] = () => { Z21.many = null; ZAI.mode = null; zaiFoot(); };
+function z21Prefs(p) { const g = p.gymPrefs || {}; const o = ZOBJ[zObj(p)]; return `Objetivo: ${o.t}. ${g.nivel ? 'Nível: ' + g.nivel + '. ' : ''}${g.dias ? 'Treina ' + g.dias + ' dias por semana, ' : ''}${g.tempo ? 'cerca de ' + g.tempo + ' min por treino. ' : ''}${g.local ? 'Local: ' + g.local + '. ' : ''}${g.dor && g.dor.length ? 'Cuidados: ' + g.dor.join(', ') + '. ' : ''}${g.foco && g.foco.length ? 'Prioridades: ' + g.foco.join(', ') + '. ' : ''}${g.obs ? 'Observações: ' + g.obs : ''}`; }
+const Z21_JSON_EX = '{"nome":"Supino reto","tipo":"musc","series":4,"reps":"8-10","carga":0,"desc":90,"tec":"","maq":"","obs":"dica curta de execução"}';
+function z21Rules(fromPhotos) {
+  return `Você é um personal trainer brasileiro experiente e monta treinos de academia PERSONALIZADOS, nunca genéricos.
+Responda SOMENTE com JSON válido, sem texto fora dele, neste formato:
+{"plano":"nome curto do plano","explicacao":"2 a 4 frases explicando por que esse treino serve para a pessoa e como progredir","fichas":[{"letra":"A","nome":"Peito, ombro e tríceps","ex":[${Z21_JSON_EX}]}],"progressao":"como aumentar carga/volume nas próximas semanas","aviso":"","nao_ficha":false}
+Regras:
+- No máximo 3 fichas (A, B e C). Se a pessoa treina mais de 3 dias, monte A, B e C para alternar (ABCABC) e diga isso na explicação. Se treina 2 dias, monte A e B.
+- Cada ficha com 5 a 8 exercícios (contando cardio), na ordem certa de execução: multiarticulares antes dos isolados.
+- "tipo": "musc" ou "cardio". No cardio use "min" com os minutos e series 1.
+- "reps": texto curto ("12", "8-10", "15/12/10", "falha", "30s"). "desc": segundos (30 a 180; se a ficha não disser, 60). "carga": kg se estiver escrito na ficha, senão 0 (a pessoa ajusta).
+- "tec": uma destas ou "": piramide_dec, piramide_cre, drop, biset, pico, ocl, restpause, cadencia, falha. Use técnicas com critério, de acordo com o nível.
+- "maq": número do aparelho, só se aparecer na foto; senão "".
+- Nomes de exercícios em português; quando for um destes, escreva exatamente assim: ${Z16_LIB.join(', ')}.
+- Respeite lesões e dores: troque exercícios que forcem a região e explique em "obs".
+- ${fromPhotos ? 'As fotos podem ser páginas de uma ficha (então transcreva fielmente, juntando as páginas), ou fotos de aparelhos/exercícios (então identifique cada exercício e monte as fichas usando esses exercícios, completando o que faltar para ficar equilibrado). Se tiver dúvida sobre algum exercício da foto, diga em "aviso". Se nenhuma foto for de treino, use "nao_ficha": true.' : 'Use as respostas da pessoa para escolher divisão, volume, intensidade e exercícios.'}`;
+}
+function z21Clean(d) {
+  const base = zaiFichaClean(d); const src = (d && Array.isArray(d.fichas)) ? d.fichas : [];
+  base.fichas.forEach((f, i) => { const sf = (src.filter(x => x && Array.isArray(x.ex) && x.ex.length)[i]) || {}; const sx = (sf.ex || []).filter(e => e && String(e.nome || '').trim()); f.ex.forEach((e, j) => { const o = sx[j] || {}; e.tipo = o.tipo === 'cardio' ? 'cardio' : 'musc'; e.tec = z21Tec(o.tec); e.maq = String(o.maq || '').slice(0, 4); if (e.tipo === 'cardio') { e.min = clamp(Math.round(+o.min || z16Reps(o.reps) || 10), 1, 120); e.series = 1; e.reps = e.min + ' min'; e.desc = 0; } }); });
+  base.plano = String((d && d.plano) || '').slice(0, 60); base.explicacao = String((d && d.explicacao) || '').slice(0, 600); base.progressao = String((d && d.progressao) || '').slice(0, 400);
+  return base;
+}
+function z21Merge(list) {
+  const by = {}; const order = [];
+  for (const d of list) for (const f of d.fichas || []) { const k = f.letra || 'A'; if (!by[k]) { by[k] = { letra: k, nome: f.nome, ex: [] }; order.push(k); } by[k].ex.push(...f.ex); if (!by[k].nome && f.nome) by[k].nome = f.nome; }
+  return order.map(k => by[k]);
+}
+async function z21Ficha(imgs, text) {
+  if (ZAI.busy) return; if (!zaiLeft()) return toast('As mensagens de hoje acabaram. Volta amanhã!', 'red', '⏳');
+  const um = { r: 'u', t: (text || 'Monta o meu treino com essas fotos') + ` (${imgs.length} ${plural(imgs.length, 'foto', 'fotos')})`, img: true, id: zaiId() }; ZAI.imgs.set(um.id, imgs[0]); zaiAdd(um);
+  const m = { r: 'a', k: 'ficha', id: zaiId(), data: null, map: {}, wait: true }; zaiAdd(m); zaiUse(1); zaiBusy(true);
+  const chunks = []; for (let i = 0; i < imgs.length; i += 8) chunks.push(imgs.slice(i, i + 8));
+  try {
+    const res = [];
+    for (let c = 0; c < chunks.length; c++) {
+      const parts = chunks[c].map(zaiImgPart);
+      parts.push({ text: `${chunks.length > 1 ? `Parte ${c + 1} de ${chunks.length} das fotos. ` : ''}Pedido da pessoa: ${text || 'montar o treino A, B e C a partir das fotos'}.\nPerfil: ${z21Prefs(me())}` });
+      const out = await zaiCall(ZAI_CHAT, { contents: [{ role: 'user', parts }], systemInstruction: { role: 'system', parts: [{ text: z21Rules(true) }] }, generationConfig: { temperature: 0.3, maxOutputTokens: 8192, responseMimeType: 'application/json' } });
+      res.push(z21Clean(zaiJSON(out.text)));
+      if (chunks.length > 1) { m.t = `Lendo as fotos… ${c + 1} de ${chunks.length}`; zaiRepaint(m); }
+    }
+    const fichas = z21Merge(res).slice(0, 6); const d = res[0];
+    m.data = { fichas, aviso: res.map(x => x.aviso).filter(Boolean).join(' '), nao_ficha: !fichas.length, plano: d.plano, explicacao: res.map(x => x.explicacao).filter(Boolean)[0] || '', progressao: d.progressao };
+    const used = new Set(); fichas.forEach((f, i) => { let L = Z16_FICHAS.includes(f.letra) && !used.has(f.letra) ? f.letra : Z16_FICHAS.find(k => !used.has(k)); if (L) { m.map[i] = L; used.add(L); } else m.map[i] = ''; });
+  } catch (e) { if (e.kind !== 'blocked') zaiUse(-1); m.k = null; m.t = zaiErrText(e); m.err = true; }
+  finally { delete m.wait; zaiRepaint(m); zaiStore(); zaiBusy(false); zaiFoot(); zaiLeftPaint(); zaiScroll(true); }
+}
+// O cartão da ficha mostra técnica, aparelho, cardio e a explicação do plano
+zaiFichaHTML = (function (orig) {
+  return function (m) {
+    if (m.wait) return `<div class="zai-m a" data-id="${m.id}"><div class="zai-b zai-card"><div class="zai-ch">${m.plan ? '🏋️ Montando o seu treino...' : '📋 ' + esc(m.t || 'Lendo as fotos...')}</div><span class="zai-typing"><i></i><i></i><i></i></span></div></div>`;
+    let h = orig.apply(this, arguments); const d = m.data; if (!d || d.nao_ficha) return h;
+    d.fichas.forEach(f => f.ex.forEach(e => {
+      const was = `${z16Icon(e.nome)} <b>${esc(e.nome)}</b> <span>${e.series}×${esc(e.reps)}${e.carga ? ' · ' + z16Kg(e.carga) + ' kg' : ''}${e.obs ? ' · ' + esc(e.obs) : ''}</span>`;
+      const now = `${e.tipo === 'cardio' ? '🏃' : z16Icon(e.nome)} <b>${esc(e.nome)}</b> <span>${e.tipo === 'cardio' ? (e.min || 10) + ' min' : e.series + '×' + esc(e.reps)}${e.desc && e.tipo !== 'cardio' ? ' · ' + e.desc + 's' : ''}${e.maq ? ' · aparelho ' + esc(e.maq) : ''}</span>${e.tec ? ` <em class="z21-tg">🔗 ${Z21_TEC[e.tec][0]}</em>` : ''}${e.obs ? `<small class="z21-ob">${esc(e.obs)}</small>` : ''}`;
+      h = h.replace(was, () => now);
+    }));
+    if (m.plan) h = h.replace(/<div class="zai-ch">📋 Encontrei/, '<div class="zai-ch">🏋️ Montei');
+    if (d.plano || d.explicacao) { const box = `<div class="z21-plan">${d.plano ? `<b>${esc(d.plano)}</b>` : ''}${d.explicacao ? `<p>${esc(d.explicacao)}</p>` : ''}${d.progressao ? `<p class="pg">📈 ${esc(d.progressao)}</p>` : ''}</div>`; h = h.replace(/(<div class="zai-ch">[^<]*<\/div>)/, (a, b) => b + box); }
+    return h;
+  };
+})(zaiFichaHTML);
+ACT['zai-ficha-save'] = el => {
+  const m = zaiFind(el.dataset.id); if (!m || !m.data) return; const g = zGym(me()); const saved = [];
+  m.data.fichas.forEach((f, i) => { const L = m.map[i]; if (!L) return; g.fichas[L].ex.forEach(x => { if (x.foto) z16Del('maq|' + x.id); }); g.fichas[L] = { nome: f.nome, ex: f.ex.map((e, j) => ({ id: z16Id() + i + '' + j, nome: e.nome, series: e.series, reps: e.reps, carga: e.carga, desc: e.desc, obs: e.obs, foto: false, tec: e.tec || '', maq: e.maq || '', tipo: e.tipo || 'musc', min: e.tipo === 'cardio' ? e.min : undefined })) }; saved.push(L); });
+  if (!saved.length) return; m.saved = saved.sort(); save(); zaiStore(); zaiRepaint(m); sfx('ding'); toast('Treino salvo! Ele aparece em Registrar › Treino.', 'green', '🏋️');
+};
+
+/* ---------- Montar o treino com perguntas ---------- */
+const Z21_Q = {
+  nivel: ['Começando agora', 'Intermediário (6 meses a 2 anos)', 'Avançado (mais de 2 anos)'],
+  local: ['Academia completa', 'Academia pequena', 'Em casa com halteres', 'Em casa sem equipamento'],
+  dor: ['Joelho', 'Lombar', 'Ombro', 'Punho', 'Quadril', 'Nenhuma'],
+  foco: ['Glúteo', 'Pernas', 'Peito', 'Costas', 'Ombros', 'Braços', 'Abdômen', 'Condicionamento']
+};
+function z21PlanHTML() {
+  const p = me(); const g = session.z21g || (session.z21g = Object.assign({ nivel: '', dias: 3, tempo: 60, local: 'Academia completa', dor: [], foco: [], obs: '' }, p.gymPrefs || {}));
+  const o = ZOBJ[zObj(p)]; const one = (k, list) => `<div class="chips">${list.map(v => `<button class="chip ${g[k] === v ? 'on' : ''}" data-act="z21-q" data-k="${k}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}</div>`;
+  const many = (k, list) => `<div class="chips">${list.map(v => `<button class="chip ${(g[k] || []).includes(v) ? 'on' : ''}" data-act="z21-qm" data-k="${k}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}</div>`;
+  return `<h2>✨ Montar meu treino</h2><div class="sub">Responda rapidinho: quanto mais certo, mais o treino fica com a sua cara. Objetivo: <b>${o.ic} ${o.t}</b> (muda no Perfil).</div>
+    <div class="field"><span>Seu nível na musculação</span>${one('nivel', Z21_Q.nivel)}</div>
+    <div class="field"><span>Quantos dias por semana você treina?</span><div class="zstep"><button data-act="z21-qn" data-k="dias" data-d="-1">−</button><b>${g.dias} dias</b><button data-act="z21-qn" data-k="dias" data-d="1">+</button></div></div>
+    <div class="field"><span>Quanto tempo por treino?</span><div class="chips">${[30, 45, 60, 75, 90].map(v => `<button class="chip ${g.tempo === v ? 'on' : ''}" data-act="z21-q" data-k="tempo" data-v="${v}">${v} min</button>`).join('')}</div></div>
+    <div class="field"><span>Onde você treina?</span>${one('local', Z21_Q.local)}</div>
+    <div class="field"><span>Alguma dor ou lesão?</span>${many('dor', Z21_Q.dor)}</div>
+    <div class="field"><span>O que você quer priorizar?</span>${many('foco', Z21_Q.foco)}</div>
+    <label class="field"><span>Mais alguma coisa? (opcional)</span><textarea class="input" id="z21Obs" rows="2" maxlength="300" placeholder="Ex.: odeio esteira, tenho só 1h no almoço, já faço corrida aos sábados">${esc(g.obs || '')}</textarea></label>
+    <div style="margin-top:12px"><button class="btn" data-act="z21-plan-go">✨ Montar meu treino</button></div><div class="hint">Usa 1 mensagem da assistente. Você confere tudo antes de salvar.</div>`;
+}
+function z21PlanOpen() { session.z21g = null; closeSheet(true); openSheet(`<div id="z21Plan">${z21PlanHTML()}</div>`, {}); const ov = $('#overlay'); if (ov && $('#zai')) ov.style.zIndex = '95'; }
+function z21PlanKeep() { const g = session.z21g; const o = $('#z21Obs'); if (g && o) g.obs = o.value; }
+function z21PlanPaint() { z21PlanKeep(); const b = $('#z21Plan'); if (b) b.innerHTML = z21PlanHTML(); }
+async function z21PlanGo() {
+  z21PlanKeep(); const g = session.z21g; if (!g.nivel) return toast('Escolha o seu nível.', 'red', '🏋️');
+  const p = me(); p.gymPrefs = { nivel: g.nivel, dias: g.dias, tempo: g.tempo, local: g.local, dor: (g.dor || []).filter(x => x !== 'Nenhuma'), foco: g.foco || [], obs: String(g.obs || '').slice(0, 300) }; save();
+  if (!zaiLeft()) return toast('As mensagens da assistente acabaram hoje.', 'red', '⏳');
+  closeSheet(true); zaiOpen(); await new Promise(r => setTimeout(r, 150));
+  zaiAdd({ r: 'u', t: `Monta o meu treino: ${p.gymPrefs.dias} dias por semana, ${p.gymPrefs.tempo} min, ${p.gymPrefs.nivel.toLowerCase()}.` });
+  const m = { r: 'a', k: 'ficha', id: zaiId(), data: null, map: {}, wait: true, plan: true }; zaiAdd(m); zaiUse(1); zaiBusy(true);
+  try {
+    const peso = latestW(p, T()); const info = `${z21Prefs(p)}\nPeso atual: ${fmt1(peso)} kg. ${p.body ? `Idade ${p.body.age}, altura ${p.body.h} cm, sexo ${p.body.sex === 'm' ? 'masculino' : 'feminino'}.` : ''}\nÚltimos treinos no app: ${(zGym(p).log || []).slice(-5).map(e => fmtDay(e.date) + ' ' + e.ficha).join(', ') || 'nenhum'}.`;
+    const out = await zaiCall(ZAI_CHAT, { contents: [{ role: 'user', parts: [{ text: `Monte o meu treino com estas informações:\n${info}` }] }], systemInstruction: { role: 'system', parts: [{ text: z21Rules(false) }] }, generationConfig: { temperature: 0.5, maxOutputTokens: 8192, responseMimeType: 'application/json' } });
+    const d = z21Clean(zaiJSON(out.text)); if (d.nao_ficha || !d.fichas.length) throw zaiErr('json');
+    m.data = d; d.fichas.forEach((f, i) => { m.map[i] = Z16_FICHAS[i] || ''; });
+  } catch (e) { if (e.kind !== 'blocked') zaiUse(-1); m.k = null; m.t = zaiErrText(e); m.err = true; }
+  finally { delete m.wait; zaiRepaint(m); zaiStore(); zaiBusy(false); zaiFoot(); zaiLeftPaint(); zaiScroll(true); }
+}
+Object.assign(ACT, {
+  'z21-plan': () => z21PlanOpen(),
+  'z21-q': el => { const g = session.z21g; z21PlanKeep(); g[el.dataset.k] = el.dataset.k === 'tempo' ? +el.dataset.v : el.dataset.v; z21PlanPaint(); },
+  'z21-qm': el => { const g = session.z21g; z21PlanKeep(); const k = el.dataset.k, v = el.dataset.v; let a = (g[k] || []).slice(); if (v === 'Nenhuma') a = a.includes(v) ? [] : [v]; else { a = a.filter(x => x !== 'Nenhuma'); a = a.includes(v) ? a.filter(x => x !== v) : a.concat(v); } g[k] = a; z21PlanPaint(); },
+  'z21-qn': el => { const g = session.z21g; z21PlanKeep(); g.dias = clamp(g.dias + (+el.dataset.d), 1, 7); z21PlanPaint(); },
+  'z21-plan-go': () => z21PlanGo()
+});
+// A assistente oferece o formulário quando pedem para montar treino na conversa
+z20Clean = (function (orig) { return function (a) { if (a && a.t === 'montar_treino') return { t: 'montar_treino' }; return orig.apply(this, arguments); }; })(z20Clean);
+z20ActLabel = (function (orig) { return function (a) { return a && a.t === 'montar_treino' ? '🏋️ Montar o seu treino com algumas perguntas' : orig.apply(this, arguments); }; })(z20ActLabel);
+z20ActsHTML = (function (orig) { return function (m) { if (!m || !m.acts || !m.acts.some(a => a.t === 'montar_treino')) return orig.apply(this, arguments); const rest = m.acts.filter(a => a.t !== 'montar_treino'); return `<div class="z21-pa"><button class="btn sm" data-act="z21-plan">🏋️ Responder as perguntas</button></div>` + (rest.length ? orig.call(this, Object.assign({}, m, { acts: rest })) : ''); }; })(z20ActsHTML);
+zaiSystem = (function (orig) { return function () { return orig.apply(this, arguments) + '\nMONTAR TREINO: se a pessoa pedir para montar, criar ou refazer um treino ou ficha de academia, responda em 1 frase que vai abrir umas perguntas rápidas para o treino ficar personalizado e coloque no bloco {"t":"montar_treino"}. Se ela quiser montar a partir de fotos, diga para tocar no botão da câmera › Ler minha ficha (aceita até 20 fotos de uma vez).'; }; })(zaiSystem);
+
+/* ---------- Tour e novidades ---------- */
+(function () {
+  const kc = Z18_TOUR.find(x => x.sel.includes('.zai-kcard')); if (kc) kc.d = 'Marque cada refeição como no plano ou fora dele. Aqui ficam as calorias e a proteína do dia e a sua meta.';
+  const as = Z18_TOUR.find(x => x.sel.includes('#zaiFab.on')); if (as) as.d = 'Toque na bolinha para conversar sobre qualquer coisa, com voz natural. Ela registra água, treino e refeições por você e monta o seu treino.';
+  const tr = Z18_TOUR.find(x => x.sel.includes('.zg-card')); if (tr) { tr.sel = ['.z21-ai', '.zg-card']; tr.d = 'Monte o seu treino com a IA (por perguntas ou fotos) e treine com checklist: cronômetro, descanso, carga e recordes.'; }
+  Z18_NEW.splice(0, Z18_NEW.length,
+    { tab: 'reg', sub: 'treino', sel: ['.z21-ai'], t: 'A IA monta o seu treino', d: 'Responda umas perguntas ou mande até 20 fotos da ficha ou dos aparelhos: ela monta o Treino A, B e C para você conferir e salvar.' },
+    { tab: 'home', sel: ['.z21-today', '#zCheckBtn'], t: 'Treino de hoje', d: 'No dia de treino do seu cronograma, este cartão abre o checklist direto: cronômetro, descanso com ▶, carga e técnica de cada exercício.' },
+    { tab: 'home', sel: ['#zaiFab.on'], t: 'Vozes consertadas', d: 'Escolha a voz no menu ⋮ do chat. Se a voz natural não tocar, agora aparece o motivo embaixo da lista.' });
+})();
+ZNEWS.splice(0, ZNEWS.length,
+  ['🏋️', 'Treino novo', 'Checklist no estilo app de academia: cronômetro do treino, caixinha por exercício, número do aparelho, técnica, descanso com ▶ e carga série por série.'],
+  ['✨', 'A IA monta o seu treino', 'Por perguntas (objetivo, nível, dias, tempo, dores e prioridades) ou por até 20 fotos de uma vez.'],
+  ['📅', 'Treino de hoje', 'Um cartão na tela inicial abre o treino do dia direto no checklist.'],
+  ['🎙️', 'Vozes', 'A voz natural tenta de novo quando o Google falha e mostra o motivo quando não dá.'],
+  ['🧹', 'Mais simples', 'Saíram o modo conversa e a lista de compras.']);
+</script>
+<style>
+.ck.zgym{background:var(--bg)}
+.z21-in{max-width:560px}
+.z21-top{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:2px solid var(--line)}
+.z21-time{flex:1;text-align:center}.z21-time b{display:block;font-size:22px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:.5px}.z21-time small{display:block;font-size:11px;color:var(--ink-3);font-weight:900;letter-spacing:.06em;text-transform:uppercase}
+.z21-ed{font-weight:900;color:#1CB0F6;font-size:14px;padding:8px 4px}
+.z21-body{flex:1;overflow-y:auto;padding:12px;overscroll-behavior:contain}
+.z21-h{display:flex;align-items:center;gap:10px;margin:2px 2px 10px}.z21-l,.z21-tl{width:44px;height:44px;border-radius:14px;background:var(--orange-soft,#FFE8C7);color:#E07F00;display:grid;place-items:center;font-weight:900;font-size:22px;flex:none}
+.z21-h b{display:block;font-size:19px;font-weight:900}.z21-h span{font-size:13px;color:var(--ink-2);font-weight:700}
+.z21-prog{height:10px;border-radius:9px;background:var(--line);margin:0 2px 12px;overflow:hidden}.z21-prog i{display:block;height:100%;background:#58CC02;border-radius:9px;transition:width .3s}
+.z21-c{border:2px solid var(--line);border-bottom-width:4px;border-radius:20px;background:var(--card);margin-bottom:10px;overflow:hidden}
+.z21-c.done{border-color:#58CC02;background:linear-gradient(135deg,var(--card),rgba(88,204,2,.10))}
+.z21-tag{display:flex;align-items:center;gap:6px;padding:9px 12px 0;font-size:13px;font-weight:900;color:#9B6BFF;font-family:inherit}.z21-tag i{font-style:normal;width:18px;height:18px;border-radius:50%;border:2px solid currentColor;display:grid;place-items:center;font-size:11px}
+.z21-ex{display:flex;align-items:center;gap:10px;padding:10px 12px}
+.z21-ck{width:32px;height:32px;border-radius:10px;border:2.5px solid var(--line);flex:none;display:grid;place-items:center;color:#fff;font-weight:900;font-size:17px;background:var(--card)}
+.z21-c.done .z21-ck{background:#58CC02;border-color:#58CC02;box-shadow:0 3px 0 #46A302}
+.z21-open{display:flex;align-items:center;gap:12px;flex:1;min-width:0;text-align:left;font:inherit;color:inherit}
+.z21-open b{display:block;font-size:16px;font-weight:900}.z21-open .s{display:block;font-size:13.5px;color:var(--ink-2);font-weight:700}.z21-open .grow{min-width:0}
+.z21-go{font-size:22px;color:var(--ink-3);font-weight:900}
+.z21-th{width:58px;height:58px;border-radius:14px;flex:none;position:relative;overflow:hidden;background:linear-gradient(135deg,var(--surface-2),var(--line));display:grid;place-items:center;font-size:28px}
+.z21-th img{width:100%;height:100%;object-fit:cover}.z21-th.big{width:66px;height:66px}
+.z21-th em{position:absolute;top:3px;left:3px;background:#1CB0F6;color:#fff;font-style:normal;font-size:11px;font-weight:900;border-radius:7px;padding:1px 5px}
+.z21-thb{padding:0;border-radius:16px}
+.z21-dots{display:flex;gap:5px;margin-top:5px}.z21-dots i{width:18px;height:6px;border-radius:9px;background:var(--line)}.z21-dots i.on{background:#58CC02}
+.z21-rest{display:flex;align-items:center;gap:10px;border-top:2px solid var(--line);padding:8px 12px;font-weight:800;color:var(--ink-2);font-size:13.5px}
+.z21-rest b{font-size:17px;color:var(--ink);font-variant-numeric:tabular-nums;font-weight:900}
+.z21-pl{margin-left:auto;width:36px;height:36px;border-radius:50%;background:#1CB0F6;color:#fff;display:grid;place-items:center;font-size:14px;box-shadow:0 3px 0 #1899D6;flex:none}
+.z21-pl.stop{background:#FF4B4B;box-shadow:0 3px 0 #D33}
+.z21-rest.run{background:rgba(28,176,246,.12)}.z21-rest.run b{color:#1CB0F6;font-size:19px}
+.z21-rb{height:6px;background:var(--line);border-radius:9px;flex:1;overflow:hidden}.z21-rb i{display:block;height:100%;background:#1CB0F6;width:100%;transition:width .25s linear}
+.z21-foot{padding:10px 12px calc(12px + env(safe-area-inset-bottom, 0px));border-top:2px solid var(--line);background:var(--bg)}
+.btn.z21-fin{--c:#FFC800;--s:#E5A500;--t:#4B3800}
+.z21-dh{display:flex;align-items:center;gap:12px}.z21-dh h2{margin:0}
+.z21-how{background:rgba(155,107,255,.14);border-radius:14px;padding:10px 12px;font-weight:700;font-size:14px;margin:10px 0}.z21-how.plain{background:var(--surface-2)}
+.z21-sets{padding:4px 12px}
+.z21-sr{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:2px solid var(--line)}.z21-sr:last-child{border:0}
+.z21-sn{width:34px;height:34px;border-radius:50%;background:var(--surface-2);display:grid;place-items:center;font-weight:900;flex:none}
+.z21-sr.on .z21-sn{background:#58CC02;color:#fff;box-shadow:0 3px 0 #46A302}
+.z21-sl{font-weight:900;font-size:14px;min-width:54px}
+.z21-st{display:flex;align-items:center;border:2px solid var(--line);border-radius:12px;overflow:hidden;margin-left:auto}.z21-st + .z21-st{margin-left:6px}
+.z21-st button{width:28px;height:34px;font-weight:900;font-size:18px;color:var(--ink-3)}.z21-st b{min-width:50px;text-align:center;font-size:16px;font-weight:900;white-space:nowrap}.z21-st b small{font-size:10.5px;color:var(--ink-3)}
+.z21-tip{display:block;width:100%;text-align:left;background:rgba(88,204,2,.14);border-radius:14px;padding:10px 12px;font:inherit;font-weight:800;font-size:14px;margin:10px 0;color:inherit}.z21-tip b{color:#46A302;margin-left:4px}
+.z21-today{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:0;border-radius:22px;padding:14px 16px;margin:12px 0;font:inherit;color:#fff;background:linear-gradient(135deg,#FF9600,#FF4B4B);box-shadow:0 5px 0 #C93A1F}
+.z21-today .z21-tl{background:rgba(255,255,255,.25);color:#fff;width:52px;height:52px;font-size:26px}
+.z21-today small{display:block;font-size:11.5px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;opacity:.92}.z21-today b{display:block;font-size:19px;font-weight:900}.z21-today .s{display:block;font-size:13px;opacity:.95;font-weight:700}
+.z21-today em{font-style:normal;background:#fff;color:#E5531A;font-weight:900;font-size:14px;border-radius:14px;padding:10px 14px;box-shadow:0 3px 0 rgba(0,0,0,.15)}
+.z21-today.live{background:linear-gradient(135deg,#1CB0F6,#7B4DFF);box-shadow:0 5px 0 #5A31D6}.z21-today.live em{color:#5A31D6}
+.zg-card .z21-today{margin-top:4px}
+.z21-ai{display:grid;gap:8px;margin-top:12px}
+.z21-ai button{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:2px dashed #7B4DFF;border-radius:16px;background:var(--purple-soft,#EEE8FF);padding:10px 12px;font:inherit;color:inherit}
+.z21-ai button > span:first-child{font-size:24px}.z21-ai b{display:block;font-weight:900;font-size:15px}.z21-ai small{display:block;font-size:12.5px;color:var(--ink-2);font-weight:700}.z21-ai em{font-style:normal;font-weight:900;font-size:20px;color:#7B4DFF}
+.z21-many{background:var(--purple-soft,#EEE8FF);border-radius:14px;padding:8px 10px;margin-bottom:8px}
+.z21-mh{display:flex;align-items:center;justify-content:space-between}.z21-mh b{font-size:13.5px}.z21-mh button{width:28px;height:28px;display:grid;place-items:center;color:var(--ink-3)}.z21-mh svg{width:15px;height:15px}
+.z21-mt{display:flex;gap:6px;overflow-x:auto;margin:6px 0}.z21-mt img{width:46px;height:46px;border-radius:10px;object-fit:cover;flex:none}.z21-mt span{width:46px;height:46px;border-radius:10px;background:var(--line);display:grid;place-items:center;font-weight:900;flex:none}
+.z21-mx{font-size:12.5px;font-weight:700;color:var(--ink-2)}
+.z21-plan{background:var(--surface-2);border-radius:12px;padding:10px 12px;margin-bottom:10px}.z21-plan b{display:block;font-size:15.5px;font-weight:900}.z21-plan p{margin:4px 0 0;font-size:14px;font-weight:600}.z21-plan .pg{font-size:13px;color:var(--ink-2)}
+.z21-tg{font-style:normal;font-size:12px;font-weight:900;color:#9B6BFF;white-space:nowrap}.z21-ob{display:block;font-size:12.5px;color:var(--ink-3);font-weight:700;margin-left:24px}
+.z21-pa{margin-top:10px}
+.z21-verr{font-size:13px;font-weight:800;color:#E0483C;margin:8px 2px}
 </style>
 
 </body>
