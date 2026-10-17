@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '3.1';
+const ZV = '3.1.1';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -7696,9 +7696,9 @@ function z15Auto(n) {
     if (z15Rows(st).some(r => !r.ok) && !$('#overlay')) z15Access(true);
   });
 }
-setTimeout(z15Auto, 4500);
+setTimeout(() => z15Auto(), 4500);
 const __z15Login = onLogin;
-onLogin = function () { const r = __z15Login.apply(this, arguments); setTimeout(z15Auto, 4000); return r; };
+onLogin = function () { const r = __z15Login.apply(this, arguments); setTimeout(() => z15Auto(), 4000); return r; };
 // Configurações: atalho para o verificador
 const __z15Set = openSettings;
 openSettings = function () {
@@ -11158,6 +11158,471 @@ ZNEWS.splice(0, ZNEWS.length,
 .z21-tg{font-style:normal;font-size:12px;font-weight:900;color:#9B6BFF;white-space:nowrap}.z21-ob{display:block;font-size:12.5px;color:var(--ink-3);font-weight:700;margin-left:24px}
 .z21-pa{margin-top:10px}
 .z21-verr{font-size:13px;font-weight:800;color:#E0483C;margin:8px 2px}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 3.1.1 · Treino mais sério no estilo do app, desenhos animados
+   dos exercícios, séries marcadas tocando na linha, seletor de carga,
+   relatório de pesos e permissão de notificação uma vez só.
+   ========================================================= */
+/* ---------- Desenhos animados dos exercícios (feitos em código, no estilo do Zenit) ---------- */
+const ZF_C = { skin: '#EDB98A', skin2: '#D49B6E', shirt: '#1CB0F6', shirt2: '#1590CC', short: '#2B2F86', short2: '#22266E', shoe: '#FF4B4B', shoe2: '#D93636', hair: '#3A2A22', metal: '#5A6070', plate: '#58CC02', plate2: '#46A302', bench: '#37464F', mach: '#9AA6B2', mach2: '#C8D0D8', belt: '#2F3A44', floor: '#E5E5E5' };
+const zfR = d => d * Math.PI / 180;
+const zfP = (o, L, a) => [o[0] + L * Math.sin(zfR(a)), o[1] - L * Math.cos(zfR(a))];
+const zfMix = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+const zfAng = (a, b) => Math.atan2(b[0] - a[0], -(b[1] - a[1])) * 180 / Math.PI;
+const zfN = v => (+v).toFixed(1);
+const zfL = (a, b, w, c) => `<line x1="${zfN(a[0])}" y1="${zfN(a[1])}" x2="${zfN(b[0])}" y2="${zfN(b[1])}" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/>`;
+const zfCi = (p, r, c, ex) => `<circle cx="${zfN(p[0])}" cy="${zfN(p[1])}" r="${r}" fill="${c}" ${ex || ''}/>`;
+const zfRect = (x, y, w, h, c, rx) => `<rect x="${zfN(x)}" y="${zfN(y)}" width="${zfN(w)}" height="${zfN(h)}" rx="${rx == null ? 8 : rx}" fill="${c}"/>`;
+function zfIk(S, H, l1, l2, dir) {
+  const dx = H[0] - S[0], dy = H[1] - S[1]; const d0 = Math.hypot(dx, dy) || 1; const d = Math.min(d0, l1 + l2 - .5);
+  const ux = dx / d0, uy = dy / d0; const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d); const h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const p = [S[0] + a * ux, S[1] + a * uy]; return [p[0] - dir * h * uy, p[1] + dir * h * ux];
+}
+const zfE = t => (1 - Math.cos(2 * Math.PI * t / 2.4)) / 2;
+const zfFloor = () => `<line x1="20" y1="404" x2="460" y2="404" stroke="${ZF_C.floor}" stroke-width="6" stroke-linecap="round"/>`;
+function zfLerp(a, b, k) {
+  if (Array.isArray(a)) return a.map((v, i) => zfLerp(v, b[i], k));
+  if (a && typeof a === 'object') { const o = {}; for (const key in a) o[key] = b && key in b ? zfLerp(a[key], b[key], k) : a[key]; return o; }
+  if (typeof a === 'number' && typeof b === 'number') return a + (b - a) * k;
+  return a;
+}
+// Monta o corpo: quadril H, ângulo do tronco, pernas e braços (perto = n, longe = f)
+// Ângulos: 0 = para cima, 90 = para a frente (direita), 180 = para baixo, -90 = para trás.
+function zfBody(p) {
+  const H = p.H; const tl = p.tl || 122; const S = zfP(H, tl, p.tor);
+  const J = { H, S };
+  for (const s of ['n', 'f']) {
+    const L = p[s] || p.n; const o = {};
+    const hip = s === 'f' && p.fo ? [H[0] + p.fo[0], H[1] + p.fo[1]] : H; const sh = s === 'f' && p.fs ? [S[0] + p.fs[0], S[1] + p.fs[1]] : S;
+    if (L.A) { o.A = L.A; o.K = zfIk(hip, L.A, 100, 95, L.kd || -1); } else { o.K = zfP(hip, 100, L.th); o.A = zfP(o.K, 95, L.sh); }
+    if (L.W) { o.W = L.W; o.E = zfIk(sh, L.W, 60, 56, L.ed || 1); } else { o.E = zfP(sh, 60, L.ua); o.W = zfP(o.E, 56, L.fa); }
+    o.hip = hip; o.sh = sh; o.ft = L.ft == null ? 90 : L.ft; J[s] = o;
+  }
+  return J;
+}
+function zfHead(S, ang, face) {
+  const n = zfP(S, 16, ang); const hc = zfP(n, 22, ang); const eye = zfP(hc, 14, ang + 90 * (face || 1)); const eye2 = zfP(eye, 3, ang);
+  return zfL(S, n, 16, ZF_C.skin) + zfCi(hc, 25, ZF_C.skin) + `<path d="M${zfN(hc[0] - 25)} ${zfN(hc[1] - 2)} a25 25 0 0 1 50 0 q-12 -8 -26 -6 q-14 2 -24 6z" fill="${ZF_C.hair}" transform="rotate(${zfN(ang)} ${zfN(hc[0])} ${zfN(hc[1])})"/>` + zfCi(eye2, 3.2, '#3A2A22');
+}
+function zfLeg(o, near) {
+  const m = zfMix(o.hip, o.K, .58); const toe = zfP(o.A, 34, o.ft); const heel = zfP(o.A, 10, o.ft + 180);
+  return zfL(o.A, o.K, near ? 25 : 23, near ? ZF_C.skin : ZF_C.skin2) + zfL(o.hip, m, 30, near ? ZF_C.short : ZF_C.short2) + zfL(m, o.K, 27, near ? ZF_C.skin : ZF_C.skin2)
+    + zfL(heel, toe, 15, near ? ZF_C.shoe : ZF_C.shoe2);
+}
+function zfArm(o, near) { return zfL(o.sh, o.E, 22, near ? ZF_C.shirt : ZF_C.shirt2) + zfL(o.E, o.W, 18, near ? ZF_C.skin : ZF_C.skin2) + (near ? zfCi(o.W, 10, ZF_C.skin) : ''); }
+function zfDraw(def, t) {
+  const p = typeof def.pose === 'function' ? def.pose(t) : zfLerp(def.a, def.b, zfE(t));
+  const J = zfBody(p);
+  const g = k => (typeof def[k] === 'function' ? def[k](J, t, p) : (def[k] || ''));
+  return (def.floor === false ? '' : zfFloor()) + g('bg') + g('back') + zfLeg(J.f, 0) + zfArm(J.f, 0) + g('mid')
+    + zfL(J.H, J.S, 50, ZF_C.shirt) + zfCi(J.H, 22, ZF_C.short) + zfHead(J.S, p.hd != null ? p.hd : p.tor, p.face) + g('seat') + zfLeg(J.n, 1) + g('front') + zfArm(J.n, 1) + g('top');
+}
+// Peças
+const zfPlate = (c, r) => zfCi(c, r || 38, ZF_C.plate, `stroke="${ZF_C.plate2}" stroke-width="7"`) + zfCi(c, 8, ZF_C.metal);
+const zfDb = (h, ang) => `<g transform="rotate(${zfN(ang || 0)} ${zfN(h[0])} ${zfN(h[1])})">${zfRect(h[0] - 24, h[1] - 5, 48, 10, ZF_C.metal, 5)}${zfRect(h[0] - 30, h[1] - 15, 13, 30, ZF_C.plate, 5)}${zfRect(h[0] + 17, h[1] - 15, 13, 30, ZF_C.plate, 5)}</g>`;
+const zfBench = (x1, x2, y) => zfRect(x1, y, x2 - x1, 22, ZF_C.bench, 11) + zfRect(x1 + 30, y + 18, 14, 404 - y - 18, ZF_C.bench, 3) + zfRect(x2 - 44, y + 18, 14, 404 - y - 18, ZF_C.bench, 3);
+const zfStool = (x, y, w) => zfRect(x - w / 2, y, w, 20, ZF_C.bench, 10) + zfRect(x - 7, y + 18, 14, 404 - y - 18, ZF_C.bench, 3);
+const zfCable = (a, b) => zfL(a, b, 4, '#4A4F5A');
+const zfPulley = c => zfCi(c, 12, ZF_C.mach2, `stroke="${ZF_C.mach}" stroke-width="4"`);
+const zfTower = x => zfRect(x, 40, 22, 364, ZF_C.mach, 8);
+
+const ZFIG = {
+  run: { pose: t => { const ph = 2 * Math.PI * t / 0.75; const s = Math.sin(ph), s2 = Math.sin(ph + Math.PI);
+      const leg = q => { const th = 180 - 40 * Math.sin(q); return { th, sh: th + 12 + 78 * Math.max(0, Math.cos(q)), ft: 90 }; };
+      return { H: [240, 186 - 6 * Math.abs(Math.cos(ph))], tor: 12, n: Object.assign(leg(ph), { ua: 180 + 42 * s, fa: 180 + 42 * s - 95 }), f: Object.assign(leg(ph + Math.PI), { ua: 180 + 42 * s2, fa: 180 + 42 * s2 - 95 }) }; },
+    bg: () => zfRect(110, 372, 300, 22, ZF_C.belt, 11) + zfRect(118, 392, 284, 12, ZF_C.mach, 6) + zfL([392, 380], [372, 170], 14, ZF_C.mach) + zfRect(330, 150, 80, 28, ZF_C.bench, 10) + zfL([350, 190], [300, 200], 10, ZF_C.mach), floor: true },
+  bike: { pose: t => { const ph = 2 * Math.PI * t / 1.1; const C0 = [262, 330]; const pd = a => [C0[0] + 38 * Math.cos(a), C0[1] + 38 * Math.sin(a)];
+      const H = [210, 222]; return { H, tor: 38, n: { A: pd(ph), kd: -1, W: [326, 188], ed: -1 }, f: { A: pd(ph + Math.PI), kd: -1, W: [322, 190], ed: -1 } }; },
+    bg: () => zfCi([330, 352], 44, 'none', `stroke="${ZF_C.mach}" stroke-width="12"`) + zfL([262, 330], [215, 250], 14, ZF_C.mach) + zfL([262, 330], [330, 352], 12, ZF_C.mach) + zfL([300, 260], [330, 200], 12, ZF_C.mach) + zfL([215, 250], [300, 260], 12, ZF_C.mach) + zfL([300, 260], [330, 352], 12, ZF_C.mach) + zfL([320, 192], [342, 186], 12, ZF_C.bench) + zfL([300, 404], [360, 404], 14, ZF_C.bench) + zfL([190, 404], [250, 404], 14, ZF_C.bench) + zfL([220, 400], [262, 330], 10, ZF_C.mach),
+    seat: () => zfRect(186, 236, 50, 14, ZF_C.bench, 7) + zfCi([262, 330], 12, ZF_C.metal) },
+  elip: { pose: t => { const ph = 2 * Math.PI * t / 1.2; const ft = a => [250 + 46 * Math.cos(a), 364 + 14 * Math.sin(a)]; const hd = a => [292 + 18 * Math.cos(a), 168 + 10 * Math.sin(a)];
+      return { H: [236, 200], tor: 6, n: { A: ft(ph), kd: -1, W: hd(ph + Math.PI), ed: -1, ft: 90 }, f: { A: ft(ph + Math.PI), kd: -1, W: hd(ph), ed: -1 } }; },
+    bg: () => zfRect(150, 380, 220, 18, ZF_C.mach, 9) + zfL([350, 384], [330, 160], 14, ZF_C.mach) + zfRect(318, 140, 50, 24, ZF_C.bench, 10) + zfL([300, 150], [300, 330], 8, ZF_C.mach2) },
+  bench: { a: { H: [300, 262], tor: -90, face: 1, n: { A: [395, 398], kd: 1, W: [188, 246], ed: 1, ft: 90 }, f: { A: [380, 398], kd: 1, W: [196, 246], ed: 1 } }, b: { H: [300, 262], tor: -90, face: 1, n: { A: [395, 398], kd: 1, W: [190, 150], ed: 1, ft: 90 }, f: { A: [380, 398], kd: 1, W: [198, 150], ed: 1 } },
+    bg: () => zfBench(110, 390, 282) + zfRect(100, 120, 14, 284, ZF_C.mach, 6), front: J => zfPlate(J.n.W) },
+  fly: { a: { H: [300, 262], tor: -90, face: 1, n: { A: [395, 398], kd: 1, W: [200, 296], ed: 1 }, f: { A: [380, 398], kd: 1, W: [206, 296], ed: 1 } }, b: { H: [300, 262], tor: -90, face: 1, n: { A: [395, 398], kd: 1, W: [182, 140], ed: 1 }, f: { A: [380, 398], kd: 1, W: [186, 140], ed: 1 } },
+    bg: () => zfBench(110, 390, 282), front: J => zfDb(J.n.W, 0) },
+  pushup: { pose: t => { const al = 12 + 16 * zfE(t); const F = [404, 396]; const H = [F[0] - 195 * Math.cos(zfR(al)), F[1] - 195 * Math.sin(zfR(al)) - 6]; const tor = al - 90 - 1; const th = 90 + al;
+      const S = zfP(H, 122, tor); return { H, tor, face: -1, n: { th, sh: th, ft: 160, W: [S[0] + 4, 396], ed: 1 }, f: { th, sh: th, ft: 160, W: [S[0] + 10, 396], ed: 1 } }; } },
+  press: { a: { H: [222, 296], tor: 0, n: { th: 90, sh: 180, W: [256, 176], ed: -1 }, f: { th: 90, sh: 180, W: [250, 176], ed: -1 } }, b: { H: [222, 296], tor: 0, n: { th: 90, sh: 180, W: [244, 66], ed: -1 }, f: { th: 90, sh: 180, W: [238, 66], ed: -1 } },
+    bg: () => zfStool(230, 316, 110) + zfRect(176, 160, 18, 160, ZF_C.bench, 8), front: J => zfDb(J.n.W, 0) },
+  raise: { a: { H: [230, 205], tor: 0, n: { th: 180, sh: 180, ua: 172, fa: 170 }, f: { th: 180, sh: 180, ua: 176, fa: 174 } }, b: { H: [230, 205], tor: 0, n: { th: 180, sh: 180, ua: 92, fa: 90 }, f: { th: 180, sh: 180, ua: 96, fa: 94 } }, front: J => zfDb(J.n.W, 90) },
+  shrug: { a: { H: [230, 205], tor: 0, tl: 118, n: { th: 180, sh: 180, ua: 178, fa: 178 }, f: { th: 180, sh: 180, ua: 180, fa: 180 } }, b: { H: [230, 205], tor: 0, tl: 132, n: { th: 180, sh: 180, ua: 178, fa: 178 }, f: { th: 180, sh: 180, ua: 180, fa: 180 } }, front: J => zfDb(J.n.W, 0) },
+  row: { a: { H: [200, 230], tor: 72, n: { th: 170, sh: 192, W: [296, 300], ed: -1 }, f: { th: 170, sh: 192, W: [290, 300], ed: -1 } }, b: { H: [200, 230], tor: 72, n: { th: 170, sh: 192, W: [258, 238], ed: -1 }, f: { th: 170, sh: 192, W: [252, 238], ed: -1 } }, front: J => zfPlate(J.n.W, 34) },
+  seatrow: { a: { H: [170, 302], tor: 8, n: { A: [350, 330], kd: -1, W: [318, 226], ed: 1 }, f: { A: [350, 330], kd: -1, W: [312, 226], ed: 1 } }, b: { H: [170, 302], tor: -8, n: { A: [350, 330], kd: -1, W: [222, 248], ed: 1 }, f: { A: [350, 330], kd: -1, W: [216, 248], ed: 1 } },
+    bg: () => zfRect(110, 318, 140, 20, ZF_C.bench, 10) + zfRect(170, 336, 14, 68, ZF_C.bench, 3) + zfRect(360, 120, 22, 284, ZF_C.mach, 8) + zfRect(346, 300, 20, 60, ZF_C.bench, 6) + zfPulley([360, 236]),
+    back: J => zfCable([360, 236], J.n.W), front: J => zfRect(J.n.W[0] - 6, J.n.W[1] - 16, 12, 32, ZF_C.metal, 6) },
+  pulldown: { a: { H: [215, 292], tor: -12, n: { A: [322, 398], kd: -1, W: [262, 70], ed: -1 }, f: { A: [316, 398], kd: -1, W: [256, 70], ed: -1 } }, b: { H: [215, 292], tor: -14, n: { A: [322, 398], kd: -1, W: [240, 196], ed: -1 }, f: { A: [316, 398], kd: -1, W: [234, 196], ed: -1 } },
+    bg: () => zfTower(352) + zfRect(250, 38, 124, 18, ZF_C.mach, 9) + zfPulley([262, 56]) + zfStool(218, 300, 96) + zfRect(290, 248, 44, 20, ZF_C.bench, 10),
+    back: J => zfL([262, 56], J.n.W, 4, '#333'), front: J => zfRect(J.n.W[0] - 6, J.n.W[1] - 16, 12, 32, ZF_C.metal, 6) },
+  pullup: { pose: t => { const k = zfE(t); const H = [234, 246 - 72 * k]; return { H, tor: 4, n: { th: 168, sh: 232, W: [254, 34], ed: -1, ft: 150 }, f: { th: 172, sh: 236, W: [246, 34], ed: -1, ft: 150 } }; },
+    bg: () => zfRect(110, 24, 280, 14, ZF_C.mach, 7) + zfRect(110, 24, 16, 380, ZF_C.mach, 6) + zfRect(374, 24, 16, 380, ZF_C.mach, 6) },
+  curl: { a: { H: [230, 205], tor: 0, n: { th: 180, sh: 180, ua: 176, fa: 172 }, f: { th: 180, sh: 180, ua: 178, fa: 176 } }, b: { H: [230, 205], tor: 0, n: { th: 180, sh: 180, ua: 172, fa: 28 }, f: { th: 180, sh: 180, ua: 176, fa: 32 } }, front: J => zfDb(J.n.W, 90) },
+  pushdown: { a: { H: [220, 205], tor: 10, n: { th: 180, sh: 180, ua: 178, fa: 40 }, f: { th: 180, sh: 180, ua: 180, fa: 44 } }, b: { H: [220, 205], tor: 10, n: { th: 180, sh: 180, ua: 178, fa: 172 }, f: { th: 180, sh: 180, ua: 180, fa: 174 } },
+    bg: () => zfTower(360) + zfPulley([350, 60]), back: J => zfCable([350, 60], J.n.W), front: J => zfRect(J.n.W[0] - 12, J.n.W[1] - 5, 24, 10, ZF_C.metal, 5) },
+  skull: { a: { H: [300, 262], tor: -90, face: 1, n: { A: [395, 398], kd: 1, ua: -14, fa: -150 }, f: { A: [380, 398], kd: 1, ua: -12, fa: -148 } }, b: { H: [300, 262], tor: -90, face: 1, n: { A: [395, 398], kd: 1, ua: -14, fa: -8 }, f: { A: [380, 398], kd: 1, ua: -12, fa: -6 } },
+    bg: () => zfBench(110, 390, 282), front: J => zfPlate(J.n.W, 26) },
+  dip: { pose: t => { const k = zfE(t); const H = [232, 228 + 46 * k]; return { H, tor: 10, n: { th: 204, sh: 268, W: [252, 196], ed: -1, ft: 172 }, f: { th: 208, sh: 270, W: [246, 196], ed: -1, ft: 172 } }; },
+    bg: () => zfRect(170, 196, 160, 12, ZF_C.mach, 6) + zfRect(300, 196, 14, 208, ZF_C.mach, 4) + zfRect(180, 196, 14, 208, ZF_C.mach2, 4) },
+  squat: { pose: t => { const k = zfE(t); const H = zfMix([228, 206], [178, 290], k); const tor = 4 + 40 * k; const S = zfP(H, 122, tor); const W = [S[0] - 4, S[1] + 14];
+      return { H, tor, hd: tor * .5, n: { A: [244, 398], kd: -1, W, ed: 1 }, f: { A: [256, 398], kd: -1, W: [W[0] + 6, W[1]], ed: 1 } }; },
+    mid: J => zfPlate([J.S[0] - 22, J.S[1] + 4], 36) },
+  lunge: { a: { H: [226, 212], tor: 0, n: { A: [312, 398], kd: -1, ua: 178, fa: 178 }, f: { A: [150, 398], kd: -1, ua: 180, fa: 180, ft: 110 } }, b: { H: [222, 282], tor: 2, n: { A: [312, 398], kd: -1, ua: 178, fa: 178 }, f: { A: [150, 398], kd: -1, ua: 180, fa: 180, ft: 130 } }, front: J => zfDb(J.n.W, 0) },
+  legpress: { a: { H: [196, 312], tor: -56, n: { A: [292, 226], kd: -1, ft: 30, ua: 150, fa: 120 }, f: { A: [286, 232], kd: -1, ft: 30, ua: 150, fa: 120 } }, b: { H: [196, 312], tor: -56, n: { A: [350, 168], kd: -1, ft: 30, ua: 150, fa: 120 }, f: { A: [344, 174], kd: -1, ft: 30, ua: 150, fa: 120 } },
+    bg: () => zfL([120, 300], [80, 230], 26, ZF_C.bench) + zfRect(120, 316, 120, 22, ZF_C.bench, 11) + zfRect(160, 336, 14, 68, ZF_C.bench, 3) + zfL([250, 330], [420, 160], 12, ZF_C.mach) + zfRect(400, 140, 16, 264, ZF_C.mach, 6),
+    seat: J => `<g transform="rotate(45 ${zfN(J.n.A[0] + 14)} ${zfN(J.n.A[1] + 8)})">${zfRect(J.n.A[0] + 4, J.n.A[1] - 50, 22, 116, ZF_C.mach, 6)}</g>` },
+  ext: { a: { H: [210, 290], tor: -8, n: { th: 90, sh: 178, ua: 160, fa: 120 }, f: { th: 90, sh: 178, ua: 160, fa: 120 } }, b: { H: [210, 290], tor: -8, n: { th: 90, sh: 92, ua: 160, fa: 120 }, f: { th: 90, sh: 92, ua: 160, fa: 120 } },
+    bg: () => zfRect(150, 302, 130, 22, ZF_C.bench, 11) + zfL([150, 300], [140, 170], 24, ZF_C.bench) + zfRect(200, 322, 14, 82, ZF_C.bench, 3), front: J => zfCi(zfP(J.n.A, 6, 90), 14, ZF_C.bench) },
+  curlLie: { a: { H: [260, 290], tor: -90, face: -1, n: { th: 90, sh: 92, ua: 200, fa: 160, ft: 0 }, f: { th: 90, sh: 92, ua: 200, fa: 160, ft: 0 } }, b: { H: [260, 290], tor: -90, face: -1, n: { th: 90, sh: 0, ua: 200, fa: 160, ft: 0 }, f: { th: 90, sh: 0, ua: 200, fa: 160, ft: 0 } },
+    bg: () => zfBench(90, 380, 312), front: J => zfCi(zfP(J.n.A, 4, J.n.ft + 180), 13, ZF_C.bench) },
+  hinge: { a: { H: [226, 205], tor: 2, n: { th: 180, sh: 180, ua: 178, fa: 178 }, f: { th: 180, sh: 180, ua: 180, fa: 180 } }, b: { H: [196, 218], tor: 78, n: { th: 188, sh: 172, ua: 180, fa: 180 }, f: { th: 188, sh: 172, ua: 180, fa: 180 } }, front: J => zfPlate(J.n.W, 36) },
+  thrust: { pose: t => { const k = zfE(t); const S = [176, 272]; const H = [262, 352 - 66 * k]; const tor = zfAng(H, S); return { H, tor, tl: Math.hypot(S[0] - H[0], S[1] - H[1]), hd: -96 + 20 * k, face: 1, n: { A: [332, 398], kd: 1, W: [H[0] - 4, H[1] - 26], ed: 1 }, f: { A: [322, 398], kd: 1, W: [H[0] - 10, H[1] - 26], ed: 1 } }; },
+    bg: () => zfBench(60, 190, 282), front: J => zfPlate([J.H[0], J.H[1] - 30], 30) },
+  kick: { a: { H: [226, 205], tor: 24, n: { th: 182, sh: 182, W: [300, 140], ed: 1 }, f: { th: 180, sh: 180, W: [294, 140], ed: 1 } }, b: { H: [226, 205], tor: 26, n: { th: 232, sh: 206, W: [300, 140], ed: 1 }, f: { th: 180, sh: 180, W: [294, 140], ed: 1 } },
+    bg: () => zfTower(300) + zfPulley([110, 390]) + zfRect(98, 300, 20, 104, ZF_C.mach, 6), back: J => zfCable([110, 390], J.n.A) },
+  calf: { a: { H: [230, 196], tor: 0, n: { th: 180, sh: 180, ua: 176, fa: 176, ft: 90 }, f: { th: 180, sh: 180, ua: 178, fa: 178, ft: 90 } }, b: { H: [230, 176], tor: 0, n: { th: 180, sh: 180, ua: 176, fa: 176, ft: 120 }, f: { th: 180, sh: 180, ua: 178, fa: 178, ft: 120 } },
+    bg: () => zfRect(200, 392, 120, 12, ZF_C.bench, 4), front: J => zfDb(J.n.W, 0) },
+  crunch: { a: { H: [262, 370], tor: -92, face: 1, n: { A: [350, 398], kd: 1, ua: -40, fa: 120 }, f: { A: [342, 398], kd: 1, ua: -40, fa: 120 } }, b: { H: [262, 370], tor: -58, face: 1, n: { A: [350, 398], kd: 1, ua: -6, fa: 150 }, f: { A: [342, 398], kd: 1, ua: -6, fa: 150 } },
+    bg: () => zfRect(90, 392, 320, 10, '#C9E7FA', 5) },
+  plank: { pose: t => { const al = 11 + 1.2 * Math.sin(2 * Math.PI * t / 2); const F = [404, 396]; const H = [F[0] - 195 * Math.cos(zfR(al)), F[1] - 195 * Math.sin(zfR(al)) - 6]; const tor = al - 90; const th = 90 + al; const S = zfP(H, 122, tor);
+      return { H, tor, face: -1, n: { th, sh: th, ft: 160, W: [S[0] - 42, 394], ed: -1 }, f: { th, sh: th, ft: 160, W: [S[0] - 36, 394], ed: -1 } }; },
+    bg: () => zfRect(60, 392, 380, 10, '#C9E7FA', 5) },
+  abd: { front: true }
+};
+// Abdutora e adutora: vista de frente
+function zfFront(t, out) {
+  const k = zfE(t); const sp = out ? 6 + 30 * k : 36 - 30 * k; const hy = 292;
+  const leg = sd => { const hp = [240 + sd * 22, hy]; const K = zfP(hp, 64, 180 - sd * sp); const A = [K[0] + sd * 4, 398];
+    const pad = out ? [K[0] + sd * 20, K[1] - 4] : [K[0] - sd * 20, K[1] - 4];
+    return zfL(hp, K, 32, ZF_C.short) + zfL(K, A, 24, ZF_C.skin) + zfL([A[0] - 10, A[1]], [A[0] + 10, A[1]], 16, ZF_C.shoe) + zfRect(pad[0] - 8, pad[1] - 30, 16, 56, ZF_C.bench, 8); };
+  return zfFloor() + zfRect(176, 120, 128, 172, ZF_C.mach2, 16) + zfRect(232, 300, 16, 104, ZF_C.mach, 3) + zfRect(168, 284, 144, 22, ZF_C.mach, 11) + leg(-1) + leg(1)
+    + zfRect(204, 168, 72, 130, ZF_C.shirt, 26) + zfL([212, 184], [184, 292], 20, ZF_C.shirt2) + zfL([268, 184], [296, 292], 20, ZF_C.shirt2) + zfCi([184, 296], 10, ZF_C.skin) + zfCi([296, 296], 10, ZF_C.skin)
+    + zfL([240, 168], [240, 148], 18, ZF_C.skin) + zfCi([240, 122], 27, ZF_C.skin) + `<path d="M213 118 a27 27 0 0 1 54 0 q-27 -10 -54 0z" fill="${ZF_C.hair}"/>` + zfCi([230, 124], 3.2, '#3A2A22') + zfCi([250, 124], 3.2, '#3A2A22');
+}
+function zfKey(name) {
+  const n = String(name || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const R = [[/esteira|corrida|correr|caminhada/, 'run'], [/bicicleta|bike|spinning|ergometrica/, 'bike'], [/eliptico|transport|escada|simulador/, 'elip'],
+    [/abdutora|abducao/, 'abdOut'], [/adutora|aducao/, 'abdIn'], [/prancha/, 'plank'], [/abdominal|crunch/, 'crunch'],
+    [/flexao de braco|flexao|push.?up/, 'pushup'], [/crucifixo invertido|crucifixo inverso|voador inverso/, 'raise'], [/crucifixo|peck|voador|crossover|fly/, 'fly'],
+    [/triceps (testa|frances)|testa|frances/, 'skull'], [/triceps|pulley|corda/, 'pushdown'], [/mergulho|paralela/, 'dip'],
+    [/supino|chest press/, 'bench'], [/desenvolvimento|militar|arnold/, 'press'], [/elevacao (lateral|frontal)|lateral|frontal/, 'raise'], [/encolhimento/, 'shrug'],
+    [/remada (baixa|sentad)|remada no cabo/, 'seatrow'], [/remada|serrote|cavalinho/, 'row'], [/barra fixa|pull.?up|chin/, 'pullup'], [/puxada|pulldown|pull down/, 'pulldown'],
+    [/rosca|biceps/, 'curl'], [/leg press|leg 45|leg horizontal/, 'legpress'], [/extensora/, 'ext'], [/flexora|mesa flexora/, 'curlLie'],
+    [/stiff|terra|levantamento|good morning/, 'hinge'], [/elevacao pelvica|hip thrust|ponte/, 'thrust'], [/gluteo|coice|kickback/, 'kick'],
+    [/panturrilha|gemeos/, 'calf'], [/afundo|bulgaro|passada|avanco/, 'lunge'], [/agach|hack|smith|sumo|goblet/, 'squat']];
+  for (const [re, k] of R) if (re.test(n)) return k;
+  return '';
+}
+function zfSVG(key, t) {
+  if (key === 'abdOut' || key === 'abdIn') return zfFront(t, key === 'abdOut');
+  const d = ZFIG[key]; return d ? zfDraw(d, t) : '';
+}
+function zfHTML(name, opt) {
+  const key = zfKey(name); if (!key) return '';
+  opt = opt || {}; const t = opt.t != null ? opt.t : 1.0;
+  return `<svg class="zfig" viewBox="${opt.vb || '0 -40 480 460'}" data-zf="${key}" aria-hidden="true">${zfSVG(key, t)}</svg>`;
+}
+
+/* ---------- Animação dos desenhos ---------- */
+const Z22 = { raf: 0, last: 0, t0: 0 };
+function z22Loop(ts) {
+  const els = document.querySelectorAll('svg.zfig[data-anim]'); if (!els.length) { Z22.raf = 0; return; }
+  if (!Z22.t0) Z22.t0 = ts;
+  if (ts - Z22.last > 40) { Z22.last = ts; const t = (ts - Z22.t0) / 1000; els.forEach(s => { s.innerHTML = zfSVG(s.dataset.anim, t); }); }
+  Z22.raf = requestAnimationFrame(z22Loop);
+}
+function z22Anim() { if (!Z22.raf) { Z22.t0 = 0; Z22.raf = requestAnimationFrame(z22Loop); } }
+function z22Hyd() { document.querySelectorAll('img[data-idb]').forEach(async im => { const k = im.dataset.idb; if (im.dataset.done === k) return; im.dataset.done = k; const v = await z16Get(k); if (v) im.src = v; else { const w = im.closest('[data-idbwrap]'); if (w) w.classList.add('nophoto'); } }); }
+function z22Fig(ex, cls) {
+  const k = z21IsC(ex) && !zfKey(ex.nome) ? 'run' : zfKey(ex.nome);
+  return k ? `<svg class="zfig ${cls || ''}" viewBox="0 -40 480 460" aria-hidden="true">${zfSVG(k, 0.75)}</svg>` : `<span class="z22-emo">${z21IsC(ex) ? '🏃' : z16Icon(ex.nome)}</span>`;
+}
+function z22Thumb(ex) {
+  return `<span class="z22-th" data-idbwrap>${ex.foto ? `<img data-idb="maq|${ex.id}" alt="">` : ''}${z22Fig(ex)}${ex.maq ? `<em>${esc(ex.maq)}</em>` : ''}</span>`;
+}
+
+/* ---------- Lista do treino ---------- */
+z16DrawLive = function () {
+  const el = $('#zgym'); const p = me(); const L = p && p.gymLive; if (!el || !L) return;
+  const f = zGym(p).fichas[L.ficha]; z21Sync(L, f);
+  const body = el.querySelector('.z22-body'); const y = body ? body.scrollTop : 0;
+  const tot = f.ex.reduce((a, x) => a + (L.done[x.id] || []).length, 0); const dn = f.ex.reduce((a, x) => a + (L.done[x.id] || []).filter(Boolean).length, 0);
+  const exDone = f.ex.filter(x => (L.done[x.id] || []).every(Boolean)).length; const pc = tot ? dn / tot : 0;
+  const card = ex => {
+    const d = L.done[ex.id] || []; const all = d.length && d.every(Boolean); const c = z21IsC(ex); const tec = z21Tec(ex.tec);
+    const run = L.rest && L.rest.id === ex.id && L.rest.until > Date.now(); const cur = !all && d.some(Boolean);
+    return `<div class="z22-c ${all ? 'done' : ''} ${cur ? 'cur' : ''}" id="z21c_${ex.id}">
+      <div class="z22-ex"><button class="z22-ck" data-act="z21-all" data-id="${ex.id}" aria-label="${all ? 'Desmarcar' : 'Marcar'} ${esc(ex.nome)}">${all ? '✓' : ''}</button>
+        <button class="z22-open" data-act="z21-det" data-id="${ex.id}">${z22Thumb(ex)}<span class="grow"><b>${esc(ex.nome)}</b><span class="s">${z21Line(ex, L)}</span>${tec ? `<span class="z22-tag">${Z21_TEC[tec][0]}</span>` : ''}${c ? '' : `<span class="z22-dots">${d.map(v => `<i class="${v ? 'on' : ''}"></i>`).join('')}<small>${d.filter(Boolean).length}/${d.length}</small></span>`}</span><span class="z22-go">›</span></button></div>
+      ${c || !ex.desc ? '' : `<div class="z22-rest ${run ? 'run' : ''}" id="z21r_${ex.id}">${run ? z21RestRun(ex) : `<span class="z22-ri">⏱</span><b>${z16T(ex.desc * 1000)}</b><span>descanso entre séries</span><button class="z21-pl" data-act="z21-rest" data-id="${ex.id}" aria-label="Começar descanso">▶</button>`}</div>`}</div>`;
+  };
+  el.innerHTML = `<div class="ck-in z22-in"><div class="z22-top"><button class="ck-x" data-act="z16-min" aria-label="Minimizar">${IC.x}</button><div class="z22-time"><b id="zgClock">${z16T(Date.now() - L.start)}</b><small>tempo de treino</small></div><button class="z22-ed" data-act="z21-edit">Editar</button></div>
+    <div class="z22-body"><div class="z22-hero"><span class="z22-l">${L.ficha}</span><div class="grow"><b>${f.nome ? esc(f.nome) : 'Treino ' + L.ficha}</b><span>${exDone} de ${f.ex.length} ${plural(f.ex.length, 'exercício', 'exercícios')} · ${dn} de ${tot} séries</span></div><span class="z22-ring">${zRing2(pc, '#58CC02')}<em>${Math.round(pc * 100)}%</em></span></div>
+      <div class="z22-lbl">Exercícios</div>
+      ${f.ex.map(card).join('')}<div class="hint" style="text-align:center;margin:6px 0 14px">Toque no exercício para ver como fazer e marcar cada série.</div></div>
+    <div class="z22-foot"><button class="btn z21-fin" data-act="z16-finish">${dn === tot ? 'Finalizar treino 🎉' : 'Finalizar treino'} · +${dn === tot ? 10 : 5} XP</button></div></div>`;
+  const b2 = el.querySelector('.z22-body'); if (b2) b2.scrollTop = y; z16TickFn(); z22Hyd();
+};
+
+/* ---------- Exercício aberto: desenho animado + tabela de séries ---------- */
+function z22Val(L, id, i, k) { const s = (L.sets[id] || [])[i]; const pk = (L.pk[id] || [])[i] || {}; if (s) return k === 'kg' ? s.kg : s.r; if (pk[k === 'kg' ? 'kg' : 'r'] != null) return pk[k === 'kg' ? 'kg' : 'r']; return k === 'kg' ? (L.kg[id] || 0) : (L.reps[id] || 0); }
+z21DetHTML = function (id) {
+  const p = me(); const L = p.gymLive; const ex = z21Ex(L, id); if (!ex) return ''; z21Sync(L, zGym(p).fichas[L.ficha]); L.pk[id] = L.pk[id] || [];
+  const d = L.done[id] || []; const tec = z21Tec(ex.tec); const c = z21IsC(ex); const key = zfKey(ex.nome) || (c ? 'run' : '');
+  const media = `<div class="z22-media">${key ? `<svg class="zfig" data-anim="${key}" viewBox="0 -40 480 460" aria-hidden="true">${zfSVG(key, 0.6)}</svg>` : `<span class="z22-emo big">${c ? '🏃' : z16Icon(ex.nome)}</span>`}
+    ${ex.maq ? `<i class="z22-maq">Aparelho ${esc(ex.maq)}</i>` : ''}<button class="z22-ph" data-act="z16-exfoto" data-f="${L.ficha}" data-id="${id}" data-idbwrap aria-label="Foto do aparelho">${ex.foto ? `<img data-idb="maq|${id}" alt="">` : '<span>📷</span>'}<small>${ex.foto ? 'Seu aparelho' : 'Foto do aparelho'}</small></button></div>`;
+  const head = `${media}<div class="z22-nm"><h2>${esc(ex.nome)}</h2><span>${c ? (+ex.min || 10) + ' minutos' : ex.desc ? 'descanso ' + ex.desc + 's' : ''}</span></div>
+    ${tec ? `<div class="z22-tec"><b>${Z21_TEC[tec][0]}:</b> ${esc(Z21_TEC[tec][1])}</div>` : ''}${ex.obs ? `<div class="z22-obs">📝 ${esc(ex.obs)}</div>` : ''}`;
+  if (c) return head + `<div style="margin-top:14px"><button class="btn ${d[0] ? 'gray' : ''}" data-act="z21-all" data-id="${id}" data-close="1">${d[0] ? 'Desmarcar' : '✓ Marcar como feito'}</button></div>`;
+  const next = d.findIndex(v => !v);
+  const rows = d.map((v, i) => `<div class="z22-r ${v ? 'on' : ''} ${i === next ? 'nx' : ''}" data-act="z22-row" data-id="${id}" data-i="${i}" role="button" aria-label="Série ${i + 1}${v ? ', feita' : ''}">
+      <span class="z22-n">${i + 1}</span><button class="z22-v" data-act="z22-val" data-id="${id}" data-i="${i}" data-k="kg">${z16Kg(z22Val(L, id, i, 'kg'))}<small>kg</small></button><button class="z22-v" data-act="z22-val" data-id="${id}" data-i="${i}" data-k="r">${z22Val(L, id, i, 'r')}<small>reps</small></button><span class="z22-c2">${v ? '✓' : ''}</span></div>`).join('');
+  const h = z16Hist(p, id); const last = h[h.length - 1]; const sug = z16Suggest(p, ex); const pr = z16PRBefore(p, id, L.start);
+  return head + `<div class="z22-tab"><div class="z22-rh"><span>Série</span><span>Carga</span><span>Reps</span><span></span></div>${rows}</div>
+    <div class="z22-hint">Toque na linha para marcar a série. Toque no número para mudar.</div>
+    ${last || pr ? `<div class="z22-meta">${last ? `<div><small>Última vez</small><b>${z16Kg(last.max)} kg</b><span>${fmtDay(last.date)}</span></div>` : ''}${pr ? `<div><small>Seu recorde</small><b>🏆 ${z16Kg(pr)} kg</b></div>` : ''}</div>` : ''}
+    ${sug && (L.kg[id] || 0) < sug ? `<button class="z22-sug" data-act="z21-sug" data-id="${id}" data-v="${sug}"><span>📈 Você fechou tudo nas últimas vezes. Tente <b>${z16Kg(sug)} kg</b></span><em>Usar</em></button>` : ''}
+    ${next > -1 ? `<div style="margin-top:12px"><button class="btn" data-act="z21-next" data-id="${id}">✓ Marcar série ${next + 1}${ex.desc && d.some((v, k) => !v && k !== next) ? ' · descansar ' + ex.desc + 's' : ''}</button></div>` : `<div style="margin-top:12px"><button class="btn gray" data-act="close">Exercício completo ✓</button></div>`}`;
+};
+z21DetOpen = function (id) { session.z21det = id; openSheet(`<div id="z21Det" class="z22-det">${z21DetHTML(id)}</div>`, { cls: 'z22-sheet' }); z22Anim(); z22Hyd(); };
+z21DetPaint = function () { const b = $('#z21Det'); if (b && session.z21det) { b.innerHTML = z21DetHTML(session.z21det); z22Anim(); z22Hyd(); } };
+
+/* ---------- Seletor grande de carga e repetições ---------- */
+function z22PickHTML() {
+  const s = session.z22p; const L = z16Live(); if (!s || !L) return ''; const kg = s.k === 'kg';
+  const v = s.v; const qk = kg ? [[-5, '−5'], [-2.5, '−2,5'], [2.5, '+2,5'], [5, '+5']] : [[-2, '−2'], [-1, '−1'], [1, '+1'], [2, '+2']];
+  const h = z16Hist(me(), s.id); const last = h[h.length - 1]; const lastV = last ? (kg ? last.max : ((last.sets[s.i] || last.sets[last.sets.length - 1] || {}).r)) : null;
+  return `<div class="z22-pk" role="dialog" aria-label="Mudar ${kg ? 'carga' : 'repetições'}"><div class="grab"></div><h4>Série ${s.i + 1} · ${kg ? 'carga' : 'repetições'}</h4>
+    <div class="z22-big"><button data-act="z22-pd" data-d="${kg ? -(v < 10 ? 1 : 2.5) : -1}" aria-label="Menos">−</button><b>${kg ? z16Kg(v) : v}<small>${kg ? ' kg' : ' reps'}</small></b><button data-act="z22-pd" data-d="${kg ? (v < 10 ? 1 : 2.5) : 1}" aria-label="Mais">+</button></div>
+    <div class="z22-qk">${qk.map(([d, t]) => `<button data-act="z22-pd" data-d="${d}">${t}</button>`).join('')}${lastV != null ? `<button data-act="z22-pset" data-v="${lastV}">Igual à última (${kg ? z16Kg(lastV) + ' kg' : lastV})</button>` : ''}</div>
+    ${kg ? `<button class="z22-all ${s.all ? 'on' : ''}" data-act="z22-pall"><i>${s.all ? '✓' : ''}</i>Usar nas próximas séries também</button>` : ''}
+    <button class="btn z22-ok" data-act="z22-pok">Confirmar</button></div>`;
+}
+function z22PickOpen(id, i, k) {
+  const L = z16Live(); if (!L) return; session.z22p = { id, i, k, v: z22Val(L, id, i, k), all: true };
+  let el = $('#z22Pick'); if (!el) { el = document.createElement('div'); el.id = 'z22Pick'; el.className = 'z22-pkw'; el.addEventListener('click', e => { if (e.target === el) z22PickClose(); }); document.body.appendChild(el); }
+  el.innerHTML = z22PickHTML();
+}
+function z22PickClose() { const el = $('#z22Pick'); if (el) el.remove(); session.z22p = null; }
+// Marcar o exercício inteiro não apaga a carga das séries que já foram feitas
+ACT['z21-all'] = el => {
+  const L = z16Live(); if (!L) return; z21Sync(L, zGym(me()).fichas[L.ficha]); const ex = z21Ex(L, el.dataset.id); const d = L.done[el.dataset.id]; if (!ex || !d) return;
+  const all = d.every(Boolean); d.forEach((v, i) => { if (all) z21MarkSet(L, ex, i, false); else if (!v) z21MarkSet(L, ex, i, true); });
+  if (!all) { sfx('ding'); try { navigator.vibrate && navigator.vibrate(30); } catch (e) { } if (L.rest && L.rest.id === ex.id) { L.rest = null; z16RestNotify(null); } }
+  save(); if (el.dataset.close) closeSheet(true); z16DrawLive(); z21DetPaint(); z21AllDone(L);
+};
+Object.assign(ACT, {
+  'z22-row': el => { const L = z16Live(); if (!L) return; const ex = z21Ex(L, el.dataset.id); const i = +el.dataset.i; const d = L.done[ex.id]; if (!d) return; z21MarkSet(L, ex, i, !d[i]); if (d[i]) { sfx('ding'); try { navigator.vibrate && navigator.vibrate(30); } catch (e) { } if (d.some(v => !v)) z21StartRest(L, ex); else if (L.rest && L.rest.id === ex.id) { L.rest = null; z16RestNotify(null); } } save(); z21DetPaint(); z16DrawLive(); z21AllDone(L); },
+  'z22-val': el => z22PickOpen(el.dataset.id, +el.dataset.i, el.dataset.k),
+  'z22-pd': el => { const s = session.z22p; if (!s) return; const d = +el.dataset.d; s.v = s.k === 'kg' ? Math.max(0, Math.round((s.v + d) * 10) / 10) : clamp(s.v + d, 1, 100); const x = $('#z22Pick'); if (x) x.innerHTML = z22PickHTML(); },
+  'z22-pset': el => { const s = session.z22p; if (!s) return; s.v = +el.dataset.v; const x = $('#z22Pick'); if (x) x.innerHTML = z22PickHTML(); },
+  'z22-pall': () => { const s = session.z22p; if (!s) return; s.all = !s.all; const x = $('#z22Pick'); if (x) x.innerHTML = z22PickHTML(); },
+  'z22-pok': () => {
+    const s = session.z22p; const L = z16Live(); if (!s || !L) return z22PickClose(); const all = s.k === 'kg' && s.all;
+    L.pk[s.id] = L.pk[s.id] || []; const n = (L.done[s.id] || []).length; const key = s.k === 'kg' ? 'kg' : 'r';
+    const put = j => { const pk = L.pk[s.id][j] = L.pk[s.id][j] || {}; pk[key] = s.v; const st = (L.sets[s.id] || [])[j]; if (st && j === s.i) st[key] = s.v; };
+    put(s.i); if (all) for (let j = s.i + 1; j < n; j++) if (!(L.done[s.id] || [])[j]) put(j);
+    if (s.k === 'kg' && (all || s.i === n - 1)) L.kg[s.id] = s.v; if (s.k !== 'kg') L.reps[s.id] = s.v;
+    save(); z22PickClose(); z21DetPaint(); z16DrawLive();
+  }
+});
+const __z22Close = closeSheet;
+closeSheet = function () { z22PickClose(); return __z22Close.apply(this, arguments); };
+
+/* ---------- Relatório de pesos ---------- */
+function z22Rep(p, L, f, saved) {
+  // L: treino ao vivo (antes de salvar) ou registro salvo
+  const rows = []; let vol = 0, prs = 0, ups = 0;
+  for (const ex of f.ex) {
+    const ss = saved ? ((L.ex || {})[ex.id] || {}).sets || [] : (L.sets[ex.id] || []).filter(Boolean); if (!ss.length || z21IsC(ex)) { if (ss.length && z21IsC(ex)) rows.push({ ex, c: true, min: +ex.min || 10 }); continue; }
+    const mx = Math.max(...ss.map(s => s.kg || 0)); const v = ss.reduce((a, s) => a + (s.kg || 0) * (s.r || 0), 0); vol += v;
+    const before = zGym(p).log.filter(e => e.start < L.start && e.ex && e.ex[ex.id]).sort((a, b) => a.start - b.start).pop();
+    const prev = before ? z16Max(before.ex[ex.id]) : null; const pr = z16PRBefore(p, ex.id, L.start); const isPR = pr > 0 && mx > pr; if (isPR) prs++; if (prev != null && mx > prev) ups++;
+    rows.push({ ex, mx, v, n: ss.length, prev, isPR });
+  }
+  return { rows, vol, prs, ups };
+}
+function z22RepHTML(r) {
+  return `<div class="z22-rep">${r.rows.map(x => x.c ? `<div class="z22-rr"><span class="z22-rt">${z22Fig(x.ex, 'sm')}</span><div class="grow"><b>${esc(x.ex.nome)}</b><small>${x.min} minutos de cardio</small></div></div>`
+    : `<div class="z22-rr"><span class="z22-rt">${z22Fig(x.ex, 'sm')}</span><div class="grow"><b>${esc(x.ex.nome)}</b><small>${x.n} ${plural(x.n, 'série', 'séries')} · ${fmtInt(x.v)} kg no total</small></div><div class="z22-rk"><b>${z16Kg(x.mx)} kg</b>${x.isPR ? '<em class="pr">🏆 recorde</em>' : x.prev != null ? (x.mx > x.prev ? `<em class="up">▲ +${z16Kg(x.mx - x.prev)} kg</em>` : x.mx < x.prev ? `<em class="dn">▼ ${z16Kg(x.prev - x.mx)} kg</em>` : '<em>= igual</em>') : '<em>1ª vez</em>'}</div></div>`).join('')}</div>`;
+}
+z16Finish = function () {
+  const p = me(); const L = p.gymLive; if (!L) return; const f = zGym(p).fichas[L.ficha];
+  const min = Math.max(1, Math.round((Date.now() - L.start) / 60000)); const sets = f.ex.reduce((a, x) => a + (L.sets[x.id] || []).filter(Boolean).length, 0);
+  const tot = f.ex.reduce((a, x) => a + (L.done[x.id] || []).length, 0); const r = z22Rep(p, L, f, false);
+  session.z16feel = session.z16feel || 'ok';
+  openSheet(`<div class="z22-fh"><span class="z22-l">${L.ficha}</span><div class="grow"><h2>${sets === tot ? 'Treino completo! 🎉' : 'Finalizar o treino?'}</h2><div class="sub">${f.nome ? esc(f.nome) : 'Treino ' + L.ficha} · ${fmtDay(L.date)}</div></div></div>
+    <div class="zg-sum z22-sum"><div><b>${min} min</b><small>tempo</small></div><div><b>${sets}/${tot}</b><small>séries</small></div><div><b>${fmtInt(r.vol)} kg</b><small>levantados</small></div><div><b>${r.prs || r.ups}</b><small>${r.prs ? plural(r.prs, 'recorde', 'recordes') : 'subiu carga'}</small></div></div>
+    ${r.rows.length ? `<div class="z22-lbl" style="margin:14px 2px 6px">Relatório de pesos</div>${z22RepHTML(r)}` : ''}
+    <div class="field"><span>Como foi?</span><div class="chips">${[['pesado', '😓 Pesado'], ['ok', '🙂 Ok'], ['voei', '🔥 Voei']].map(([v, l]) => `<button class="chip ${session.z16feel === v ? 'on' : ''}" data-act="z16-feel" data-v="${v}">${l}</button>`).join('')}</div></div>
+    ${sets < tot ? `<div class="hint">Faltaram ${tot - sets} ${plural(tot - sets, 'série', 'séries')}: o treino entra como parcial (+5 XP). Completo vale +10 XP.</div>` : '<div class="hint">Treino completo vale +10 XP.</div>'}
+    <div style="margin-top:12px"><button class="btn" data-act="z16-save" ${sets ? '' : 'disabled'}>Salvar treino</button></div><div style="margin-top:8px"><button class="btn gray" data-act="close">Continuar treinando</button></div>`, {});
+};
+function z22SessHTML(e) {
+  const p = me(); const g = zGym(p); const f = { ex: Object.entries(e.ex || {}).map(([id, x]) => { const cur = Object.values(g.fichas).flatMap(fi => fi.ex).find(y => y.id === id); return cur || { id, nome: x.nome }; }) };
+  const r = z22Rep(p, e, f, true); const sets = Object.values(e.ex || {}).reduce((a, x) => a + x.sets.length, 0);
+  return `<div class="z22-fh"><span class="z22-l">${esc(e.ficha)}</span><div class="grow"><h2>Treino ${esc(e.ficha)}</h2><div class="sub">${fmtDay(e.date)} · ${e.min} min · ${e.feel === 'voei' ? '🔥 Voei' : e.feel === 'pesado' ? '😓 Pesado' : '🙂 Ok'}</div></div></div>
+    <div class="zg-sum z22-sum"><div><b>${sets}</b><small>séries</small></div><div><b>${fmtInt(r.vol)} kg</b><small>levantados</small></div><div><b>${e.prs || 0}</b><small>${plural(e.prs || 0, 'recorde', 'recordes')}</small></div><div><b>${r.ups}</b><small>subiu carga</small></div></div>
+    <div class="z22-lbl" style="margin:14px 2px 6px">Relatório de pesos</div>${z22RepHTML(r)}<div style="margin-top:12px"><button class="btn gray" data-act="close">Fechar</button></div>`;
+}
+
+/* ---------- Gráfico da evolução da carga (Registrar › Treino) ---------- */
+function z22Series(p, id) { return z16Hist(p, id).slice(-10).map(h => ({ d: h.date, v: h.max })); }
+function z22Chart(pts) {
+  if (pts.length < 1) return ''; const W = 320, Hh = 150, pl = 34, pr = 14, pt = 18, pb = 26;
+  const vs = pts.map(x => x.v); let mn = Math.min(...vs), mx = Math.max(...vs); if (mx === mn) { mn = Math.max(0, mn - 5); mx = mx + 5; } const pad = (mx - mn) * .15; mn = Math.max(0, mn - pad); mx += pad;
+  const X = i => pts.length === 1 ? (pl + W - pr) / 2 : pl + i * (W - pl - pr) / (pts.length - 1); const Y = v => pt + (1 - (v - mn) / (mx - mn)) * (Hh - pt - pb);
+  const grid = [mn, (mn + mx) / 2, mx].map(v => `<line x1="${pl}" x2="${W - pr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" class="z22-gl"/><text x="${pl - 6}" y="${(Y(v) + 4).toFixed(1)}" class="z22-ax" text-anchor="end">${z16Kg(Math.round(v * 2) / 2)}</text>`).join('');
+  const path = pts.map((x, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(x.v).toFixed(1)}`).join(' ');
+  const area = pts.length > 1 ? `<path d="${path} L${X(pts.length - 1).toFixed(1)} ${Hh - pb} L${X(0).toFixed(1)} ${Hh - pb}Z" class="z22-ar"/>` : '';
+  const dots = pts.map((x, i) => `<g class="z22-pt" tabindex="0"><circle cx="${X(i).toFixed(1)}" cy="${Y(x.v).toFixed(1)}" r="14" fill="transparent"/><circle cx="${X(i).toFixed(1)}" cy="${Y(x.v).toFixed(1)}" r="${i === pts.length - 1 ? 5.5 : 4}" class="z22-dot ${i === pts.length - 1 ? 'last' : ''}"/><text x="${X(i).toFixed(1)}" y="${(Y(x.v) - 10).toFixed(1)}" text-anchor="${pts.length > 1 && i === pts.length - 1 ? 'end' : pts.length > 1 && i === 0 ? 'start' : 'middle'}" class="z22-tip">${z16Kg(x.v)} kg · ${fmtDay(x.d)}</text></g>`).join('');
+  const xl = pts.length > 1 ? `<text x="${X(0).toFixed(1)}" y="${Hh - 8}" class="z22-ax" text-anchor="start">${fmtDay(pts[0].d)}</text><text x="${X(pts.length - 1).toFixed(1)}" y="${Hh - 8}" class="z22-ax" text-anchor="end">${fmtDay(pts[pts.length - 1].d)}</text>` : '';
+  return `<svg class="z22-ch" viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Carga máxima por treino">${grid}${area}<path d="${path}" class="z22-ln"/>${dots}${xl}</svg>`;
+}
+function z22EvoHTML(p) {
+  const g = zGym(p); if (!g.log.length) return '';
+  const ids = {}; for (const e of g.log) for (const [id, x] of Object.entries(e.ex || {})) if (x.sets && x.sets.some(s => s.kg > 0)) ids[id] = x.nome;
+  const list = Object.entries(ids); const wk = weekKey(T()); const vw = z16WeekVol(p, wk), pv = z16WeekVol(p, addDays(wk, -7));
+  let sel = session.z22ex && ids[session.z22ex] ? session.z22ex : (list[0] || [])[0];
+  const pts = sel ? z22Series(p, sel) : []; const first = pts[0], lastP = pts[pts.length - 1];
+  const recent = g.log.slice().sort((a, b) => b.start - a.start).slice(0, 4);
+  return `<div class="card z22-evo"><div class="card-head"><h3>📈 Relatório de pesos</h3></div>
+    <div class="z22-wk"><div><small>Nesta semana</small><b>${fmtInt(vw)} kg</b></div><div><small>Semana passada</small><b>${fmtInt(pv)} kg</b></div>${vw && pv ? `<em class="${vw >= pv ? 'up' : 'dn'}">${vw >= pv ? '▲' : '▼'} ${Math.abs(Math.round((vw - pv) / pv * 100))}%</em>` : ''}</div>
+    ${list.length ? `<div class="z22-lbl" style="margin:12px 0 6px">Carga máxima por exercício</div><div class="z22-exs">${list.map(([id, n]) => `<button class="chip ${id === sel ? 'on' : ''}" data-act="z22-exsel" data-id="${id}">${esc(n)}</button>`).join('')}</div>
+      ${pts.length ? `<div class="z22-chw">${z22Chart(pts)}</div><div class="z22-chs">${pts.length > 1 && lastP.v > first.v ? `Subiu <b>+${z16Kg(lastP.v - first.v)} kg</b> desde ${fmtDay(first.d)} 💪` : pts.length > 1 && lastP.v === first.v ? 'Carga estável. Quando fechar todas as séries, suba um pouco.' : pts.length > 1 ? `Hoje: <b>${z16Kg(lastP.v)} kg</b>` : 'Treine mais vezes para ver a linha da evolução.'}</div>` : ''}` : ''}
+    <div class="z22-lbl" style="margin:12px 0 6px">Últimos treinos</div><div class="z22-ses">${recent.map(e => `<button data-act="z22-sess" data-id="${e.id}"><span class="z22-l sm">${esc(e.ficha)}</span><span class="grow"><b>${fmtDay(e.date)} · ${e.min} min</b><small>${z16Sets(e)} séries · ${fmtInt(z16Vol(e))} kg${e.prs ? ` · 🏆 ${e.prs}` : ''}</small></span><em>›</em></button>`).join('')}</div></div>`;
+}
+const __z22Gym = z16GymCardHTML;
+z16GymCardHTML = function (p) { const h = __z22Gym.apply(this, arguments); try { return h + z22EvoHTML(p); } catch (e) { return h; } };
+Object.assign(ACT, {
+  'z22-exsel': el => { session.z22ex = el.dataset.id; renderMain(true); },
+  'z22-sess': el => { const e = zGym(me()).log.find(x => x.id === el.dataset.id); if (e) openSheet(z22SessHTML(e), {}); }
+});
+
+/* ---------- Permissão de notificação: uma vez só, Android e iPhone ---------- */
+function z22AskWeb() {
+  openSheet(`<div class="z15-top"><div class="z15-bell">${Z15_BELL}</div><h2>Permitir notificações?</h2><div class="sub">Assim o Zenit te lembra da água, do treino e das refeições na hora certa. ${/iP(hone|ad|od)/.test(navigator.userAgent) ? 'No iPhone, os avisos chegam com o Zenit aberto ou usado há pouco.' : ''}</div></div>
+    <div style="margin-top:14px"><button class="btn" data-act="z22-web-ok">Permitir</button></div><div style="margin-top:8px"><button class="btn gray" data-act="close">Agora não</button></div><div class="hint">Dá para mudar depois em Perfil › Lembretes.</div>`, {});
+}
+ACT['z22-web-ok'] = () => { try { Notification.requestPermission().then(r => { closeSheet(true); if (r === 'granted') { toast('Notificações ligadas!', 'green', '🔔'); try { zNotify('Zenit', 'Pronto! Vou te avisar na hora certa.'); } catch (e) { } } }); } catch (e) { closeSheet(true); } };
+z15Auto = function (n) {
+  n = n || 0; if (!S) { if (n < 900) setTimeout(() => z15Auto(n + 1), 1500); return; } if (S.mode === 'demo') return; S.settings = S.settings || {}; if (S.settings.z22notif) return;
+  const p = session.pid ? me() : null;
+  const busy = !p || $('#overlay') || $('#zcoach') || $('#sun') || $('#story') || $('#ck') || $('#zesc') || $('#zgym') || $('#zai') || session.ob || !p.coachDone;
+  if (busy) { if (n < 900) setTimeout(() => z15Auto(n + 1), 1500); return; }
+  const LN = zLN();
+  if (LN) z15Status().then(st => { if (S.settings.z22notif) return; S.settings.z22notif = 1; S.settings.z15acc = ZV; save(); if ((st.perm !== 'granted' || st.exact !== 'granted') && !$('#overlay')) z15Access(true); });
+  else { S.settings.z22notif = 1; save(); if ('Notification' in window && Notification.permission === 'default') z22AskWeb(); }
+};
+
+/* ---------- Fotos: deixa claro que gasta 1 mensagem ---------- */
+zaiFoot = (function (orig) { return function () { orig.apply(this, arguments); const mx = $('#zaiFoot .z21-mx'); if (mx && !mx.dataset.z22) { mx.dataset.z22 = 1; mx.innerHTML = '✅ Todas as fotos juntas contam como <b>1 mensagem</b>. Se quiser, diga o que você quer (ex.: "monta um ABC para ganhar massa") e envie.'; } }; })(zaiFoot);
+const __z22Many = z21PickMany;
+z21PickMany = function (cb, max) { return __z22Many.call(this, imgs => cb(imgs.slice(0, 20)), max); };
+
+/* ---------- Novidades ---------- */
+(function () {
+  Z18_NEW.splice(0, Z18_NEW.length,
+    { tab: 'reg', sub: 'treino', sel: ['.z22-evo', '.zg-card'], t: 'Relatório de pesos', d: 'Veja quanto você levantou na semana, a evolução da carga de cada exercício e o relatório de cada treino.' },
+    { tab: 'home', sel: ['.z21-today', '#zCheckBtn'], t: 'Treino novo', d: 'Cada exercício tem um desenho mostrando como fazer. Toque na linha da série para marcar e no número para mudar a carga.' });
+})();
+ZNEWS.splice(0, ZNEWS.length,
+  ['🏋️', 'Treino mais sério', 'Tela do treino reorganizada, com desenho animado de cada exercício mostrando como fazer.'],
+  ['✅', 'Marcar séries', 'Toque na linha da série para marcar. Toque na carga ou nas repetições para mudar com o seletor grande.'],
+  ['📈', 'Relatório de pesos', 'Ao finalizar, veja a carga de cada exercício e quanto subiu. Em Registrar › Treino tem o gráfico da evolução.'],
+  ['🔔', 'Permissão uma vez só', 'O pedido de notificação aparece uma única vez, no Android e no iPhone.']);
+</script>
+<style>
+.z22-in{max-width:560px;background:var(--bg)}
+.z22-top{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:2px solid var(--line);background:var(--bg)}
+.z22-time{flex:1;text-align:center}.z22-time b{display:block;font-size:26px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:.5px;line-height:1.1}.z22-time small{display:block;font-size:10.5px;color:var(--ink-3);font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+.z22-ed{font-weight:900;color:#1CB0F6;font-size:14px;padding:8px 4px}
+.z22-body{flex:1;overflow-y:auto;padding:12px;overscroll-behavior:contain}
+.z22-hero{display:flex;align-items:center;gap:12px;border:2px solid var(--line);border-bottom-width:4px;border-radius:22px;padding:12px 14px;background:var(--card)}
+.z22-hero .grow b{display:block;font-size:18px;font-weight:900;line-height:1.2}.z22-hero .grow span{font-size:13px;color:var(--ink-2);font-weight:700}
+.z22-l{width:48px;height:48px;border-radius:15px;background:#FF9600;color:#fff;display:grid;place-items:center;font-weight:900;font-size:24px;flex:none;box-shadow:0 3px 0 #E07F00}
+.z22-l.sm{width:38px;height:38px;font-size:18px;border-radius:12px}
+.z22-ring{position:relative;width:56px;height:56px;flex:none}.z22-ring svg{width:56px;height:56px;transform:rotate(-90deg)}.z22-ring em{position:absolute;inset:0;display:grid;place-items:center;font-style:normal;font-weight:900;font-size:13px}
+.z22-lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:900;margin:16px 4px 8px}
+.z22-c{border:2px solid var(--line);border-bottom-width:4px;border-radius:20px;background:var(--card);margin-bottom:10px;overflow:hidden}
+.z22-c.cur{border-color:#1CB0F6}
+.z22-c.done{border-color:#58CC02;background:linear-gradient(135deg,var(--card) 40%,rgba(88,204,2,.10))}
+.z22-ex{display:flex;align-items:center;gap:10px;padding:10px 12px}
+.z22-ck{width:32px;height:32px;border-radius:50%;border:2.5px solid var(--line);flex:none;display:grid;place-items:center;color:#fff;font-weight:900;font-size:16px;background:var(--card)}
+.z22-c.done .z22-ck{background:#58CC02;border-color:#58CC02;box-shadow:0 3px 0 #46A302}
+.z22-open{display:flex;align-items:center;gap:12px;flex:1;min-width:0;text-align:left;font:inherit;color:inherit}
+.z22-open .grow{min-width:0}.z22-open b{display:block;font-size:16px;font-weight:900;line-height:1.2}.z22-open .s{display:block;font-size:13.5px;color:var(--ink-2);font-weight:700;margin-top:1px}
+.z22-tag{display:inline-block;margin-top:4px;font-size:11px;font-weight:900;color:#7B4DFF;background:rgba(123,77,255,.12);border-radius:7px;padding:1px 7px}
+.z22-dots{display:flex;align-items:center;gap:4px;margin-top:6px}.z22-dots i{width:16px;height:5px;border-radius:9px;background:var(--line)}.z22-dots i.on{background:#58CC02}.z22-dots small{font-size:11px;font-weight:900;color:var(--ink-3);margin-left:4px}
+.z22-go{font-size:22px;color:var(--ink-3);font-weight:900}
+.z22-th{width:64px;height:64px;border-radius:16px;flex:none;position:relative;overflow:hidden;background:#EEF6FC;display:grid;place-items:center;border:2px solid var(--line)}
+.z22-th img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
+.z22-th .zfig{width:100%;height:100%}.z22-emo{font-size:30px}.z22-emo.big{font-size:80px}
+.z22-th em{position:absolute;top:3px;left:3px;z-index:2;background:#1CB0F6;color:#fff;font-style:normal;font-size:10.5px;font-weight:900;border-radius:7px;padding:0 5px}
+.z22-rest{display:flex;align-items:center;gap:10px;border-top:2px solid var(--line);padding:7px 12px;font-weight:800;color:var(--ink-2);font-size:13px}
+.z22-rest b{font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums;font-weight:900}.z22-ri{font-size:14px}
+.z22-rest .z21-pl{margin-left:auto}
+.z22-rest.run{background:rgba(28,176,246,.12)}.z22-rest.run b{color:#1CB0F6;font-size:19px}
+.z22-foot{padding:10px 12px calc(12px + env(safe-area-inset-bottom, 0px));border-top:2px solid var(--line);background:var(--bg)}
+.sheet.z22-sheet{padding-top:10px}
+.z22-media{position:relative;height:200px;border-radius:20px;background:linear-gradient(180deg,#EEF6FC,#DDEFFB);display:grid;place-items:center;overflow:hidden;margin-top:6px}
+.z22-media .zfig{width:100%;height:100%}
+.z22-maq{position:absolute;top:10px;left:10px;font-style:normal;background:#1CB0F6;color:#fff;font-size:12.5px;font-weight:900;border-radius:9px;padding:3px 9px}
+.z22-ph{position:absolute;right:10px;bottom:10px;width:64px;height:64px;border-radius:14px;background:#fff;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.15);overflow:hidden;display:grid;place-items:center;font-size:20px;padding:0}
+.z22-ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.z22-ph small{position:absolute;left:0;right:0;bottom:0;font-size:8.5px;font-weight:900;background:rgba(0,0,0,.55);color:#fff;padding:1px 0;line-height:1.3}
+.z22-ph.nophoto img{display:none}
+.z22-nm{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:12px 2px 2px}.z22-nm h2{margin:0;font-size:22px}.z22-nm span{font-size:12.5px;color:var(--ink-3);font-weight:800;white-space:nowrap}
+.z22-tec{margin:8px 0 0;padding:9px 12px;border-radius:14px;background:rgba(123,77,255,.10);color:var(--ink);font-size:13.5px;font-weight:700}.z22-tec b{color:#7B4DFF}
+.z22-obs{margin:8px 0 0;padding:8px 12px;border-radius:14px;background:var(--surface-2);font-size:13.5px;font-weight:700}
+.z22-tab{margin-top:12px;border:2px solid var(--line);border-radius:18px;overflow:hidden;background:var(--card)}
+.z22-rh,.z22-r{display:grid;grid-template-columns:44px 1fr 1fr 48px;align-items:center;padding:0 12px}
+.z22-rh{padding-top:8px;padding-bottom:6px;font-size:10.5px;letter-spacing:.12em;color:var(--ink-3);font-weight:900;text-transform:uppercase;border-bottom:2px solid var(--line)}
+.z22-r{min-height:58px;border-bottom:2px solid var(--line);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .15s}
+.z22-r:last-child{border-bottom:0}
+.z22-n{font-size:20px;font-weight:900;color:var(--ink-3)}
+.z22-v{justify-self:start;font:inherit;font-size:20px;font-weight:900;color:var(--ink);padding:6px 4px;border-bottom:2.5px dotted var(--line);line-height:1.1}
+.z22-v small{font-size:11px;color:var(--ink-3);margin-left:3px;font-weight:800}
+.z22-c2{justify-self:end;width:34px;height:34px;border-radius:50%;border:2.5px solid var(--line);display:grid;place-items:center;color:#fff;font-weight:900;font-size:16px}
+.z22-r.nx{background:rgba(28,176,246,.08)}.z22-r.nx .z22-n{color:#1CB0F6}.z22-r.nx .z22-v{border-bottom-color:#1CB0F6}.z22-r.nx .z22-c2{border-color:#1CB0F6}
+.z22-r.on{background:rgba(88,204,2,.10)}.z22-r.on .z22-n{color:#46A302}.z22-r.on .z22-c2{background:#58CC02;border-color:#58CC02;box-shadow:0 2px 0 #46A302}
+.z22-hint{font-size:12px;color:var(--ink-3);font-weight:700;text-align:center;margin:6px 0 0}
+.z22-meta{display:flex;gap:8px;margin-top:10px}.z22-meta div{flex:1;border:2px solid var(--line);border-radius:14px;padding:7px 10px}.z22-meta small{display:block;font-size:10px;letter-spacing:.12em;color:var(--ink-3);font-weight:900;text-transform:uppercase}.z22-meta b{font-size:17px;font-weight:900}.z22-meta span{font-size:11.5px;color:var(--ink-3);font-weight:800;margin-left:6px}
+.z22-sug{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(88,204,2,.14);font:inherit;font-size:13.5px;font-weight:800;color:inherit}.z22-sug em{font-style:normal;background:#58CC02;color:#fff;border-radius:10px;padding:4px 10px;font-weight:900;box-shadow:0 2px 0 #46A302}
+.z22-pkw{position:fixed;inset:0;z-index:98;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;animation:fadein .15s both}
+.z22-pk{width:100%;max-width:520px;background:var(--card);border-radius:26px 26px 0 0;padding:10px 16px calc(18px + env(safe-area-inset-bottom, 0px));box-shadow:0 -6px 24px rgba(0,0,0,.12)}
+.z22-pk h4{margin:4px 0 0;text-align:center;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:900}
+.z22-big{display:flex;align-items:center;justify-content:center;gap:16px;margin:12px 0}
+.z22-big button{width:60px;height:60px;border-radius:18px;border:2px solid var(--line);border-bottom-width:4px;background:var(--card);font-size:30px;font-weight:900;color:var(--ink)}
+.z22-big b{font-size:54px;font-weight:900;min-width:150px;text-align:center;line-height:1;font-variant-numeric:tabular-nums}.z22-big b small{font-size:17px;color:var(--ink-3)}
+.z22-qk{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:12px}.z22-qk button{border:2px solid var(--line);border-radius:12px;padding:7px 12px;font:inherit;font-weight:900;font-size:13.5px;color:var(--ink);background:var(--card)}
+.z22-all{display:flex;align-items:center;gap:8px;margin:0 auto 12px;font:inherit;font-weight:800;font-size:13.5px;color:var(--ink-2)}.z22-all i{width:22px;height:22px;border-radius:7px;border:2.5px solid var(--line);display:grid;place-items:center;font-style:normal;color:#fff;font-size:13px}.z22-all.on i{background:#1CB0F6;border-color:#1CB0F6}
+.z22-fh{display:flex;align-items:center;gap:12px}.z22-fh h2{margin:0}
+.z22-sum{margin-top:12px}
+.z22-rep{border:2px solid var(--line);border-radius:18px;overflow:hidden}
+.z22-rr{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:2px solid var(--line)}.z22-rr:last-child{border-bottom:0}
+.z22-rr b{display:block;font-size:14.5px;font-weight:900}.z22-rr small{display:block;font-size:12px;color:var(--ink-3);font-weight:700}
+.z22-rt{width:44px;height:44px;border-radius:12px;background:#EEF6FC;display:grid;place-items:center;flex:none;overflow:hidden}.z22-rt .zfig{width:100%;height:100%}.z22-rt .z22-emo{font-size:22px}
+.z22-rk{text-align:right}.z22-rk b{font-size:16px}.z22-rk em{display:block;font-style:normal;font-size:11.5px;font-weight:900;color:var(--ink-3)}.z22-rk em.up{color:#46A302}.z22-rk em.dn{color:#E0483C}.z22-rk em.pr{color:#E5A500}
+.z22-wk{display:flex;align-items:center;gap:8px}.z22-wk div{flex:1;border:2px solid var(--line);border-radius:14px;padding:7px 10px}.z22-wk small{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:900}.z22-wk b{font-size:17px;font-weight:900}
+.z22-wk em{font-style:normal;font-weight:900;font-size:14px;border-radius:10px;padding:6px 8px}.z22-wk em.up{color:#46A302;background:rgba(88,204,2,.14)}.z22-wk em.dn{color:#E0483C;background:rgba(255,75,75,.12)}
+.z22-exs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}.z22-exs .chip{white-space:nowrap;flex:none}
+.z22-chw{margin-top:8px;border:2px solid var(--line);border-radius:16px;padding:6px 4px 0}
+.z22-ch{width:100%;height:auto;display:block}
+.z22-gl{stroke:var(--line);stroke-width:1}.z22-ax{fill:var(--ink-3);font-size:10px;font-weight:800;font-family:inherit}
+.z22-ln{fill:none;stroke:#58CC02;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}.z22-ar{fill:rgba(88,204,2,.12)}
+.z22-dot{fill:#58CC02;stroke:var(--card);stroke-width:2}.z22-dot.last{fill:#46A302}
+.z22-tip{fill:var(--ink);font-size:10.5px;font-weight:900;opacity:0;pointer-events:none;paint-order:stroke;stroke:var(--card);stroke-width:3px}
+.z22-pt:last-of-type .z22-tip,.z22-pt:hover .z22-tip,.z22-pt:focus .z22-tip{opacity:1}.z22-pt:focus{outline:none}
+.z22-chs{font-size:13px;font-weight:700;color:var(--ink-2);margin-top:8px}.z22-chs b{color:#46A302}
+.z22-ses{display:grid;gap:6px}.z22-ses button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:2px solid var(--line);border-radius:14px;padding:7px 10px;font:inherit;color:inherit;background:var(--card)}.z22-ses b{display:block;font-size:14px;font-weight:900}.z22-ses small{display:block;font-size:12px;color:var(--ink-3);font-weight:700}.z22-ses em{font-style:normal;font-size:20px;font-weight:900;color:var(--ink-3)}
+@media (prefers-color-scheme: dark){ .z22-th,.z22-rt{background:#1E2A33} .z22-media{background:linear-gradient(180deg,#22313C,#1A2630)} }
+:root[data-theme="dark"] .z22-th,:root[data-theme="dark"] .z22-rt{background:#1E2A33} :root[data-theme="dark"] .z22-media{background:linear-gradient(180deg,#22313C,#1A2630)}
+:root[data-theme="light"] .z22-th,:root[data-theme="light"] .z22-rt{background:#EEF6FC} :root[data-theme="light"] .z22-media{background:linear-gradient(180deg,#EEF6FC,#DDEFFB)}
 </style>
 
 </body>
