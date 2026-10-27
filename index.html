@@ -1201,6 +1201,7 @@ const PRIZE_DEFAULT = 'Kit completo de suplementos da Growth + um livro à escol
 
 /* ---------- Estado e armazenamento ---------- */
 const KEY = 'rumo-ao-reveillon-v1';
+try { window.__z27L0 = localStorage.getItem(KEY); } catch (e) { }
 let S = null;
 let memCopy = null;
 const session = { pid: null, tab: 'home', sub: 'agua', snap: null, xpShown: {}, wheelBusy: false, pending: [] };
@@ -1431,7 +1432,7 @@ function insightsFor(p) {
   if (lw && tw.treinos > lw.treinos) out.push({ icon: '🏋️', text: `Você já treinou ${tw.treinos} vezes esta semana, mais que as ${lw.treinos} da semana passada!` });
   const rv = rivals()[0];
   if (rv) {
-    const a = xpInfo(p, t).total, b = xpInfo(rv, t).total;
+    const a = z27RX(p, t), b = z27RX(rv, t);
     if (b > a) out.push({ icon: '⚔️', text: `Você está ${b - a} XP atrás de ${rv.name}. Uma meta de água e um treino hoje já encurtam essa diferença.` });
     else if (a > b) out.push({ icon: '🏆', text: `Você está ${a - b} XP na frente de ${rv.name}. Não relaxa, que a disputa está viva!` });
   }
@@ -2019,7 +2020,7 @@ function todayCardHTML(p, t) {
 function vsCardHTML(p, t) {
   const rv = rivals()[0];
   if (!rv) return `<section class="card"><div class="row"><div style="font-size:34px">🤝</div><div class="grow"><h3>Chame sua dupla</h3><div class="sub">Mande o código ${esc(S.room.code)} para ela entrar na sala.</div></div></div><div style="margin-top:12px"><button class="btn sec sm" data-act="tab" data-tab="rank">Ver o código</button></div></section>`;
-  const a = xpInfo(p, t).total, b = xpInfo(rv, t).total; const share = a + b ? a / (a + b) * 100 : 50; const diff = Math.abs(a - b);
+  const a = z27RX(p, t), b = z27RX(rv, t); const share = a + b ? a / (a + b) * 100 : 50; const diff = Math.abs(a - b);
   const av = (q, x) => `<div class="vs-p">${x ? `<span class="vs-crown">${crownSVG()}</span>` : ''}<span class="vs-av" style="background:${petOf(q).color}26">${petSVG(q.pet, { mood: 'feliz', stage: stageOf(levelOf(xpInfo(q, t).total)), equip: q.equip, anim: false })}</span><b>${esc(q.name)}</b><span class="vs-xp">${fmtInt(xpInfo(q, t).total)} XP</span></div>`;
   return `<section class="card vs-card"><div class="card-head"><h3>Placar da sala</h3><button class="link-btn" data-act="tab" data-tab="rank">Ver tudo</button></div>
     <div class="vs">${av(p, a > b)}<div class="vs-mid">VS</div>${av(rv, b > a)}</div>
@@ -3717,7 +3718,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '3.3';
+const ZV = '3.4';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -5642,7 +5643,7 @@ function z10PrizeHTML(p, t) {
   const m = zMateOf(p); const prize = typeof z6Prize === 'function' ? z6Prize() : S.room.prize; let rows = '';
   if (!m) rows = `<div class="zkp-row"><span>🤝</span><b>Chame sua dupla com o código ${esc(S.room.code)}</b></div>`;
   else {
-    const a = xpInfo(p, t).total, b = xpInfo(m, t).total; const wk = weekKey(t); const wa = xpBetween(p, wk, t), wb = xpBetween(m, wk, t);
+    const a = z27RX(p, t), b = z27RX(m, t); const wk = weekKey(t); const wa = z27RX(p, t, wk), wb = z27RX(m, t, wk);
     const who = (x, y, me1, other) => x === y ? 'Empate' : x > y ? me1 : other;
     rows += `<div class="zkp-row"><span>No geral</span><b>${who(a, b, 'Você está levando', esc(m.name) + ' está levando')}</b><em>${a === b ? '' : '+' + fmtInt(Math.abs(a - b)) + ' XP'}</em></div>`;
     rows += `<div class="zkp-row"><span>Nesta semana</span><b>${who(wa, wb, 'Você na frente', esc(m.name) + ' na frente')}</b><em>${wa === wb ? '' : '+' + fmtInt(Math.abs(wa - wb)) + ' XP'}</em></div>`;
@@ -5740,7 +5741,7 @@ function z10Digest(force) {
   if ($('#overlay') || $('#ck') || $('#story') || $('#sun') || $('#zcoach') || session.ob) return;
   S.zseen = S.zseen || {}; const seen = S.zseen[p.id] || (S.zseen[p.id] = { keys: [], lead: null, init: false });
   const ev = z10MateEvents(p, m); const t = T();
-  const a = xpInfo(p, t).total, b = xpInfo(m, t).total; const lead = a > b ? p.id : b > a ? m.id : seen.lead;
+  const a = z27RX(p, t), b = z27RX(m, t); const lead = a > b ? p.id : b > a ? m.id : seen.lead;
   if (!seen.init) { seen.keys = ev.filter(e => !e[0].endsWith('|' + t) && !e[0].startsWith('x1')).map(e => e[0]); seen.init = true; seen.lead = lead; }
   const fresh = ev.filter(e => !seen.keys.includes(e[0]));
   if (seen.lead && lead && lead !== seen.lead) fresh.unshift(lead === m.id ? ['lead|' + t, '👀', `${esc(m.name)} passou você no placar geral!`] : ['lead|' + t, '😎', `Você passou ${esc(m.name)} no placar geral!`]);
@@ -7458,7 +7459,7 @@ ACT['z10-x1-send'] = function () {
     if (!zGroup()) return orig(p, a);
     for (const [s] of zDays(p, a)) {
       if (dow(s) !== 0 || addDays(s, -1) < S.room.start) continue; const y = addDays(s, -1);
-      const lead = d => { const mx = Math.max(...S.players.filter(q => q.id !== p.id).map(q => xpInfo(q, d).total)); return xpInfo(p, d).total > mx; };
+      const lead = d => { const mx = Math.max(...S.players.filter(q => q.id !== p.id).map(q => z27RX(q, d))); return z27RX(p, d) > mx; };
       if (lead(s) && !lead(y)) return true;
     }
     return false;
@@ -12469,6 +12470,342 @@ ZNEWS.splice(0, ZNEWS.length,
 .z26-vs.sm button{padding:4px 8px;font-size:12px}
 .z26-x1p{border:2px solid #FF9600;border-radius:12px;padding:6px 8px;margin-top:4px;background:rgba(255,150,0,.06)}.z26-x1h{font-size:11.5px;font-weight:900;color:#E07F00;text-transform:uppercase;letter-spacing:.06em}
 .z26-vst{font-size:12px;font-weight:900;margin-top:4px}.z26-vst.ok{color:#46A302}.z26-vst.no{color:#E0483C}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 3.4
+   1) A mesma conta igual em todos os aparelhos: o app junta o que cada
+      aparelho tem com o que está na nuvem (em vez de um apagar o outro),
+      ao abrir, ao voltar para o app e ao vivo.
+   2) XP da sala começa do zero: no placar só conta o que cada um fez
+      depois de entrar naquela sala. O XP da conta e o nível não mudam.
+   3) Cancelar o treino no meio, sem salvar nada.
+   ========================================================= */
+const Z27 = { busy: null, again: false, off: null, rev: -1, snap0: null, snapAt: 0, touched: 0, toastAt: 0, err: '', cx: false };
+Z27.snap0 = (typeof window !== 'undefined' && window.__z27L0) || null; Z27.snapAt = Date.now();
+Z27.dev = (() => { try { let d = localStorage.getItem('zenit-dev'); if (!d) { d = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); localStorage.setItem('zenit-dev', d); } return d; } catch (e) { return 'd' + Math.random().toString(36).slice(2, 8); } })();
+const Z27_SKIP = ['v', 'mode', 'room', 'rooms', 'cloud', 'challengeWeeks', 'rerolled', 'lastBackup', 'zBkNudge', 'demoToday', 'players', 'settings'];
+const Z27_DEVSET = ['z15acc', 'z15bat', 'z22notif'];
+
+/* ---------- O que é "seu" (vai igual para todos os aparelhos) ---------- */
+function z27View(st) {
+  if (!st) return null; const v = {};
+  for (const k of Object.keys(st)) if (!Z27_SKIP.includes(k) && st[k] !== undefined) v[k] = st[k];
+  const s = Object.assign({}, st.settings || {}); for (const k of Z27_DEVSET) delete s[k]; v.settings = s;
+  v.players = {}; for (const p of (st.players || [])) if (p && !p.remote && p.id) v.players[p.id] = p;
+  return JSON.parse(JSON.stringify(v));
+}
+function z27Canon(v) {
+  if (Array.isArray(v)) return '[' + v.map(z27Canon).join(',') + ']';
+  if (v && typeof v === 'object') return '{' + Object.keys(v).sort().filter(k => v[k] !== undefined).map(k => JSON.stringify(k) + ':' + z27Canon(v[k])).join(',') + '}';
+  return JSON.stringify(v === undefined ? null : v);
+}
+const z27Esc = k => String(k).replace(/%/g, '%25').replace(/\//g, '%2F');
+function z27Flat(o, pre, out) {
+  out = out || {}; pre = pre || '';
+  for (const k of Object.keys(o || {})) {
+    const v = o[k]; const p = pre + '/' + z27Esc(k);
+    if (v && typeof v === 'object' && !Array.isArray(v)) { if (Object.keys(v).length) z27Flat(v, p, out); else out[p] = '{}'; }
+    else if (v !== undefined) out[p] = JSON.stringify(v);
+  }
+  return out;
+}
+function z27Unflat(f) {
+  const root = {};
+  const keys = Object.keys(f).sort((a, b) => a.split('/').length - b.split('/').length);
+  for (const path of keys) {
+    const parts = path.split('/').slice(1).map(x => decodeURIComponent(x)); let o = root;
+    for (let i = 0; i < parts.length - 1; i++) { const k = parts[i]; if (!o[k] || typeof o[k] !== 'object' || Array.isArray(o[k])) o[k] = {}; o = o[k]; }
+    o[parts[parts.length - 1]] = JSON.parse(f[path]);
+  }
+  return root;
+}
+/* ---------- Juntar duas versões (com a última versão em comum, quando existe) ---------- */
+function z27ArrMerge(l, c, b, localWins) {
+  let L, C, B = null; try { L = JSON.parse(l); C = JSON.parse(c); if (b != null) B = JSON.parse(b); } catch (e) { return localWins ? l : c; }
+  if (!Array.isArray(L) || !Array.isArray(C)) return localWins ? l : c;
+  const uniq = a => { const ds = a.map(x => x && typeof x === 'object' && x.id == null && typeof x.date === 'string' ? x.date : null); return ds.every(Boolean) && new Set(ds).size === ds.length; };
+  const byDate = L.length + C.length > 0 && uniq(L) && uniq(C);
+  const key = x => x && typeof x === 'object' ? (x.id != null ? 'i:' + x.id : byDate ? 'd:' + x.date : 'j:' + z27Canon(x)) : 'j:' + JSON.stringify(x);
+  const lm = new Map(L.map(x => [key(x), x])), cm = new Map(C.map(x => [key(x), x]));
+  const bm = Array.isArray(B) ? new Map(B.map(x => [key(x), x])) : null;
+  const out = []; const seen = new Set();
+  const pick = k => {
+    const x = lm.get(k), y = cm.get(k);
+    if (x === undefined) return y; if (y === undefined) return x;
+    const xs = z27Canon(x), ys = z27Canon(y); if (xs === ys) return x;
+    const bs = bm && bm.has(k) ? z27Canon(bm.get(k)) : null;
+    if (bs === xs) return y; if (bs === ys) return x;
+    return localWins ? x : y;
+  };
+  for (const k of lm.keys()) { if (bm && bm.has(k) && !cm.has(k)) continue; if (!seen.has(k)) { seen.add(k); out.push(pick(k)); } }
+  for (const k of cm.keys()) { if (bm && bm.has(k) && !lm.has(k)) continue; if (!seen.has(k)) { seen.add(k); out.push(pick(k)); } }
+  const sorted = a => a.every((x, i) => i === 0 || !(x && a[i - 1] && x.date < a[i - 1].date));
+  if (out.length && out.every(x => x && typeof x === 'object' && typeof x.date === 'string') && sorted(L) && sorted(C)) out.sort((a, b2) => a.date < b2.date ? -1 : a.date > b2.date ? 1 : 0);
+  return JSON.stringify(out);
+}
+function z27Pick(l, c, localWins, first) {
+  if (l === undefined) return c; if (c === undefined) return l;
+  if (l === '{}') return c; if (c === '{}') return l;
+  let a, b; try { a = JSON.parse(l); b = JSON.parse(c); } catch (e) { return localWins ? l : c; }
+  if (a === null) return c; if (b === null) return l;
+  if (typeof a === 'number' && typeof b === 'number') return JSON.stringify(Math.max(a, b));
+  if (first && typeof a === 'boolean' && typeof b === 'boolean') return JSON.stringify(a || b);
+  return localWins ? l : c;
+}
+function z27Merge(Lv, Cv, Bv, localWins) {
+  const L = z27Flat(Lv), C = z27Flat(Cv), B = Bv ? z27Flat(Bv) : null; const first = !B; const out = {};
+  const keys = new Set(Object.keys(L).concat(Object.keys(C), B ? Object.keys(B) : []));
+  for (const k of keys) {
+    const l = L[k], c = C[k], b = B ? B[k] : undefined; let r;
+    if (l === c) r = l;
+    else if (!first && l === b) r = c;
+    else if (!first && c === b) r = l;
+    else if (l !== undefined && c !== undefined && l[0] === '[' && c[0] === '[') r = z27ArrMerge(l, c, b, localWins);
+    else if (!first && (l === undefined || c === undefined)) r = l === undefined ? c : l;
+    else r = z27Pick(l, c, localWins, first);
+    if (r !== undefined) out[k] = r;
+  }
+  return z27Unflat(out);
+}
+// Se cada aparelho criou um perfil com um id diferente para a mesma conta, vira um só
+function z27OneId(V, from, to) { if (!V || !V.players || !V.players[from] || from === to) return V; const p = V.players[from]; delete V.players[from]; p.id = to; V.players[to] = p; for (const m of ['zphr', 'zseen']) if (V[m] && V[m][from] !== undefined) { V[m][to] = V[m][from]; delete V[m][from]; } return V; }
+function z27Relabel(from, to) {
+  if (!S || from === to) return; for (const p of S.players) if (!p.remote && p.id === from) p.id = to;
+  for (const m of ['zphr', 'zseen']) if (S[m] && S[m][from] !== undefined) { S[m][to] = S[m][from]; delete S[m][from]; }
+  if (session.pid === from) session.pid = to; if (session.pinFor === from) session.pinFor = to; if (S.cloud && S.cloud.pid === from) S.cloud.pid = to;
+}
+function z27Apply(V) {
+  const own = S.players.filter(p => !p.remote), rem = S.players.filter(p => p.remote);
+  const ids = Object.keys(V.players || {}); if (!ids.length) return false;
+  const order = own.map(p => p.id).filter(id => ids.includes(id)).concat(ids.filter(id => !own.some(p => p.id === id)));
+  const dev = {}; for (const k of Z27_DEVSET) if (S.settings && S.settings[k] !== undefined) dev[k] = S.settings[k];
+  const before = (S.myRooms || []).slice();
+  S.players = order.map(id => V.players[id]).concat(rem);
+  S.settings = Object.assign({}, V.settings || {}, dev);
+  for (const k of Object.keys(S)) if (!Z27_SKIP.includes(k) && !(k in V)) delete S[k];
+  for (const k of Object.keys(V)) if (k !== 'players' && k !== 'settings') S[k] = V[k];
+  if (session.pid && !S.players.some(p => p.id === session.pid)) session.pid = (S.players.find(p => !p.remote) || {}).id;
+  z27Rooms(before); return true;
+}
+// Salas em que você entrou pelo outro aparelho aparecem aqui também
+function z27Rooms(before) {
+  try {
+    S.rooms = S.rooms || {}; const now = Array.isArray(S.myRooms) ? S.myRooms : []; let ch = false;
+    for (const c of now) if (c && S.room && c !== S.room.code && !S.rooms[c]) { S.rooms[c] = { room: { code: c, start: S.room.start, end: S.room.end, prize: '' }, players: [], cw: {}, rr: {} }; ch = true; }
+    for (const c of before || []) if (!now.includes(c) && S.room && c !== S.room.code && S.rooms[c]) { delete S.rooms[c]; ch = true; }
+    if (ch && typeof z18Listen === 'function' && ZFB.m) z18Listen();
+  } catch (e) { }
+}
+function z27Full(V) {
+  const o = JSON.parse(zfbBackupJSON());
+  o.players = Object.values(V.players || {});
+  o.settings = Object.assign({}, o.settings || {}, V.settings || {});
+  for (const k of Object.keys(o)) if (!Z27_SKIP.includes(k) && !(k in V)) delete o[k];
+  for (const k of Object.keys(V)) if (k !== 'players' && k !== 'settings') o[k] = V[k];
+  return JSON.stringify(o);
+}
+const z27BKey = uid => 'zenit-sync-base|' + uid;
+function z27BaseGet(uid) { try { const s = localStorage.getItem(z27BKey(uid)); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+function z27BaseSet(uid, V) { try { localStorage.setItem(z27BKey(uid), JSON.stringify(V)); } catch (e) { try { localStorage.removeItem(z27BKey(uid)); } catch (e2) { } } }
+const z27EditAt = () => { try { return +(localStorage.getItem('zenit-sync-edit') || 0); } catch (e) { return 0; } };
+
+/* ---------- Sincronizar ---------- */
+function z27Sync(why) {
+  if (!S || S.mode === 'demo' || !zfbOn() || !ZFB.m || typeof ZFB.m.runTransaction !== 'function') return Promise.resolve();
+  if (Z27.busy) { Z27.again = true; return Z27.busy; }
+  Z27.busy = (async () => {
+    try { await z27Run(why); Z27.err = ''; Z27.pending = false; }
+    catch (e) { Z27.err = String((e && (e.code || e.message)) || e); Z27.pending = true; }
+    finally { Z27.busy = null; if (Z27.again) { Z27.again = false; setTimeout(() => z27Sync('again'), 250); } }
+  })();
+  return Z27.busy;
+}
+async function z27Run(why) {
+  const { doc, runTransaction, serverTimestamp } = ZFB.m; const uid = ZFB.user.uid; const ref = doc(ZFB.db, 'users', uid);
+  // Logo ao abrir (ou voltar) o app, usa o estado de antes das contas automáticas, se você ainda não tocou em nada
+  let useSnap = !!Z27.snap0 && Z27.touched < Z27.snapAt && Date.now() - Z27.snapAt < 20000; let Lst = null;
+  if (useSnap) { try { Lst = JSON.parse(Z27.snap0); if (!Lst || !Array.isArray(Lst.players)) useSnap = false; } catch (e) { useSnap = false; } }
+  Z27.snap0 = null;
+  const V0 = z27View(S); const Lv0 = useSnap ? z27View(Lst) : V0; const Bv0 = z27BaseGet(uid);
+  if (why === 'push' && Bv0 && z27Canon(Lv0) === z27Canon(Bv0)) return;
+  let res = null;
+  await runTransaction(ZFB.db, async tx => {
+    const snap = await tx.get(ref); const d = snap.exists() ? snap.data() : null;
+    let Cv = null; try { Cv = d && d.s ? z27View(JSON.parse(d.s)) : null; } catch (e) { Cv = null; }
+    let Lv = JSON.parse(JSON.stringify(Lv0)); let Bv = Bv0 ? JSON.parse(JSON.stringify(Bv0)) : null; let rel = null;
+    if (Cv) {
+      const li = Object.keys(Lv.players), ci = Object.keys(Cv.players || {});
+      if (li.length === 1 && ci.length === 1 && li[0] !== ci[0]) { rel = [li[0], ci[0]]; z27OneId(Lv, li[0], ci[0]); if (Bv) z27OneId(Bv, li[0], ci[0]); }
+    }
+    const localWins = z27EditAt() >= ((d && d.at) || 0);
+    const M = Cv && !Z27.force ? z27Merge(Lv, Cv, Bv, localWins) : Lv;
+    const same = !!Cv && z27Canon(M) === z27Canon(Cv);
+    const rev = ((d && d.rev) || 0) + (same ? 0 : 1);
+    if (!same) tx.set(ref, { s: z27Full(M), at: Date.now(), rev, dev: Z27.dev, email: ZFB.user.email || '', updatedAt: serverTimestamp() });
+    res = { M, rev, rel, first: !Bv, hadCloud: !!Cv, fromCloud: !!Cv && z27Canon(M) !== z27Canon(Lv) };
+  });
+  if (!res) return; Z27.force = false;
+  z27BaseSet(uid, res.M); Z27.rev = res.rev; if (S.cloud) S.cloud.at = Date.now();
+  if (res.rel) z27Relabel(res.rel[0], res.rel[1]);
+  // Se você mexeu em algo enquanto sincronizava, isso também entra
+  const Vn = z27View(S); let F = res.M; let more = false;
+  if (z27Canon(Vn) !== z27Canon(V0)) { F = z27Merge(Vn, res.M, res.rel ? z27OneId(JSON.parse(JSON.stringify(V0)), res.rel[0], res.rel[1]) : V0, true); more = z27Canon(F) !== z27Canon(res.M); }
+  if (z27Canon(F) !== z27Canon(Vn)) {
+    if (!z27Apply(F)) return;
+    CACHE = new Map(); zfbSilentSave(); z27After(res, why);
+  } else zfbSilentSave();
+  if (more) Z27.again = true;
+  if (res.fromCloud || res.rel) { try { ZFB.lastPush = ''; zfbPushMe(); } catch (e) { } }
+}
+function z27After(res, why) {
+  try {
+    const g = $('#zgym'); const p = me();
+    if (g) { if (!p || !p.gymLive) z16CloseLive(); else z16DrawLive(); }
+    if (typeof renderTopbar === 'function' && $('#topbar')) renderTopbar();
+    zfbRerender();
+    if (res.fromCloud && why !== 'push' && Date.now() - Z27.toastAt > 10 * 60 * 1000) {
+      Z27.toastAt = Date.now();
+      toast(res.first && res.hadCloud ? 'Juntei o progresso deste aparelho com o da sua conta.' : 'Atualizado com o que você fez no outro aparelho.', 'green', '☁️');
+    }
+  } catch (e) { }
+}
+function z27Listen() {
+  if (Z27.off || !zfbOn() || !ZFB.m) return; const { doc, onSnapshot } = ZFB.m; const uid = ZFB.user.uid;
+  Z27.uid = uid;
+  Z27.off = onSnapshot(doc(ZFB.db, 'users', uid), s => {
+    const d = s && s.exists() ? s.data() : null; if (!d || !zfbOn()) return;
+    if (d.rev != null && d.rev === Z27.rev) return;
+    z27Sync('live');
+  }, () => { });
+}
+function z27StopListen() { if (Z27.off) { try { Z27.off(); } catch (e) { } } Z27.off = null; }
+function z27Start() { if (!zfbOn() || !ZFB.m) return; if (Z27.uid && Z27.uid !== ZFB.user.uid) z27StopListen(); z27Listen(); z27Sync('start'); }
+
+// Ganchos: subir para a nuvem agora é sempre "juntar e subir"
+zfbPushBackup = function () { if (!zfbOn()) return; z27Sync('push'); };
+const __z27Link = zfbLinkRoom;
+zfbLinkRoom = function () { try { z27Start(); } catch (e) { } return __z27Link.apply(this, arguments); };
+const __z27Restore = zfbRestore;
+zfbRestore = function (cloud) {
+  const r = __z27Restore.apply(this, arguments);
+  try { if (S && ZFB.user) { z27BaseSet(ZFB.user.uid, z27View(S)); if (cloud && cloud.rev != null) Z27.rev = cloud.rev; } } catch (e) { }
+  return r;
+};
+const __z27Save = save;
+save = function () { try { localStorage.setItem('zenit-sync-edit', String(Date.now())); } catch (e) { } return __z27Save.apply(this, arguments); };
+document.addEventListener('pointerdown', () => { Z27.touched = Date.now(); }, true);
+document.addEventListener('keydown', () => { Z27.touched = Date.now(); }, true);
+window.addEventListener('visibilitychange', () => { if (!document.hidden && S && S.cloud) { try { Z27.snap0 = JSON.stringify(S); Z27.snapAt = Date.now(); } catch (e) { } setTimeout(() => z27Sync('volta'), 400); } }, true);
+window.addEventListener('online', () => setTimeout(() => z27Sync('online'), 800));
+setInterval(() => { if (Z27.pending && navigator.onLine !== false) z27Sync('retry'); }, 60000);
+const __z27Out = ACT['zfb-out'];
+ACT['zfb-out'] = function () { z27StopListen(); Z27.rev = -1; return __z27Out.apply(this, arguments); };
+
+// Entrar numa conta que já tem dados, com dados neste aparelho: agora dá para juntar os dois
+zfbConflict = function (cloud) {
+  ZFB.conflict = cloud;
+  const html = `<h2>Juntar o progresso?</h2><div class="sub">Essa conta já tem progresso salvo e este aparelho também tem. O melhor é juntar os dois: nada se perde e todos os seus aparelhos ficam iguais.</div>
+    <div style="margin-top:14px"><button class="btn" data-act="zfb-pick" data-v="merge">Juntar os dois (recomendado)</button></div>
+    <div style="margin-top:10px"><button class="btn sec" data-act="zfb-pick" data-v="cloud">Usar só o da conta</button></div>
+    <div style="margin-top:10px"><button class="btn sec" data-act="zfb-pick" data-v="local">Usar só o deste aparelho</button></div>`;
+  const el = $('#zfbSheet'); if (el) el.innerHTML = html; else openSheet(html, {});
+};
+const __z27Pick = ACT['zfb-pick'];
+ACT['zfb-pick'] = function (el) {
+  if (el.dataset.v === 'merge') {
+    ZFB.conflict = null; closeSheet(true);
+    try { localStorage.removeItem(z27BKey(ZFB.user.uid)); } catch (e) { }
+    Z27.toastAt = 0; zfbAttach(); return;
+  }
+  if (el.dataset.v === 'local') Z27.force = true; // este aparelho vira a versão da conta, sem juntar
+  return __z27Pick.apply(this, arguments);
+};
+
+/* =========================================================
+   XP da sala começa do zero
+   ========================================================= */
+function z27Uid(q) { if (q.remote) return q.uid || ''; return (ZFB.user && ZFB.user.uid) || (S.cloud && S.cloud.uid) || ''; }
+function z27From(q) { const st = S.room.start; const j = ((S.room.joined || {})[z27Uid(q)]) || ''; return j > st ? j : st; }
+function z27Other(q, a, b) { const X = q.x29; const code = S.room.code; let n = 0; if (X && X.cr) for (const [k, v] of Object.entries(X.cr)) { if (!Array.isArray(v) || k.startsWith(code + '|')) continue; if (v[0] >= a && v[0] <= b && v[1]) n += v[1]; } return n; }
+function z27DayRaw(q, s) { const info = xpInfo(q, s); return (info.byDate[s] || 0) - z27Other(q, s, s); }
+function z27RX(q, t, a) {
+  if (!S || !S.room || !q) return 0;
+  const from0 = z27From(q); const from = a && a > from0 ? a : from0; if (t < from) return 0;
+  return memo('rx27|' + q.id + '|' + S.room.code + '|' + from + '|' + t, () => {
+    const info = xpInfo(q, t); let n = 0; for (const s of range(from, t)) n += info.byDate[s] || 0;
+    n -= z27Other(q, from, t);
+    const rj = q.rjoin && q.rjoin[S.room.code]; if (rj && rj.d === from0 && from === from0) n -= rj.xp || 0;
+    return Math.max(0, n);
+  });
+}
+// Marca quanto XP você já tinha feito no dia em que entrou na sala, para não levar para o placar
+function z27Base() {
+  if (!S || !S.room || !session.pid || S.mode === 'demo') return; const p = me(); if (!p || p.remote) return;
+  const uid = z27Uid(p); const j = uid && (S.room.joined || {})[uid]; if (!j) return;
+  const code = S.room.code; const from = z27From(p); p.rjoin = p.rjoin || {};
+  const cur = p.rjoin[code]; if (cur && cur.d === from) return;
+  const t = T(); let xp = 0; if (from === t && j === t) xp = Math.max(0, z27DayRaw(p, t));
+  p.rjoin[code] = { d: from, xp }; CACHE = new Map(); zfbSilentSave(); if (typeof zfbSchedule === 'function') zfbSchedule();
+}
+const __z27Rank = rankRows;
+rankRows = function (list, t, wkMode) {
+  if (!S || !S.room) return __z27Rank.apply(this, arguments);
+  const wk = weekKey(t);
+  return list.map(p => ({ p, xp: wkMode ? z27RX(p, t, wk) : z27RX(p, t) })).sort((a, b) => b.xp - a.xp);
+};
+const __z27Render = render;
+render = function () { try { z27Base(); } catch (e) { } return __z27Render.apply(this, arguments); };
+const __z27RMain = renderMain;
+renderMain = function () { try { z27Base(); } catch (e) { } return __z27RMain.apply(this, arguments); };
+const __z27RankHTML = rankHTML;
+rankHTML = function () {
+  let h = __z27RankHTML.apply(this, arguments);
+  if (!S || !S.room || S.players.length < 2) return h;
+  return h.replace(/(<div class="seg">[\s\S]*?Esta semana<\/button><\/div>)/, `$1<div class="z27-note">🏁 No placar da sala só conta o XP feito depois que cada um entrou. Seu XP total e seu nível continuam no seu perfil.</div>`);
+};
+
+/* =========================================================
+   Cancelar o treino
+   ========================================================= */
+const __z27Draw = z16DrawLive;
+z16DrawLive = function () {
+  const r = __z27Draw.apply(this, arguments);
+  try {
+    const el = $('#zgym'); const L = z16Live(); const foot = el && el.querySelector('.z22-foot'); if (!foot || !L) return r;
+    const box = document.createElement('div'); box.className = 'z27-cx';
+    box.innerHTML = Z27.cx ? `<span>Cancelar o treino? As séries marcadas não serão salvas.</span><div class="z27-cxb"><button class="btn gray sm" data-act="z27-cx-no">Continuar treino</button><button class="btn red sm" data-act="z27-cx-yes">Sim, cancelar</button></div>`
+      : `<button class="z27-cxl" data-act="z27-cx">Cancelar treino</button>`;
+    foot.appendChild(box);
+  } catch (e) { }
+  return r;
+};
+function z27GymCancel() {
+  Z27.cx = false; const p = me(); if (!p || !p.gymLive) return;
+  p.gymLive = null; try { z16RestNotify(null); } catch (e) { } save(); z16CloseLive();
+  toast('Treino cancelado. Nada foi salvo.', 'violet', '🗑️');
+}
+Object.assign(ACT, {
+  'z27-cx': () => { const L = z16Live(); if (!L) return; const any = Object.values(L.done || {}).some(a => (a || []).some(Boolean)); if (!any) return z27GymCancel(); Z27.cx = true; z16DrawLive(); },
+  'z27-cx-no': () => { Z27.cx = false; z16DrawLive(); },
+  'z27-cx-yes': () => z27GymCancel()
+});
+const __z27Min = ACT['z16-min'];
+ACT['z16-min'] = function () { Z27.cx = false; return __z27Min.apply(this, arguments); };
+
+ZNEWS.unshift(['☁️', 'Igual em todos os aparelhos', 'Com a mesma conta, o tablet e o celular agora mostram o mesmo progresso. O app junta o que você fez em cada um, sem apagar nada.'],
+  ['🏁', 'Placar da sala começa do zero', 'Na sala só conta o XP feito depois que cada um entrou. Quem chega agora compete de igual para igual. Seu nível continua o mesmo.'],
+  ['🗑️', 'Cancelar treino', 'Abriu um treino só para olhar? Agora dá para cancelar e o tempo não fica rodando.']);
+</script>
+<style>
+.z27-note{margin:10px 2px 0;font-size:12.5px;font-weight:700;color:var(--ink-2);line-height:1.4;text-align:center}
+.z27-cx{margin-top:8px;text-align:center}
+.z27-cxl{background:none;border:0;font:inherit;font-weight:800;font-size:14px;color:var(--ink-3,#8a8a8a);padding:6px 10px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.z27-cx>span{display:block;font-size:13px;font-weight:800;color:var(--ink-2);margin:2px 0 8px}
+.z27-cxb{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.z27-cxb .btn{margin:0}
 </style>
 
 </body>
