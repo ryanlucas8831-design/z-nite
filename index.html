@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '3.1.3';
+const ZV = '3.1.4';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -11666,7 +11666,7 @@ z20SpeakAwait = function (t) {
         const r = await next; if (!mine()) return;
         if (r.e) {
           Z21.vErr = (r.e && r.e.msg) || 'erro desconhecido';
-          toast('A voz natural não respondeu agora. Usei a voz do aparelho.', 'violet', '🎙️');
+          if (!(r.e && r.e.kind === 'quota' && session.z24told)) toast((typeof z24Msg === 'function' ? z24Msg(r.e) : 'A voz natural não respondeu agora.') + ' Usei a voz do aparelho.', 'violet', '🎙️'); if (r.e && r.e.kind === 'quota') session.z24told = 1;
           return device(parts.slice(i).join(' '));
         }
         if (i === 0) { z20VUse(); Z21.vErr = ''; }
@@ -11697,6 +11697,88 @@ ZNEWS.unshift(['🎙️', 'Vozes sem bagunça', 'Agora só uma voz fala por vez.
 .zai-spk.z23-play{color:#7B4DFF;background:rgba(123,77,255,.12)}
 @keyframes z23pulse{0%,100%{opacity:.35;transform:scale(.9)}50%{opacity:1;transform:scale(1.08)}}
 </style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 3.1.4 · Cota das vozes: quando o Google diz que a cota acabou,
+   o app não insiste, usa a voz do aparelho por 30 minutos e avisa em
+   português. Cada resposta usa no máximo 2 pedidos de voz.
+   ========================================================= */
+const Z24_PAUSE = 30 * 60 * 1000;
+const z24Paused = () => { try { return Date.now() < +(localStorage.getItem('zenit-voz-pausa') || 0); } catch (e) { return false; } };
+const z24PauseLeft = () => { try { return Math.max(0, +(localStorage.getItem('zenit-voz-pausa') || 0) - Date.now()); } catch (e) { return 0; } };
+function z24Pause() { try { localStorage.setItem('zenit-voz-pausa', String(Date.now() + Z24_PAUSE)); } catch (e) { } }
+function z24Msg(e) {
+  const m = String((e && e.msg) || ''); const k = e && e.kind;
+  if (k === 'quota' || /429/.test(m)) return 'As vozes naturais estão sem cota agora (limite do plano grátis do Google). Elas voltam mais tarde.';
+  if (/403/.test(m)) return 'O Google recusou o pedido de voz (permissão). Me avise se continuar.';
+  if (k === 'tempo') return 'O Google demorou demais para responder.';
+  if (k === 'net') return 'Sem internet no momento.';
+  return 'A voz natural não respondeu agora.';
+}
+// Pedido de voz: com cota acabada, para na hora e pausa
+const __z24TTS = z20TTS;
+z20TTS = async function (text, voice) {
+  if (z24Paused()) throw zaiErr('quota', 'pausa');
+  if (navigator.onLine === false) throw zaiErr('net', 'sem internet');
+  const body = { contents: [{ role: 'user', parts: [{ text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } } };
+  let last = zaiErr('bad', 'sem resposta');
+  for (let tent = 0; tent < 2; tent++) {
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 25000); let r;
+    try { r = await fetch(ZAI_HOST + ZFB_CONFIG.projectId + '/models/' + Z20_TTS[0] + ':generateContent', { method: 'POST', headers: await zaiHdrs(), body: JSON.stringify(body), signal: ctl.signal }); }
+    catch (e) { clearTimeout(to); last = zaiErr(e && e.name === 'AbortError' ? 'tempo' : 'net', e && e.name === 'AbortError' ? 'o Google demorou demais para responder' : 'falha de conexão'); if (last.kind === 'tempo') throw last; continue; }
+    clearTimeout(to);
+    if (r.status === 429) { z24Pause(); throw zaiErr('quota', 'código 429'); }
+    if (!r.ok) { last = zaiErr(r.status === 403 ? 'off' : 'bad', 'código ' + r.status); if (r.status >= 500) { await new Promise(res => setTimeout(res, 800)); continue; } throw last; }
+    let j; try { j = await r.json(); } catch (e) { last = zaiErr('bad', 'resposta inválida'); continue; }
+    const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
+    const a = parts.find(x => x.inlineData && x.inlineData.data);
+    if (!a) { last = zaiErr('empty', 'o Google respondeu sem áudio'); continue; }
+    return { b64: a.inlineData.data, rate: +(((a.inlineData.mimeType || '').match(/rate=(\d+)/) || [])[1] || 24000) };
+  }
+  throw last;
+};
+// No máximo 2 pedaços: um curto para começar rápido e o resto
+z23Split = function (text) {
+  const t = text.replace(/\s+/g, ' ').trim(); if (t.length <= 260) return [t];
+  const sent = t.match(/[^.!?…]+[.!?…]*\s*/g) || [t]; let first = '';
+  for (const s of sent) { if (first && (first + s).length > 220) break; first += s; }
+  if (!first) first = t.slice(0, 220);
+  const rest = t.slice(first.length).trim(); return rest ? [first.trim(), rest] : [first.trim()];
+};
+// Aviso em português, uma vez por pausa
+z20SpeakAwait = (function (orig) {
+  return function (t) {
+    const v = z20Voice();
+    if (v !== 'aparelho' && z24Paused()) {
+      const text = zaiPlain(t).slice(0, 700); if (!text) return Promise.resolve();
+      if (!session.z24told) { session.z24told = 1; toast('As vozes naturais estão sem cota agora. Usando a voz do aparelho.', 'violet', '🎙️'); }
+      const tok = ++Z23.tok; z23StopAll(); z23Btn('play');
+      return Promise.resolve(z20Device(text)).then(() => { if (tok === Z23.tok) { Z23.id = null; z23Btn(null); } }, () => { });
+    }
+    session.z24told = 0;
+    return orig.apply(this, arguments);
+  };
+})(z20SpeakAwait);
+zaiSpeak = function (t) { z20SpeakAwait(t); };
+// Lista de vozes: mensagem clara em português
+ACT['z20-hear'] = async el => {
+  Z23.tok++; z23StopAll(); z20AC();
+  const v = el.dataset.v; const p = me(); const pet = petOf(p); const txt = `Oi, ${p.name.split(' ')[0]}! Eu sou ${pet.a === 'o' ? 'o' : 'a'} ${pet.name}. Bora cuidar da saúde hoje?`;
+  const box = $('#z21VErr'); const say = m => { Z21.vErr = m; if (box) box.textContent = m ? '⚠️ ' + m : ''; };
+  el.textContent = '…'; el.disabled = true; say('');
+  try {
+    if (v === 'aparelho') await z20Device(txt);
+    else if (z24Paused()) { say(`As vozes naturais estão sem cota agora. Tente de novo em ${Math.ceil(z24PauseLeft() / 60000)} min. Enquanto isso, o app usa a voz do aparelho.`); }
+    else if (!z20VLeft()) say('As falas com voz natural de hoje acabaram. Voltam à meia-noite.');
+    else { const au = await z20TTS(txt, v); z20VUse(); await z21PlayAudio(au); }
+  } catch (e) { say(z24Msg(e)); }
+  finally { el.textContent = '▶'; el.disabled = false; }
+};
+z20VoicesHTML = (function (orig) { return function () { const h = orig.apply(this, arguments); return z24Paused() ? h.replace(/<div class="z21-verr" id="z21VErr">[^<]*<\/div>/, `<div class="z21-verr" id="z21VErr">⚠️ As vozes naturais estão sem cota agora. Voltam em ${Math.ceil(z24PauseLeft() / 60000)} min. Enquanto isso, o app usa a voz do aparelho.</div>`) : h.replace(/(<div class="z21-verr" id="z21VErr">)⚠️ [^<]*(<\/div>)/, '$1$2'); }; })(z20VoicesHTML);
+ZNEWS[0] = ['🎙️', 'Vozes sem bagunça', 'Só uma voz fala por vez. Quando a cota grátis das vozes naturais acaba, o app avisa e usa a voz do aparelho por um tempo, sem gastar mais.'];
+</script>
 
 </body>
 </html>
