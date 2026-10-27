@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '3.1.4';
+const ZV = '3.2';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -11779,6 +11779,339 @@ ACT['z20-hear'] = async el => {
 z20VoicesHTML = (function (orig) { return function () { const h = orig.apply(this, arguments); return z24Paused() ? h.replace(/<div class="z21-verr" id="z21VErr">[^<]*<\/div>/, `<div class="z21-verr" id="z21VErr">⚠️ As vozes naturais estão sem cota agora. Voltam em ${Math.ceil(z24PauseLeft() / 60000)} min. Enquanto isso, o app usa a voz do aparelho.</div>`) : h.replace(/(<div class="z21-verr" id="z21VErr">)⚠️ [^<]*(<\/div>)/, '$1$2'); }; })(z20VoicesHTML);
 ZNEWS[0] = ['🎙️', 'Vozes sem bagunça', 'Só uma voz fala por vez. Quando a cota grátis das vozes naturais acaba, o app avisa e usa a voz do aparelho por um tempo, sem gastar mais.'];
 </script>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 3.2 · Comida: foto em cada refeição com calorias e proteína,
+   saldo do dia (comeu x gastou), meta escrita por você e cardápio
+   da semana montado pela IA.
+   ========================================================= */
+const Z25 = {};
+const z25Rec = p => __z25Goal(Object.assign({}, p, { metaCustom: null }));
+
+/* ---------- Meta: recomendada ou escrita por você ---------- */
+const __z25Goal = z20Goal;
+z20Goal = function (p) {
+  const g = __z25Goal.apply(this, arguments); const c = p && p.metaCustom;
+  if (c && c.kcal) return Object.assign({}, g || { tdee: null, bmr: null, o: zObj(p) }, { kcal: c.kcal, prot: c.prot || (g ? g.prot : Math.round((latestW(p, T()) || 70) * 1.6)), custom: true, rec: g ? { kcal: g.kcal, prot: g.prot } : null });
+  return g;
+};
+const __z25MetaHTML = z20MetaHTML;
+z20MetaHTML = function () {
+  const p = me(); const mode = session.z25m || (session.z25m = p.metaCustom ? 'minha' : 'rec');
+  const v = session.z25v || (session.z25v = { k: p.metaCustom ? p.metaCustom.kcal : '', p: p.metaCustom ? p.metaCustom.prot : '' });
+  const keep = p.metaCustom; p.metaCustom = null; let h; try { h = __z25MetaHTML.apply(this, arguments); } finally { p.metaCustom = keep; }
+  const seg = `<div class="zseg z25-seg"><button class="${mode === 'rec' ? 'on' : ''}" data-act="z25-mm" data-v="rec">Recomendada pelo app</button><button class="${mode === 'minha' ? 'on' : ''}" data-act="z25-mm" data-v="minha">Escrever a minha</button></div>`;
+  h = h.replace(/(<\/div>)/, '$1' + seg);
+  if (mode === 'minha') {
+    const b = session.z20b || {}; const rec = __z25Goal(Object.assign({}, p, { body: { sex: b.sex, age: +b.age, h: +b.h, act: b.act } }));
+    const mine = `<div class="card z25-mine"><h3>✍️ Minha meta</h3><div class="sub">Se você tem nutricionista ou já sabe a sua meta, escreva aqui.</div>
+      <div class="grid2"><label class="field"><span>Calorias por dia</span><input class="input" id="z25K" type="number" inputmode="numeric" min="1000" max="5000" value="${esc(v.k)}" placeholder="Ex.: 2000"></label><label class="field"><span>Proteína (g por dia)</span><input class="input" id="z25P" type="number" inputmode="numeric" min="30" max="300" value="${esc(v.p)}" placeholder="Ex.: 140"></label></div>
+      ${rec ? `<div class="z25-rec"><span>Recomendado para você: <b>${fmtInt(rec.kcal)} kcal</b> e <b>${rec.prot} g</b> de proteína</span><button class="chip" data-act="z25-userec">Usar</button></div>` : '<div class="hint">Preencha os dados acima para ver a recomendação do app ao lado da sua.</div>'}</div>`;
+    h = h.replace(/<div class="card tint-green">[\s\S]*?<\/div><\/div>/, '').replace('<div class="hint">É uma estimativa', mine + '<div class="hint">É uma estimativa');
+    h = h.replace('Com estes dados, o app calcula', 'Seus dados servem para o app mostrar a recomendação e o gasto do seu corpo no saldo do dia. Com eles, o app calcula');
+  }
+  return h;
+};
+const __z25Keep = z20MetaKeep;
+z20MetaKeep = function () { __z25Keep.apply(this, arguments); const v = session.z25v; if (!v) return; const k = $('#z25K'), pr = $('#z25P'); if (k) v.k = k.value; if (pr) v.p = pr.value; };
+const __z25MetaOpen = z20MetaOpen;
+z20MetaOpen = function () { session.z25m = null; session.z25v = null; return __z25MetaOpen.apply(this, arguments); };
+const __z25MetaSave = ACT['z20-meta-save'];
+Object.assign(ACT, {
+  'z25-mm': el => { z20MetaKeep(); session.z25m = el.dataset.v; const b = $('#z20Meta'); if (b) b.innerHTML = z20MetaHTML(); },
+  'z25-userec': () => { z20MetaKeep(); const p = me(); const b = session.z20b || {}; const rec = __z25Goal(Object.assign({}, p, { body: { sex: b.sex, age: +b.age, h: +b.h, act: b.act } })); if (!rec) return; session.z25v = { k: rec.kcal, p: rec.prot }; const x = $('#z20Meta'); if (x) x.innerHTML = z20MetaHTML(); },
+  'z20-meta-save': function () {
+    z20MetaKeep(); const p = me();
+    if (session.z25m !== 'minha') { p.metaCustom = null; return __z25MetaSave.apply(this, arguments); }
+    const k = Math.round(+session.z25v.k), pr = Math.round(+session.z25v.p);
+    if (!(k >= 1000 && k <= 5000)) return toast('Escreva as calorias por dia (entre 1.000 e 5.000).', 'red', '🎯');
+    if (!(pr >= 30 && pr <= 300)) return toast('Escreva a proteína por dia em gramas (entre 30 e 300).', 'red', '🎯');
+    const b = session.z20b || {}; const age = Math.round(+b.age), h = Math.round(+b.h);
+    if (b.sex && age >= 14 && age <= 90 && h >= 130 && h <= 220) p.body = { sex: b.sex, age, h, act: b.act || 'leve' };
+    p.metaCustom = { kcal: k, prot: pr }; save(); closeSheet(true); if ($('#main')) renderMain(true);
+    toast(`Sua meta foi salva: ${fmtInt(k)} kcal e ${pr} g de proteína por dia!`, 'green', '🎯');
+  }
+});
+
+/* ---------- Saldo do dia: comeu x gastou ---------- */
+function z25Burn(p, t) {
+  const g = __z25Goal(Object.assign({}, p, { metaCustom: null })); if (!g || !g.bmr) return null;
+  const d = dget(p, t); const now = new Date(); const frac = t === T() ? clamp((now.getHours() * 60 + now.getMinutes()) / 1440, 0.04, 1) : 1;
+  const body = Math.round(g.bmr * 1.2 * frac);
+  let train = 0; const gl = zGym(p).log.filter(e => e.date === t); if (gl.length) train = gl.reduce((a, e) => a + z16Kcal(p, e.min || 0), 0);
+  else if (d.workout && d.workout.min) train = z16Kcal(p, d.workout.min);
+  return { body, train, total: body + train, frac, day: Math.round(g.bmr * 1.2) + train };
+}
+function z25BalHTML(p, eaten) {
+  const t = T(); const b = z25Burn(p, t);
+  if (!b) return `<button class="z25-balset" data-act="z20-meta"><span>⚖️</span><span class="grow"><b>Saldo do dia</b><small>Preencha idade, altura e sexo na meta para ver quanto você gastou.</small></span><em>›</em></button>`;
+  const bal = eaten - b.total; const o = zObj(p); let msg, cls;
+  if (o === 'perder') { if (bal <= -150) { msg = `✅ Déficit de ${fmtInt(-bal)} kcal até agora: no caminho para emagrecer.`; cls = 'good'; } else if (bal < 150) { msg = '⚖️ Equilibrado até agora.'; cls = 'mid'; } else { msg = `⚠️ ${fmtInt(bal)} kcal acima do que você gastou até agora.`; cls = 'bad'; } }
+  else if (o === 'ganhar') { if (bal >= 150) { msg = `✅ Superávit de ${fmtInt(bal)} kcal: bom para ganhar massa.`; cls = 'good'; } else { msg = `🍽️ Para ganhar massa, coma mais ${fmtInt(150 - bal)} kcal do que gasta.`; cls = 'mid'; } }
+  else { if (Math.abs(bal) <= 250) { msg = '✅ Equilibrado: bom para manter o peso.'; cls = 'good'; } else { msg = bal > 0 ? `⚠️ ${fmtInt(bal)} kcal acima do que gastou.` : `ℹ️ ${fmtInt(-bal)} kcal abaixo do que gastou.`; cls = 'mid'; } }
+  return `<div class="z25-bal"><div class="z25-bh"><b>⚖️ Saldo do dia</b><small>${b.frac < 1 ? 'até agora' : 'dia inteiro'}</small></div>
+    <div class="z25-bg"><div><small>Comeu</small><b>${fmtInt(eaten)}</b></div><i>−</i><div><small>Gastou</small><b>${fmtInt(b.total)}</b><span>corpo ${fmtInt(b.body)}${b.train ? ' + treino ' + fmtInt(b.train) : ''}</span></div><i>=</i><div class="r ${cls}"><small>Saldo</small><b>${bal > 0 ? '+' : bal < 0 ? '−' : ''}${fmtInt(Math.abs(bal))}</b></div></div>
+    <div class="z25-bm ${cls}">${msg}</div></div>`;
+}
+
+/* ---------- Cartão de calorias (com fotos, saldo e meta) ---------- */
+function z25ItemHTML(i, small) {
+  const ml = MEALS.find(x => x.id === i.meal) || MEALS[0];
+  return `<li>${i.ph ? `<span class="z25-th" data-idbwrap><img data-idb="meal|${i.id}" alt=""><i>${ml.icon}</i></span>` : `<span>${ml.icon}</span>`}<span class="grow"><b>${esc(i.desc)}</b><small>${small ? '' : ml.name + ' · '}${i.prot ? `💪 ${i.prot} g de proteína` : 'proteína não informada'}</small></span><em>${fmtInt(i.kcal)} kcal</em><button data-act="zai-kcal-del" data-id="${i.id}" aria-label="Apagar">${IC.x}</button></li>`;
+}
+z20KcalCard = function () {
+  const p = me(), d = dget(p, T()); const k = d.kcal || []; const tot = k.reduce((a, b) => a + (b.kcal || 0), 0); const pr = k.reduce((a, b) => a + (b.prot || 0), 0); const g = z20Goal(p);
+  const pct = g ? Math.min(100, tot / g.kcal * 100) : 0; const over = g && tot > g.kcal * (g.o === 'ganhar' ? 1.25 : 1.1);
+  const ppct = g ? Math.min(100, pr / g.prot * 100) : 0; const left = g ? g.kcal - tot : 0;
+  const list = k.length ? `<ul class="zai-kl z25-kl">${k.map(i => z25ItemHTML(i)).join('')}</ul>` : '<div class="sub" style="margin:4px 0 10px">Tire foto do prato em cada refeição (acima) ou conte para a assistente o que comeu.</div>';
+  return `<div class="card zai-kcard"><div class="row" style="justify-content:space-between"><h3>🔥 Calorias de hoje</h3><b class="zai-kt">${fmtInt(tot)}${g ? `<small> / ${fmtInt(g.kcal)}</small>` : ''} kcal</b></div>
+    ${g ? `<div class="z20-bar ${over ? 'over' : ''}"><i style="width:${pct}%"></i></div><div class="z20-bl">${left >= 0 ? `Faltam <b>${fmtInt(left)} kcal</b> para a ${g.custom ? 'sua meta' : 'meta'} de hoje` : `<b>${fmtInt(-left)} kcal</b> acima da meta de hoje`}</div>
+      <div class="z20-pr"><span>💪 Proteína</span><div class="z20-bar sm prot"><i style="width:${ppct}%"></i></div><b>${pr} / ${g.prot} g</b></div>` : `<button class="z20-setgoal" data-act="z20-meta"><span>🎯</span><span class="grow"><b>Defina sua meta de calorias</b><small>Recomendada pelo app ou escrita por você</small></span><em>›</em></button>`}
+    ${z25BalHTML(p, tot)}
+    ${list}
+    <div class="z20-kb"><button class="btn sec sm" data-act="z25-photo" data-m="">📷 Foto do prato</button><button class="btn sec sm" data-act="zai-open">💬 Perguntar</button></div>
+    ${g ? `<button class="z20-link" data-act="z20-meta">🎯 Ajustar minha meta${g.custom ? ' (a sua)' : ''}</button>` : ''}</div>`;
+};
+
+/* ---------- Foto em cada refeição ---------- */
+const __z25Meals = mealsTabHTML;
+mealsTabHTML = function () {
+  const h = __z25Meals.apply(this, arguments);
+  try {
+    const p = me(), t = T(), d = dget(p, t); const k = d.kcal || []; const ai = z25MenuDay(p, dow(t));
+    const sep = '<span class="oi">🙈</span>Fora do plano</button></div>'; const parts = h.split(sep); if (parts.length !== MEALS.length + 1) return h;
+    return parts.map((s, i) => {
+      if (i === MEALS.length) return s; const ml = MEALS[i]; const items = k.filter(x => x.meal === ml.id); const tk = items.reduce((a, b) => a + (b.kcal || 0), 0), tp = items.reduce((a, b) => a + (b.prot || 0), 0);
+      const plan = ai && ai[ml.id] ? `<div class="z25-plan">📋 No seu cardápio: ≈ ${fmtInt(ai[ml.id].kcal)} kcal · 💪 ${ai[ml.id].prot} g</div>` : '';
+      const extra = `${plan}<div class="z25-mrow">${items.length ? `<ul class="zai-kl z25-kl">${items.map(x => z25ItemHTML(x, true)).join('')}</ul><div class="z25-msum"><span>${fmtInt(tk)} kcal</span><span>💪 ${tp} g de proteína</span></div>` : ''}
+        <button class="z25-pb" data-act="z25-photo" data-m="${ml.id}">📷 ${items.length ? 'Outra foto' : 'Foto do prato'}<small>a IA calcula as calorias</small></button></div>`;
+      return s + sep + extra;
+    }).join('');
+  } catch (e) { return h; }
+};
+function z25PhotoHTML() {
+  const s = Z25.ph; if (!s) return ''; const d = s.data;
+  const head = `<div class="z25-pimg"><img src="${s.img}" alt="Foto do prato"></div>`;
+  if (s.wait) return head + `<h2>Calculando…</h2><div class="sub">A IA está olhando o seu prato. Leva alguns segundos.</div><div class="z25-load"><span class="zai-typing"><i></i><i></i><i></i></span></div>`;
+  if (s.err) return head + `<h2>Não deu certo</h2><div class="sub">${esc(s.err)}</div><div style="margin-top:12px"><button class="btn" data-act="z25-photo-retry">Tentar de novo</button></div><div style="margin-top:8px"><button class="btn gray" data-act="close">Fechar</button></div>`;
+  if (!d) return '';
+  if (d.nao_comida) return head + `<h2>Não achei comida nessa foto 🤔</h2><div class="sub">Tire a foto de cima, com o prato inteiro aparecendo e boa luz.</div><div style="margin-top:12px"><button class="btn" data-act="z25-photo" data-m="${s.meal}">📷 Tirar outra foto</button></div>`;
+  const ml = MEALS.find(x => x.id === s.meal) || MEALS[0];
+  return head + `<h2>${esc(d.prato)}</h2>
+    <ul class="zai-items">${d.itens.map(i => `<li><span class="grow"><b>${esc(i.nome)}</b>${i.porcao ? `<small>${esc(i.porcao)}</small>` : ''}</span><em>${fmtInt(i.kcal)} kcal${i.prot ? `<small>${i.prot} g prot.</small>` : ''}</em></li>`).join('')}</ul>
+    <div class="z25-tot"><div><small>Calorias</small><label><input class="input" id="z25Kc" type="number" inputmode="numeric" min="0" max="5000" value="${s.kcal != null ? s.kcal : d.total}"><span>kcal</span></label></div><div><small>Proteína</small><b>💪 ${d.prot} g</b></div></div>
+    <div class="zai-range">Pode variar entre ${fmtInt(d.min)} e ${fmtInt(d.max)} kcal. Dá para corrigir o número acima.</div>
+    ${d.dica ? `<div class="zai-tipline">💡 ${esc(d.dica)}</div>` : ''}
+    ${d.perguntas.length && !s.refined ? `<div class="zai-qs"><div class="zai-qh">Para ficar mais certinho:</div>${d.perguntas.map(q => `<div class="zai-q"><b>${esc(q.texto)}</b><div class="chips">${q.opcoes.map(op => `<button class="chip ${s.ans[q.id] === op ? 'on' : ''}" data-act="z25-ans" data-q="${q.id}" data-v="${esc(op)}">${esc(op)}</button>`).join('')}</div></div>`).join('')}<button class="btn sec sm" data-act="z25-refine" ${Object.keys(s.ans).length ? '' : 'disabled'}>Recalcular com as respostas</button></div>` : ''}
+    <div class="zai-qh" style="margin-top:12px">Qual refeição?</div><div class="chips four">${MEALS.map(x => `<button class="chip ${s.meal === x.id ? 'on' : ''}" data-act="z25-meal" data-v="${x.id}">${x.icon} ${x.name.replace(' da manhã', '')}</button>`).join('')}</div>
+    <div class="chips">${[['ok', '✅ No plano'], ['fora', '🙈 Fora do plano'], ['', 'Só as calorias']].map(([v, l]) => `<button class="chip ${s.plan === v ? 'on' : ''}" data-act="z25-plan" data-v="${v}">${l}</button>`).join('')}</div>
+    <div style="margin-top:12px"><button class="btn" data-act="z25-save">Registrar no ${ml.name.replace(' da manhã', '')}</button></div><div style="margin-top:8px"><button class="btn gray" data-act="close">Cancelar</button></div>`;
+}
+function z25PhotoPaint() { z25Keep(); const b = $('#z25Ph'); if (b) b.innerHTML = z25PhotoHTML(); }
+function z25Keep() { const s = Z25.ph; const i = $('#z25Kc'); if (s && i && i.value !== '') s.kcal = clamp(Math.round(+i.value || 0), 0, 5000); }
+async function z25Calc(refine) {
+  const s = Z25.ph; if (!s) return; if (!zaiLeft()) { s.wait = false; s.err = 'As mensagens da assistente de hoje acabaram. Volta amanhã!'; return z25PhotoPaint(); }
+  s.wait = true; s.err = null; z25PhotoPaint(); zaiUse(1);
+  let ask = 'Estime as calorias e a proteína desta refeição.';
+  if (refine && s.data) ask += `\nSua estimativa anterior: ${JSON.stringify({ prato: s.data.prato, itens: s.data.itens, total: s.data.total })}.\nRespostas da pessoa: ${s.data.perguntas.map(q => `${q.texto} → ${s.ans[q.id] || 'não respondeu'}`).join(' | ')}.\nRefaça a estimativa com essas respostas e use "perguntas": [].`;
+  try {
+    const out = await zaiCall(ZAI_CHAT, { contents: [{ role: 'user', parts: [zaiImgPart(s.img), { text: ask }] }], systemInstruction: { role: 'system', parts: [{ text: ZAI_FOOD_RULES }] }, generationConfig: { temperature: 0.3, maxOutputTokens: 4096, responseMimeType: 'application/json' } });
+    if (Z25.ph !== s) return; const d = zaiFoodClean(zaiJSON(out.text)); if (refine) { d.perguntas = []; s.refined = true; } s.data = d; s.kcal = d.total;
+  } catch (e) { if (e.kind !== 'blocked') zaiUse(-1); if (Z25.ph !== s) return; if (!s.data) s.err = zaiErrText(e); else toast(zaiErrText(e), 'red', '⚠️'); }
+  s.wait = false; const b = $('#z25Ph'); if (b) b.innerHTML = z25PhotoHTML();
+}
+function z25PhotoStart(meal) {
+  if (!zaiOk()) return; if (!zaiLeft()) return toast('As mensagens da assistente de hoje acabaram. Volta amanhã!', 'red', '⏳');
+  z16Pick(img => {
+    openSheet('<div id="z25Ph"></div>', { sticky: true });
+    Z25.ph = { meal: meal || zaiMealNow(), img, data: null, ans: {}, plan: 'ok', kcal: null };
+    z25Calc(false);
+  }, 1024);
+}
+Object.assign(ACT, {
+  'z25-photo': el => z25PhotoStart(el.dataset.m),
+  'z25-photo-retry': () => z25Calc(false),
+  'z25-ans': el => { const s = Z25.ph; if (!s) return; z25Keep(); s.ans[el.dataset.q] = s.ans[el.dataset.q] === el.dataset.v ? undefined : el.dataset.v; if (!s.ans[el.dataset.q]) delete s.ans[el.dataset.q]; z25PhotoPaint(); },
+  'z25-refine': () => z25Calc(true),
+  'z25-meal': el => { const s = Z25.ph; if (!s) return; z25Keep(); s.meal = el.dataset.v; z25PhotoPaint(); },
+  'z25-plan': el => { const s = Z25.ph; if (!s) return; z25Keep(); s.plan = el.dataset.v; z25PhotoPaint(); },
+  'z25-save': async () => {
+    const s = Z25.ph; if (!s || !s.data) return; z25Keep(); const kcal = clamp(Math.round(s.kcal != null ? s.kcal : s.data.total), 0, 5000); if (!kcal) return toast('Coloque as calorias antes de registrar.', 'red', '🔥');
+    const p = me(), t = T(), d = dmut(p, t); d.kcal = d.kcal || [];
+    const it = { id: z16Id(), at: Date.now(), meal: s.meal, desc: s.data.prato, kcal, prot: s.data.prot || 0, ph: 1 };
+    await z16Put('meal|' + it.id, s.img); d.kcal.push(it); Z25.ph = null;
+    const ml = MEALS.find(x => x.id === it.meal) || MEALS[0];
+    if (s.plan) { d.meals = d.meals || {}; d.meals[it.meal] = s.plan; if (s.plan === 'ok') sfx('ding'); closeSheet(true); commit({ rerender: true }); } else { save(); closeSheet(true); renderMain(true); }
+    toast(`${ml.name}: ${fmtInt(kcal)} kcal · 💪 ${it.prot} g de proteína`, 'green', ml.icon);
+  }
+});
+const __z25Del = ACT['zai-kcal-del'];
+ACT['zai-kcal-del'] = function (el) { const it = (dget(me(), T()).kcal || []).find(x => x.id === el.dataset.id); if (it && it.ph) z16Del('meal|' + it.id); return __z25Del.apply(this, arguments); };
+const __z25Close = closeSheet;
+closeSheet = function () { const r = __z25Close.apply(this, arguments); if (!$('#z25Ph')) Z25.ph = null; return r; };
+
+/* ---------- Cardápio da semana montado pela IA ---------- */
+function z25MenuDay(p, dw) { const m = p.menuAI; if (!m || !m.days) return null; return m.days[dw] || null; }
+const Z25_Q = {
+  rest: ['Nenhuma', 'Vegetariano', 'Vegano', 'Sem lactose', 'Sem glúten', 'Sem carne de porco'],
+  orc: ['Econômico', 'Médio', 'Sem limite'],
+  coz: ['Quase nada', 'Um pouco', 'Gosto de cozinhar'],
+  alm: ['Em casa', 'Marmita', 'Restaurante ou por quilo'],
+  var: ['Repetir pratos para facilitar', 'Variar bastante']
+};
+function z25MenuFormHTML() {
+  const p = me(); const g = z20Goal(p); const f = session.z25f || (session.z25f = Object.assign({ rest: ['Nenhuma'], gosta: '', nao: '', orc: 'Médio', coz: 'Um pouco', alm: 'Em casa', var: 'Repetir pratos para facilitar', obs: '' }, p.menuPrefs || {}));
+  const one = (k, list) => `<div class="chips">${list.map(v => `<button class="chip ${f[k] === v ? 'on' : ''}" data-act="z25-q" data-k="${k}" data-v="${esc(v)}">${esc(v)}</button>`).join('')}</div>`;
+  const o = ZOBJ[zObj(p)];
+  if (!g) return `<h2>✨ Cardápio com a IA</h2><div class="sub">Para a IA acertar as porções, ela precisa da sua meta de calorias e proteína.</div><div style="margin-top:14px"><button class="btn" data-act="z20-meta">🎯 Definir minha meta</button></div><div style="margin-top:8px"><button class="btn gray" data-act="close">Voltar</button></div>`;
+  return `<h2>✨ Cardápio com a IA</h2><div class="sub">Responda rapidinho: a IA monta a semana inteira com porções, calorias e proteína de cada refeição, do seu gosto.</div>
+    <div class="z25-goal">${o.ic} ${o.t} · meta de <b>${fmtInt(g.kcal)} kcal</b> e <b>${g.prot} g</b> de proteína por dia <button class="link-btn" data-act="z20-meta">mudar</button></div>
+    <div class="field"><span>Alguma restrição?</span><div class="chips">${Z25_Q.rest.map(v => `<button class="chip ${(f.rest || []).includes(v) ? 'on' : ''}" data-act="z25-qm" data-v="${esc(v)}">${esc(v)}</button>`).join('')}</div></div>
+    <label class="field"><span>O que você gosta de comer?</span><input class="input" id="z25Gosta" maxlength="160" value="${esc(f.gosta)}" placeholder="Ex.: frango, ovo, cuscuz, açaí, macarrão"></label>
+    <label class="field"><span>O que você NÃO come?</span><input class="input" id="z25Nao" maxlength="160" value="${esc(f.nao)}" placeholder="Ex.: peixe, beterraba, fígado"></label>
+    <div class="field"><span>Orçamento</span>${one('orc', Z25_Q.orc)}</div>
+    <div class="field"><span>Quanto tempo para cozinhar?</span>${one('coz', Z25_Q.coz)}</div>
+    <div class="field"><span>Onde você almoça nos dias de semana?</span>${one('alm', Z25_Q.alm)}</div>
+    <div class="field"><span>Variedade</span>${one('var', Z25_Q.var)}</div>
+    <label class="field"><span>Mais alguma coisa? (opcional)</span><textarea class="input" id="z25Obs" rows="2" maxlength="300" placeholder="Ex.: treino às 18h, gosto de jantar leve, tomo whey">${esc(f.obs)}</textarea></label>
+    <div style="margin-top:12px"><button class="btn" data-act="z25-menu-go">✨ Montar meu cardápio</button></div><div class="hint">Usa 1 mensagem da assistente. Você confere tudo antes de usar.</div>`;
+}
+function z25FormKeep() { const f = session.z25f; if (!f) return; const a = $('#z25Gosta'), b = $('#z25Nao'), c = $('#z25Obs'); if (a) f.gosta = a.value; if (b) f.nao = b.value; if (c) f.obs = c.value; }
+function z25FormPaint() { z25FormKeep(); const b = $('#z25Mf'); if (b) b.innerHTML = z25MenuFormHTML(); }
+function z25MenuFormOpen() { session.z25f = null; openSheet(`<div id="z25Mf">${z25MenuFormHTML()}</div>`, { full: true }); }
+const Z25_MENU_RULES = `Você é nutricionista brasileiro e monta cardápios semanais realistas, gostosos e baratos, com porções precisas.
+Responda SOMENTE com JSON válido, sem texto fora dele, neste formato:
+{"dias":[{"d":1,"cafe":{"prato":"Ovos mexidos com pão","porcoes":["2 ovos mexidos (100 g)","1 pão francês (50 g)","1 banana (90 g)"],"kcal":420,"prot":24},"almoco":{...},"lanche":{...},"jantar":{...}}],"dica":"1 frase curta"}
+Regras:
+- 7 dias, com "d" de 0 (domingo) a 6 (sábado). Sempre as 4 refeições: cafe, almoco, lanche, jantar.
+- A soma das 4 refeições de cada dia deve ficar a no máximo 5% da meta de calorias, e a proteína do dia deve chegar perto da meta (no mínimo 90%).
+- Porções em medidas caseiras brasileiras com os gramas entre parênteses. No máximo 6 porções por refeição.
+- "kcal" e "prot" (gramas) de cada refeição devem bater com as porções.
+- Respeite TODAS as restrições e o que a pessoa não come. Use comida brasileira do dia a dia, do orçamento e do tempo de cozinha informados.
+- Se a pessoa almoça de marmita, use pratos que aguentam ser levados. Se almoça em restaurante ou por quilo, escreva como montar o prato.
+- "prato" com no máximo 50 letras.`;
+function z25MenuClean(o) {
+  const out = {}; const days = Array.isArray(o && o.dias) ? o.dias : [];
+  const meal = m => m && typeof m === 'object' ? { prato: String(m.prato || 'Refeição').slice(0, 60), porcoes: (Array.isArray(m.porcoes) ? m.porcoes : []).slice(0, 6).map(x => String(x).slice(0, 70)).filter(Boolean), kcal: clamp(Math.round(+m.kcal || 0), 0, 3000), prot: clamp(Math.round(+m.prot || 0), 0, 300) } : null;
+  days.forEach((d, i) => { const k = d && d.d != null && +d.d >= 0 && +d.d <= 6 ? +d.d : ZWEEK[i]; if (k == null || out[k]) return; const r = {}; for (const x of MEALS) { const m = meal(d[x.id]); if (m) r[x.id] = m; } if (Object.keys(r).length) out[k] = r; });
+  return { days: out, dica: String((o && o.dica) || '').slice(0, 200) };
+}
+function z25Prefs(f) { return `Restrições: ${(f.rest || []).join(', ') || 'nenhuma'}. Gosta de: ${f.gosta || 'não informou'}. Não come: ${f.nao || 'nada a evitar'}. Orçamento: ${f.orc}. Tempo para cozinhar: ${f.coz}. Almoço nos dias de semana: ${f.alm}. Variedade: ${f.var}. ${f.obs ? 'Observações: ' + f.obs : ''}`; }
+async function z25MenuGo() {
+  z25FormKeep(); const p = me(); const g = z20Goal(p); const f = session.z25f; if (!g || !f) return;
+  if (!zaiLeft()) return toast('As mensagens da assistente de hoje acabaram. Volta amanhã!', 'red', '⏳');
+  p.menuPrefs = JSON.parse(JSON.stringify(f)); save();
+  const b = $('#z25Mf'); if (b) b.innerHTML = `<h2>✨ Montando o seu cardápio…</h2><div class="sub">A IA está montando os 7 dias com porções, calorias e proteína. Pode levar até um minuto.</div><div class="z25-load"><span class="zai-typing"><i></i><i></i><i></i></span></div>`;
+  zaiUse(1);
+  try {
+    const info = `Objetivo: ${ZOBJ[zObj(p)].t}. Meta por dia: ${g.kcal} kcal e ${g.prot} g de proteína. Peso atual: ${fmt1(latestW(p, T()))} kg.\n${z25Prefs(f)}`;
+    const out = await zaiCall(ZAI_CHAT, { contents: [{ role: 'user', parts: [{ text: `Monte o meu cardápio da semana.\n${info}` }] }], systemInstruction: { role: 'system', parts: [{ text: Z25_MENU_RULES }] }, generationConfig: { temperature: 0.6, maxOutputTokens: 16384, responseMimeType: 'application/json' } });
+    const m = z25MenuClean(zaiJSON(out.text)); if (Object.keys(m.days).length < 5) throw zaiErr('json');
+    p.menuDraft = Object.assign(m, { kcal: g.kcal, prot: g.prot, at: Date.now() }); save();
+    session.z25d = { day: ZWEEK.find(k => m.days[k]) }; z25ReviewOpen();
+  } catch (e) { if (e.kind !== 'blocked') zaiUse(-1); const x = $('#z25Mf'); if (x) x.innerHTML = z25MenuFormHTML(); toast(zaiErrText(e), 'red', '⚠️'); }
+}
+function z25ReviewHTML() {
+  const p = me(); const m = p.menuDraft || p.menuAI; if (!m) return ''; const z = session.z25d || (session.z25d = { day: dow(T()) }); const dw = m.days[z.day] ? z.day : ZWEEK.find(k => m.days[k]);
+  const day = m.days[dw] || {}; const tk = MEALS.reduce((a, x) => a + ((day[x.id] || {}).kcal || 0), 0), tp = MEALS.reduce((a, x) => a + ((day[x.id] || {}).prot || 0), 0);
+  const draft = !!p.menuDraft;
+  return `<h2>${draft ? '✨ Seu cardápio da semana' : '📋 Cardápio da IA'}</h2><div class="sub">${draft ? 'Confira cada dia. Se não gostar de uma refeição, toque em Trocar.' : 'Este é o cardápio que você está usando.'}</div>
+    <div class="zm-days">${ZWEEK.map(k => { const dd = m.days[k] || {}; const kk = MEALS.reduce((a, x) => a + ((dd[x.id] || {}).kcal || 0), 0); return `<button class="zm-day ${k === dw ? 'on' : ''}" data-act="z25-day" data-d="${k}"><b>${ZDOW_S[k]}</b><i>${kk ? fmtInt(kk) : '—'}</i></button>`; }).join('')}</div>
+    <div class="z25-dt"><div><small>${ZDOW[dw]}</small><b>${fmtInt(tk)} kcal</b><span>meta ${fmtInt(m.kcal)}</span></div><div><small>Proteína</small><b>💪 ${tp} g</b><span>meta ${m.prot} g</span></div></div>
+    ${MEALS.map(x => { const r = day[x.id]; if (!r) return ''; const busy = session.z25sw === dw + '|' + x.id; return `<div class="card z25-mc"><div class="z25-mh"><span class="e">${x.icon}</span><div class="grow"><small>${x.name}</small><b>${esc(r.prato)}</b></div>${draft ? `<button class="chip" data-act="z25-swap" data-d="${dw}" data-m="${x.id}" ${busy ? 'disabled' : ''}>${busy ? '…' : '🔄 Trocar'}</button>` : ''}</div>
+      <ul>${r.porcoes.map(c => `<li>${esc(c)}</li>`).join('')}</ul><div class="z25-mk"><span>≈ ${fmtInt(r.kcal)} kcal</span><span>💪 ${r.prot} g de proteína</span></div></div>`; }).join('')}
+    ${m.dica ? `<div class="zai-tipline">💡 ${esc(m.dica)}</div>` : ''}
+    ${draft ? `<div style="margin-top:12px"><button class="btn green" data-act="z25-apply">✅ Usar este cardápio</button></div><div class="grid2" style="margin-top:8px"><button class="btn gray sm" data-act="z25-menu-form">Mudar respostas</button><button class="btn gray sm" data-act="z25-discard">Descartar</button></div><div class="hint">Trocar uma refeição usa 1 mensagem da assistente.</div>`
+      : `<div style="margin-top:12px"><button class="btn sec" data-act="z25-menu-form">✨ Montar outro com a IA</button></div><div style="margin-top:8px"><button class="btn gray" data-act="zm-back">Voltar</button></div>`}`;
+}
+function z25ReviewOpen() { closeSheet(true); openSheet(`<div id="z25Rv">${z25ReviewHTML()}</div>`, { full: true }); }
+function z25ReviewPaint() { const b = $('#z25Rv'); if (b) b.innerHTML = z25ReviewHTML(); }
+async function z25Swap(dw, mealId) {
+  const p = me(); const m = p.menuDraft; if (!m || !m.days[dw] || !m.days[dw][mealId]) return; if (!zaiLeft()) return toast('As mensagens da assistente de hoje acabaram.', 'red', '⏳');
+  const cur = m.days[dw][mealId]; const ml = MEALS.find(x => x.id === mealId); session.z25sw = dw + '|' + mealId; z25ReviewPaint(); zaiUse(1);
+  try {
+    const f = p.menuPrefs || {};
+    const out = await zaiCall(ZAI_CHAT, { contents: [{ role: 'user', parts: [{ text: `Troque esta refeição (${ml.name} de ${ZDOW[dw].toLowerCase()}) por outra diferente, com calorias e proteína parecidas (cerca de ${cur.kcal} kcal e ${cur.prot} g de proteína). Atual: ${cur.prato}: ${cur.porcoes.join(', ')}.\n${z25Prefs(f)}\nResponda SOMENTE com JSON: {"prato":"...","porcoes":["..."],"kcal":0,"prot":0}` }] }], systemInstruction: { role: 'system', parts: [{ text: 'Você é nutricionista brasileiro. Porções em medidas caseiras com gramas entre parênteses, no máximo 6. Respeite as restrições. Responda só com JSON.' }] }, generationConfig: { temperature: 0.8, maxOutputTokens: 2048, responseMimeType: 'application/json' } });
+    const o = zaiJSON(out.text); const nm = z25MenuClean({ dias: [{ d: dw, [mealId]: o }] }).days[dw];
+    if (!nm || !nm[mealId] || !nm[mealId].porcoes.length) throw zaiErr('json');
+    m.days[dw][mealId] = nm[mealId]; save(); sfx('pop');
+  } catch (e) { if (e.kind !== 'blocked') zaiUse(-1); toast(zaiErrText(e), 'red', '⚠️'); }
+  session.z25sw = null; z25ReviewPaint();
+}
+function z25Apply() {
+  const p = me(); const m = p.menuDraft; if (!m) return;
+  p.menuW = {}; for (const k of ZWEEK) { const day = m.days[k]; if (!day) continue; p.menuW[k] = {}; for (const x of MEALS) { const r = day[x.id]; if (r) p.menuW[k][x.id] = { txt: (r.prato + (r.porcoes.length ? ': ' + r.porcoes.join(', ') : '')).slice(0, 200) }; } }
+  p.menuAI = m; p.menuDraft = null; save(); closeSheet(true); renderMain(true); sfx('level'); toast('Cardápio da semana salvo! Ele aparece em cada refeição.', 'green', '🍽️');
+}
+Object.assign(ACT, {
+  'z25-menu-ai': () => { const p = me(); if (p.menuDraft) { session.z25d = null; return z25ReviewOpen(); } z25MenuFormOpen(); },
+  'z25-menu-view': () => { session.z25d = null; z25ReviewOpen(); },
+  'z25-menu-form': () => { closeSheet(true); z25MenuFormOpen(); },
+  'z25-q': el => { const f = session.z25f; z25FormKeep(); f[el.dataset.k] = el.dataset.v; z25FormPaint(); },
+  'z25-qm': el => { const f = session.z25f; z25FormKeep(); const v = el.dataset.v; let a = (f.rest || []).slice(); if (v === 'Nenhuma') a = ['Nenhuma']; else { a = a.filter(x => x !== 'Nenhuma'); a = a.includes(v) ? a.filter(x => x !== v) : a.concat(v); if (!a.length) a = ['Nenhuma']; } f.rest = a; z25FormPaint(); },
+  'z25-menu-go': () => z25MenuGo(),
+  'z25-day': el => { session.z25d = { day: +el.dataset.d }; z25ReviewPaint(); const s = document.querySelector('#overlay .sheet'); if (s) s.scrollTop = 0; },
+  'z25-swap': el => z25Swap(+el.dataset.d, el.dataset.m),
+  'z25-apply': () => z25Apply(),
+  'z25-discard': () => { openConfirm('Descartar o cardápio montado pela IA?', 'Descartar', () => { const p = me(); p.menuDraft = null; save(); closeSheet(true); openMenuEdit(); }); }
+});
+// A IA vira a primeira opção em "Editar meu cardápio"
+const __z25MenuHTML = zMenuHTML;
+zMenuHTML = function () {
+  const p = me(); let h = __z25MenuHTML.apply(this, arguments);
+  const cta = `<button class="z25-aicta" data-act="z25-menu-ai"><span>✨</span><span class="grow"><b>${p.menuDraft ? 'Continuar o cardápio da IA' : p.menuAI ? 'Montar um novo cardápio com a IA' : 'Montar meu cardápio com a IA'}</b><small>Ela pergunta seus gostos e monta a semana com porções, calorias e proteína</small></span><em>›</em></button>${p.menuAI && !p.menuDraft ? '<button class="link-btn z25-aiview" data-act="z25-menu-view">📋 Ver detalhes do cardápio da IA (porções e calorias)</button>' : ''}<div class="z25-or">ou monte do seu jeito</div>`;
+  return h.replace('<div class="zm-days">', cta + '<div class="zm-days">');
+};
+// Dados de comida não vão para a sala
+zfbPublicJSON = (function (orig) { return function (p) { const q = Object.assign({}, p); delete q.metaCustom; delete q.menuAI; delete q.menuDraft; delete q.menuPrefs; return orig.call(this, q); }; })(zfbPublicJSON);
+
+/* ---------- Tour e novidades ---------- */
+(function () {
+  const kc = Z18_TOUR.find(x => x.sel.includes('.zai-kcard')); if (kc) kc.d = 'Tire foto do prato em cada refeição: a IA calcula calorias e proteína. Aqui fica o total do dia, a sua meta e o saldo (o que comeu menos o que gastou).';
+  Z18_NEW.splice(0, Z18_NEW.length,
+    { tab: 'reg', sub: 'refeicoes', sel: ['.z25-pb', '.meal-q'], t: 'Foto em cada refeição', d: 'Toque em "Foto do prato" no café, almoço, lanche ou jantar. A IA calcula as calorias e mostra a proteína logo embaixo.' },
+    { tab: 'reg', sub: 'refeicoes', sel: ['.z25-bal', '.zai-kcard'], t: 'Saldo do dia', d: 'Quanto você comeu menos quanto gastou (corpo + treino). Em "Ajustar minha meta" você também pode escrever a sua própria meta.' },
+    { tab: 'reg', sub: 'refeicoes', sel: ['[data-act="menu-edit"]'], t: 'Cardápio da semana pela IA', d: 'Em "Editar meu cardápio", a IA monta a semana inteira com porções, calorias e proteína, do seu gosto.' });
+})();
+ZNEWS.splice(0, ZNEWS.length,
+  ['📷', 'Foto em cada refeição', 'Café, almoço, lanche e jantar têm o botão "Foto do prato". A IA calcula as calorias e mostra "💪 X g de proteína" embaixo.'],
+  ['⚖️', 'Saldo do dia', 'O que você comeu menos o que gastou (seu corpo + o treino), com aviso se está no caminho do seu objetivo.'],
+  ['🎯', 'Minha meta', 'Em "Ajustar minha meta" você pode escrever a sua própria meta de calorias e proteína, com a recomendação do app ao lado.'],
+  ['✨', 'Cardápio da semana pela IA', 'Em "Editar meu cardápio": responda umas perguntas e a IA monta 7 dias com porções, calorias e proteína. Dá para trocar refeições antes de usar.']);
+</script>
+<style>
+.z25-seg{margin:12px 0 6px}.z25-seg button.on{background:var(--card);color:var(--ink);box-shadow:0 2px 0 var(--line)}
+.z25-mine .grid2{margin-top:8px}.z25-rec{display:flex;align-items:center;gap:8px;justify-content:space-between;background:rgba(88,204,2,.12);border-radius:12px;padding:8px 10px;font-size:13.5px;font-weight:700;margin-top:4px}
+.z25-bal{border:2px solid var(--line);border-radius:16px;padding:10px 12px;margin:12px 0 4px}
+.z25-bh{display:flex;justify-content:space-between;align-items:baseline}.z25-bh b{font-size:15px;font-weight:900}.z25-bh small{font-size:11.5px;font-weight:800;color:var(--ink-3);text-transform:uppercase;letter-spacing:.08em}
+.z25-bg{display:flex;align-items:center;gap:6px;margin-top:8px}.z25-bg>div{flex:1;text-align:center;background:var(--surface-2);border-radius:12px;padding:6px 4px}.z25-bg i{font-style:normal;font-weight:900;color:var(--ink-3)}
+.z25-bg small{display:block;font-size:10.5px;font-weight:900;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}.z25-bg b{display:block;font-size:18px;font-weight:900}.z25-bg span{display:block;font-size:10.5px;font-weight:700;color:var(--ink-3)}
+.z25-bg .r.good{background:rgba(88,204,2,.16)}.z25-bg .r.good b{color:#46A302}.z25-bg .r.bad{background:rgba(255,75,75,.12)}.z25-bg .r.bad b{color:#E0483C}
+.z25-bm{font-size:13px;font-weight:800;margin-top:8px}.z25-bm.good{color:#46A302}.z25-bm.bad{color:#E0483C}
+.z25-balset{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:2px dashed var(--line);border-radius:14px;padding:9px 12px;margin:10px 0;font:inherit;color:inherit;background:transparent}.z25-balset>span:first-child{font-size:22px}.z25-balset b{display:block;font-weight:900}.z25-balset small{display:block;font-size:12.5px;color:var(--ink-2);font-weight:700}.z25-balset em{font-style:normal;font-size:20px;color:var(--ink-3)}
+.z25-th{position:relative;width:44px;height:44px;border-radius:12px;overflow:hidden;flex:none;background:var(--surface-2);display:grid;place-items:center}.z25-th img{width:100%;height:100%;object-fit:cover}.z25-th i{position:absolute;right:1px;bottom:0;font-style:normal;font-size:13px}
+.z25-kl li{align-items:center}
+.z25-mrow{margin-top:10px}.z25-mrow .zai-kl{margin:0 0 6px}
+.z25-msum{display:flex;justify-content:space-between;font-size:13px;font-weight:900;color:var(--ink-2);padding:0 4px 6px}
+.z25-pb{display:flex;align-items:center;gap:8px;width:100%;justify-content:center;border:2px dashed #1CB0F6;border-radius:14px;padding:9px;font:inherit;font-weight:900;color:#1CB0F6;background:rgba(28,176,246,.06)}.z25-pb small{font-weight:700;color:var(--ink-3);font-size:12px}
+.z25-plan{font-size:12.5px;font-weight:800;color:var(--ink-2);margin-top:8px}
+.z25-pimg{border-radius:18px;overflow:hidden;max-height:220px;margin:6px 0 10px;background:var(--surface-2)}.z25-pimg img{width:100%;max-height:220px;object-fit:cover;display:block}
+.z25-load{display:grid;place-items:center;padding:24px 0}
+.z25-tot{display:flex;gap:8px;margin-top:10px}.z25-tot>div{flex:1;border:2px solid var(--line);border-radius:14px;padding:8px 10px}.z25-tot small{display:block;font-size:10.5px;font-weight:900;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}.z25-tot b{font-size:18px;font-weight:900}
+.z25-tot label{display:flex;align-items:center;gap:6px}.z25-tot input{width:100%;font-size:18px;font-weight:900;padding:4px 8px}
+.zai-items em small{display:block;font-size:11px;color:var(--ink-3);font-weight:800}
+.z25-aicta{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:0;border-radius:18px;padding:12px 14px;margin:12px 0 4px;font:inherit;color:#fff;background:linear-gradient(135deg,#7B4DFF,#1CB0F6);box-shadow:0 4px 0 #5A31D6}
+.z25-aicta>span:first-child{font-size:26px}.z25-aicta b{display:block;font-size:16px;font-weight:900}.z25-aicta small{display:block;font-size:12.5px;font-weight:700;opacity:.92}.z25-aicta em{font-style:normal;font-size:22px;font-weight:900}
+.z25-aiview{display:block;margin:6px auto 0;font-size:13.5px}
+.z25-or{text-align:center;font-size:12px;font-weight:900;color:var(--ink-3);text-transform:uppercase;letter-spacing:.1em;margin:12px 0 2px}
+.z25-goal{background:var(--surface-2);border-radius:12px;padding:8px 12px;font-size:13.5px;font-weight:700;margin:10px 0}
+.z25-dt{display:flex;gap:8px;margin:10px 0}.z25-dt>div{flex:1;border:2px solid var(--line);border-radius:14px;padding:8px 10px}.z25-dt small{display:block;font-size:10.5px;font-weight:900;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}.z25-dt b{font-size:18px;font-weight:900}.z25-dt span{display:block;font-size:11.5px;font-weight:700;color:var(--ink-3)}
+.z25-mc{padding:12px}.z25-mh{display:flex;align-items:center;gap:10px}.z25-mh .e{font-size:26px}.z25-mh small{display:block;font-size:11px;font-weight:900;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}.z25-mh b{display:block;font-size:15.5px;font-weight:900}
+.z25-mc ul{margin:8px 0 6px 38px;padding:0;font-size:13.5px;font-weight:700;color:var(--ink-2)}.z25-mc li{margin:2px 0}
+.z25-mk{display:flex;gap:12px;margin-left:38px;font-size:13px;font-weight:900}.z25-mk span:last-child{color:#7B4DFF}
+</style>
 
 </body>
 </html>
