@@ -3717,7 +3717,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '3.2';
+const ZV = '3.3';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#1CB0F6"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -12111,6 +12111,364 @@ ZNEWS.splice(0, ZNEWS.length,
 .z25-mc{padding:12px}.z25-mh{display:flex;align-items:center;gap:10px}.z25-mh .e{font-size:26px}.z25-mh small{display:block;font-size:11px;font-weight:900;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}.z25-mh b{display:block;font-size:15.5px;font-weight:900}
 .z25-mc ul{margin:8px 0 6px 38px;padding:0;font-size:13.5px;font-weight:700;color:var(--ink-2)}.z25-mc li{margin:2px 0}
 .z25-mk{display:flex;gap:12px;margin-left:38px;font-size:13px;font-weight:900}.z25-mk span:last-child{color:#7B4DFF}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 3.3 · X1 novo: contra uma pessoa ou contra a sala toda,
+   desafio medido pelo app ou escrito por você, prova por foto tirada
+   na hora (a IA confere) ou na confiança, e a sala vota no chat.
+   Fotos do chat ganham selo (câmera ou galeria) e conferência da IA.
+   ========================================================= */
+const Z26 = { cam: null };
+const z26Is = x => !!(x && x.v === 2);
+const z26Me = () => me().id;
+const z26P = id => S.players.find(q => q.id === id);
+const z26Nm = id => { const q = z26P(id); return q ? String(q.name).split(' ')[0] : 'Alguém'; };
+
+/* ---------- Quem participa e como termina ---------- */
+function z26Parts(x) {
+  if (x.mode === 'all') return [x.from].concat(Object.keys(x.acc || {}).filter(id => id !== x.from && !(x.dec || {})[id] && (x.acc || {})[id]));
+  return x.status === 'accepted' ? [x.from, x.to] : [x.from];
+}
+function z26Valid(x, id) {
+  const c = (x.cl || {})[id]; if (!c) return false;
+  let yes = 0, no = 0; for (const [voter, v] of Object.entries(c.vt || {})) { if (voter === id || !z26P(voter)) continue; if (v === 'v') yes++; else if (v === 'c') no++; }
+  if (c.ai === 'ok') yes++; else if (c.ai === 'nao') no++;
+  return !(no > yes);
+}
+function z26Eval(x) {
+  const t = T(); if (x.status === 'declined') return { state: 'declined' };
+  const parts = z26Parts(x);
+  if (x.mode !== 'all' && x.status !== 'accepted') return { state: t > x.made ? 'expired' : 'pending', parts };
+  if (x.mode === 'all' && t <= x.made && t < x.day) return { state: 'pending', parts };
+  if (parts.length < 2) return { state: 'expired', parts };
+  if (t < x.day) return { state: 'scheduled', parts };
+  const P = parts.map(z26P).filter(Boolean); if (P.length < 2) return { state: 'gone', parts };
+  const delta = {};
+  if (x.kind === 'custom') {
+    const state = t <= x.day ? 'live' : t === addDays(x.day, 1) ? 'voting' : 'done';
+    const W = P.filter(q => z26Valid(x, q.id)), L = P.filter(q => !z26Valid(x, q.id));
+    if (W.length && L.length) { const share = Math.floor(x.stake * L.length / W.length); W.forEach(q => { delta[q.id] = share; }); L.forEach(q => { delta[q.id] = -x.stake; }); }
+    return { state, parts, P, W, L, delta: state === 'done' ? delta : {}, prev: delta };
+  }
+  const ty = ZX1.find(y => y.id === x.type) || ZX1[0];
+  const rows = P.map(q => ({ q, v: ty.val(q, dget(q, x.day), x.day) }));
+  const better = (a, b) => ty.cmp === 'first' ? (a != null && (b == null || a < b)) : (a > b);
+  rows.sort((a, b) => better(a.v, b.v) ? -1 : better(b.v, a.v) ? 1 : 0);
+  const top = rows[0]; const tie = rows.length > 1 && !better(top.v, rows[1].v); const w = top && (ty.cmp === 'first' ? top.v != null : true) && !tie ? top.q : null;
+  if (w) rows.forEach(r => { delta[r.q.id] = r.q === w ? x.stake * (rows.length - 1) : -x.stake; });
+  const state = t > x.day ? 'done' : 'live';
+  return { state, parts, P, rows, ty, winner: w ? w.id : null, delta: state === 'done' ? delta : {}, prev: delta };
+}
+// Compatível com o resto do app (seções, limites e XP antigo)
+const __z26Eval = z10X1Eval;
+z10X1Eval = function (x) {
+  if (!z26Is(x)) return __z26Eval.apply(this, arguments);
+  const r = z26Eval(x); return Object.assign({}, r, { state: r.state === 'voting' ? 'live' : r.state, winner: null, loser: null });
+};
+const __z26Res = z10X1Results;
+z10X1Results = function () {
+  const out = __z26Res.apply(this, arguments).slice();
+  for (const x of z10X1All()) {
+    if (!z26Is(x)) continue; const r = z26Eval(x); if (r.state !== 'done') continue;
+    const ws = Object.keys(r.delta).filter(k => r.delta[k] > 0), ls = Object.keys(r.delta).filter(k => r.delta[k] < 0);
+    for (const l of ls) for (const w of ws) out.push({ day: x.day, stake: Math.floor(x.stake / ws.length), winner: w, loser: l });
+  }
+  return out;
+};
+// XP de sala (créditos guardados): cada pessoa recebe o próprio saldo do X1 novo
+const __z26Cred = z18Credit;
+z18Credit = function (code) {
+  let ch = __z26Cred.apply(this, arguments);
+  try {
+    const p = me(); const X = z18X(p); if (!X || !S.room) return ch; X.cr = X.cr || {};
+    const since = X.since && X.since[code] != null ? X.since[code] : T(); const from = S.room.start > since ? S.room.start : since; const t = T();
+    for (const x of z10X1All()) {
+      if (!z26Is(x)) continue; const r = z26Eval(x); if (r.state !== 'done') continue; const d = r.delta[p.id];
+      if (!d || x.day < from || x.day > t) continue; const k = code + '|x1|' + x.id; const o = X.cr[k];
+      if (!o) { X.cr[k] = [x.day, d, 'x1', t]; ch = true; } else if (o[1] !== d && o[3] === t) { X.cr[k] = [x.day, d, 'x1', t]; ch = true; }
+    }
+  } catch (e) { }
+  return ch;
+};
+
+/* ---------- Gravar na sala (campo por campo) ---------- */
+function z26Set(x, path, val) {
+  const ks = path.split('.'); let o = x; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]] = o[ks[i]] || {};
+  o[ks[ks.length - 1]] = val; S.room.x1 = S.room.x1 || {}; S.room.x1[x.id] = x; CACHE = new Map(); save();
+  if (typeof zfbRoomUpdate === 'function') zfbRoomUpdate({ ['x1.' + x.id + '.' + path]: val });
+}
+const z26Mine = x => { const id = z26Me(); if (!z26Is(x)) return x.from === id || x.to === id; if (x.from === id) return true; if (x.mode === 'all') return !(x.dec || {})[id]; return x.to === id; };
+const z26Open = x => ['pending', 'scheduled', 'live'].includes(z10X1Eval(x).state);
+const z26InX = (x, id) => z26Is(x) ? (x.from === id || (x.mode === 'all' ? !!(x.acc || {})[id] : x.to === id)) : (x.from === id || x.to === id);
+
+/* ---------- Limites para lançar ---------- */
+z10X1CanLaunch = function (p) {
+  if (S.players.length < 2) return 'Chame alguém para a sala para lançar um X1.';
+  const wk = weekKey(T()); const mineWk = z10X1All().filter(x => x.from === p.id && x.made >= wk && x.made <= addDays(wk, 6)).length;
+  if (mineWk >= 3) return 'Você já lançou 3 X1 nesta semana. Na segunda tem mais.';
+  if (z10X1All().some(x => x.from === p.id && z26Open(x))) return 'Você já tem um X1 seu em aberto. Termine esse primeiro.';
+  return '';
+};
+
+/* ---------- Lançar: contra quem, qual desafio, como provar ---------- */
+function z26NewHTML() {
+  const p = me(); const s = session.z26n || (session.z26n = { to: null, kind: 'auto', type: ZX1[0].id, txt: '', proof: 'foto', stake: 25 });
+  const opp = S.players.filter(q => q.id !== p.id); if (s.to && s.to !== '*' && !opp.some(q => q.id === s.to)) s.to = null; if (opp.length === 1 && !s.to) s.to = opp[0].id;
+  const nAll = S.players.length; const tgt = s.to === '*' ? `a sala toda (X${nAll})` : s.to ? z26Nm(s.to) : '';
+  return `<h2>Lançar X1 ⚔️</h2><div class="sub">Vale para amanhã, ${DOW[dow(addDays(T(), 1))]} (${fmtDay(addDays(T(), 1))}). Quem você chamar precisa aceitar até o fim de hoje.</div>
+    <div class="h2" style="margin-top:16px">Contra quem?</div><div class="z14-opp z26-opp">${opp.map(q => `<button class="${s.to === q.id ? 'on' : ''}" data-act="z26-to" data-id="${q.id}">${z14Av(q.pet, 46)}<b>${esc(String(q.name).split(' ')[0])}</b></button>`).join('')}${opp.length > 1 ? `<button class="all ${s.to === '*' ? 'on' : ''}" data-act="z26-to" data-id="*"><span class="z26-allic">👥</span><b>Todo mundo</b><small>X${nAll}</small></button>` : ''}</div>
+    <div class="h2">Qual desafio?</div><div class="zseg z26-seg"><button class="${s.kind === 'auto' ? 'on' : ''}" data-act="z26-kind" data-v="auto">📊 Medido pelo app</button><button class="${s.kind === 'custom' ? 'on' : ''}" data-act="z26-kind" data-v="custom">✍️ Escrever o meu</button></div>
+    ${s.kind === 'auto' ? `<div class="zx1-types">${ZX1.map(ty => `<button class="opt ${s.type === ty.id ? 'sel' : ''}" data-act="z26-type" data-id="${ty.id}"><span class="oi">${ty.ic}</span><span class="grow">${esc(ty.t)}<br><span class="small muted">${esc(ty.how)} O app confere sozinho.</span></span></button>`).join('')}</div>`
+      : `<label class="field"><span>Qual é o desafio?</span><input class="input" id="z26Txt" maxlength="80" value="${esc(s.txt)}" placeholder="Ex.: Não comer doce o dia todo"></label>
+        <div class="chips z26-ideas">${['Não comer doce o dia todo', 'Caminhar 30 minutos', 'Dormir antes das 23h', 'Zero refrigerante', '100 abdominais'].map(t => `<button class="chip" data-act="z26-idea" data-v="${esc(t)}">${esc(t)}</button>`).join('')}</div>
+        <div class="field"><span>Como provar que cumpriu?</span><button class="opt ${s.proof === 'foto' ? 'sel' : ''}" data-act="z26-proof" data-v="foto" style="width:100%;margin-bottom:6px"><span class="oi">📸</span><span class="grow"><b>Foto tirada na hora</b><br><span class="small muted">Só pela câmera do app. A IA confere e a sala vota.</span></span></button><button class="opt ${s.proof === 'conf' ? 'sel' : ''}" data-act="z26-proof" data-v="conf" style="width:100%"><span class="oi">🤝</span><span class="grow"><b>Na confiança</b><br><span class="small muted">Para o que não dá para fotografar. A sala pode contestar.</span></span></button></div>`}
+    <div class="h2">Quanto de XP?</div><div class="chips">${[10, 25, 50, 100].map(v => `<button class="chip ${s.stake === v ? 'on' : ''}" data-act="z26-stake" data-v="${v}">${v} XP</button>`).join('')}</div>
+    <div class="hint">${s.kind === 'auto' ? (s.to === '*' ? 'Quem ficar em 1º leva o XP apostado de cada um. Empate no 1º lugar: ninguém perde.' : 'Quem vencer leva o XP apostado do outro. Empate: ninguém perde.') : 'Quem cumprir divide o XP de quem não cumprir. Se todo mundo cumprir (ou ninguém), ninguém perde.'}</div>
+    <div style="margin-top:14px"><button class="btn red" data-act="z26-send">${tgt ? 'Desafiar ' + esc(tgt) : 'Escolha contra quem'}</button></div>`;
+}
+function z26NewKeep() { const s = session.z26n; const i = $('#z26Txt'); if (s && i) s.txt = i.value; }
+function z26NewPaint() { z26NewKeep(); const b = $('#z26New'); if (b) b.innerHTML = z26NewHTML(); }
+z10X1NewSheet = function () { session.z26n = null; openSheet(`<div id="z26New">${z26NewHTML()}</div>`, {}); };
+Object.assign(ACT, {
+  'z26-to': el => { session.z26n.to = el.dataset.id; z26NewPaint(); },
+  'z26-kind': el => { session.z26n.kind = el.dataset.v; z26NewPaint(); },
+  'z26-type': el => { session.z26n.type = el.dataset.id; z26NewPaint(); },
+  'z26-idea': el => { session.z26n.txt = el.dataset.v; const i = $('#z26Txt'); if (i) i.value = el.dataset.v; },
+  'z26-proof': el => { session.z26n.proof = el.dataset.v; z26NewPaint(); },
+  'z26-stake': el => { session.z26n.stake = +el.dataset.v; z26NewPaint(); },
+  'z26-send': () => {
+    z26NewKeep(); const s = session.z26n; const p = me(); if (!s.to) return toast('Escolha contra quem é o X1.', 'red', '⚔️');
+    const why = z10X1CanLaunch(p); if (why) return toast(why, 'red', '⚔️');
+    const txt = String(s.txt || '').trim().slice(0, 80); if (s.kind === 'custom' && txt.length < 4) return toast('Escreva qual é o desafio.', 'red', '✍️');
+    const all = s.to === '*'; const m = all ? null : z26P(s.to); if (!all && !m) return toast('Escolha contra quem é o X1.', 'red', '⚔️');
+    const x = { v: 2, id: 'x' + Date.now().toString(36), from: p.id, fromName: p.name, mode: all ? 'all' : 'one', to: all ? '*' : m.id, toName: all ? 'Todo mundo' : m.name, kind: s.kind, type: s.kind === 'auto' ? s.type : '', txt: s.kind === 'custom' ? txt : '', proof: s.kind === 'custom' ? s.proof : '', stake: s.stake, made: T(), day: addDays(T(), 1), at: Date.now(), status: all ? 'open' : 'pending', acc: {}, dec: {}, cl: {} };
+    z10X1Write(x); closeSheet(true); renderMain(true); confetti(40);
+    toast(all ? 'X1 lançado para a sala toda! Agora cada um decide se entra.' : `X1 lançado! Agora ${m.name} precisa aceitar.`, 'fire', '⚔️');
+    if (typeof z18Post === 'function' && zfbOn && zfbOn()) z18Post(S.room.code, { auto: 1, ic: '⚔️', t: `${String(p.name).split(' ')[0]} lançou um X1 ${all ? 'para a sala toda' : 'contra ' + String(m.name).split(' ')[0]}: ${z26What(x)} · ${x.stake} XP` }).catch(() => { });
+  },
+  'z26-acc': el => { const x = (S.room.x1 || {})[el.dataset.id]; if (!x || z26Eval(x).state !== 'pending') return; z26Set(x, 'acc.' + z26Me(), true); if ((x.dec || {})[z26Me()]) z26Set(x, 'dec.' + z26Me(), false); closeSheet(true); renderMain(true); confetti(60); sfx('level'); toast(`Você entrou no X1! Valendo ${zX1Day(x.day)} ⚔️`, 'fire', '⚔️'); },
+  'z26-dec': el => { const x = (S.room.x1 || {})[el.dataset.id]; if (!x || z26Eval(x).state !== 'pending') return; z26Set(x, 'dec.' + z26Me(), true); closeSheet(true); renderMain(true); toast('Tudo bem, você ficou de fora desse X1.', 'violet', '🙅'); }
+});
+const z26What = x => x.kind === 'custom' ? `✍️ ${x.txt}` : (() => { const ty = ZX1.find(y => y.id === x.type) || ZX1[0]; return `${ty.ic} ${ty.t}`; })();
+
+/* ---------- Cartão do X1 novo ---------- */
+const __z26Item = z10X1Item;
+z10X1Item = function (x, p, home) {
+  if (!z26Is(x)) return __z26Item.apply(this, arguments);
+  const r = z26Eval(x); const me_ = p.id; const mine = x.from === me_; const all = x.mode === 'all'; const what = z26What(x);
+  const vs = all ? `Sala toda · ${r.parts.length} ${plural(r.parts.length, 'pessoa', 'pessoas')}` : `${z26Nm(x.from)} × ${x.to === me_ ? 'você' : z26Nm(x.to)}`;
+  const proofTag = x.kind === 'custom' ? (x.proof === 'foto' ? ' · 📸 prova por foto' : ' · 🤝 na confiança') : ' · 📊 o app confere';
+  let body = '', btns = '', cls = '';
+  if (r.state === 'pending') {
+    const answered = all && ((x.acc || {})[me_] || (x.dec || {})[me_]);
+    if (!mine && !answered && (all || x.to === me_)) { cls = 'in'; body = `<b>${esc(z26Nm(x.from))} te desafiou${all ? ' (sala toda)' : ''}! ⚔️</b><span>${esc(what)} · ${zX1Day(x.day)}${proofTag}</span><span>Aposta: <b>${x.stake} XP</b>.</span>`;
+      btns = all ? `<div class="grid2" style="margin-top:12px"><button class="btn sm" data-act="z26-acc" data-id="${x.id}">Entrar</button><button class="btn gray sm" data-act="z26-dec" data-id="${x.id}">Ficar de fora</button></div>` : `<div class="grid2" style="margin-top:12px"><button class="btn sm" data-act="z10-x1-ok" data-id="${x.id}">Aceitar</button><button class="btn gray sm" data-act="z10-x1-no" data-id="${x.id}">Recusar</button></div>`;
+      btns += '<div class="zk-note">Se não responder até o fim do dia, fica de fora sem perder nada.</div>'; }
+    else { cls = 'wait'; body = `<b>${all ? (mine ? 'Esperando a sala entrar…' : (x.acc || {})[me_] ? 'Você entrou! ⚔️' : 'Você ficou de fora') : `Esperando ${esc(z26Nm(x.to))} aceitar…`}</b><span>${esc(what)} · ${zX1Day(x.day)} · ${x.stake} XP${proofTag}</span>${all ? `<span class="zk-note">${r.parts.length - 1} ${plural(r.parts.length - 1, 'pessoa entrou', 'pessoas entraram')} até agora.</span>` : ''}`; }
+  } else if (r.state === 'expired') { cls = 'off'; body = `<b>X1 não aconteceu</b><span>${esc(what)} · ninguém aceitou a tempo, ninguém perdeu nada</span>`; }
+  else if (r.state === 'declined') { cls = 'off'; body = `<b>${mine ? esc(z26Nm(x.to)) + ' recusou' : 'Você recusou'}</b><span>${esc(what)} · ${x.stake} XP</span>`; }
+  else if (r.state === 'scheduled') { cls = 'on'; body = `<b>X1 marcado para ${zX1Day(x.day)}! ⚔️</b><span>${esc(what)} · valendo ${x.stake} XP${proofTag}</span><span class="zk-note">${vs}</span>`; }
+  else if (r.state === 'gone') return '';
+  else if (x.kind === 'custom') {
+    const inX = r.parts.includes(me_); const myC = (x.cl || {})[me_];
+    const rows = r.P.map(q => { const c = (x.cl || {})[q.id]; const ok = z26Valid(x, q.id); const st = !c ? (r.state === 'live' ? '⏳ ainda não' : '❌ não cumpriu') : ok ? '✅ cumpriu' : '🚫 anulado pela sala';
+      return `<div class="z26-pr ${q.id === me_ ? 'me' : ''}"><b>${q.id === me_ ? 'Você' : esc(String(q.name).split(' ')[0])}</b><span>${st}</span>${r.state === 'done' && r.delta[q.id] ? `<em class="${r.delta[q.id] > 0 ? 'up' : 'dn'}">${r.delta[q.id] > 0 ? '+' : ''}${r.delta[q.id]} XP</em>` : ''}</div>`; }).join('');
+    const head = r.state === 'live' ? `X1 valendo hoje! ⚔️` : r.state === 'voting' ? 'Votação no chat até o fim de hoje 🗳️' : (r.delta[me_] > 0 ? `Você venceu o X1! +${r.delta[me_]} XP 🏆` : r.delta[me_] < 0 ? `Não foi dessa vez (−${-r.delta[me_]} XP)` : 'X1 terminou sem perdas para ninguém');
+    cls = r.state === 'done' ? (r.delta[me_] > 0 ? 'win' : r.delta[me_] < 0 ? 'lose' : 'off') : 'on';
+    body = `<b>${head}</b><span>${esc(what)} · ${x.stake} XP${proofTag}</span><div class="z26-prs">${rows}</div>`;
+    if (inX && r.state === 'live' && !myC) btns = `<button class="btn green" data-act="z26-claim" data-id="${x.id}" style="margin-top:10px">${x.proof === 'foto' ? '📸 Cumpri! Tirar a foto da prova' : '✅ Cumpri!'}</button>`;
+    else if (r.state !== 'done' && Object.keys(x.cl || {}).length) btns = `<button class="btn sec sm" data-act="z18-mural" style="margin-top:10px">🗳️ Ver as provas no chat</button>`;
+  } else {
+    const ty = r.ty; const rows = r.rows.map((o, i) => `<div class="z26-pr ${o.q.id === me_ ? 'me' : ''}"><em class="pos">${i + 1}º</em><b>${o.q.id === me_ ? 'Você' : esc(String(o.q.name).split(' ')[0])}</b><span>${o.v == null ? '—' : ty.f(o.v)}</span>${r.state === 'done' && r.delta[o.q.id] ? `<em class="${r.delta[o.q.id] > 0 ? 'up' : 'dn'}">${r.delta[o.q.id] > 0 ? '+' : ''}${r.delta[o.q.id]} XP</em>` : ''}</div>`).join('');
+    const head = r.state === 'live' ? `X1 valendo hoje! ${r.winner ? (r.winner === me_ ? 'Você na frente 😎' : esc(z26Nm(r.winner)) + ' na frente 👀') : 'Empatado por enquanto'}` : (r.winner ? (r.winner === me_ ? `Você venceu o X1! +${r.delta[me_]} XP 🏆` : `${esc(z26Nm(r.winner))} venceu o X1${r.delta[me_] < 0 ? ` (−${-r.delta[me_]} XP)` : ''}`) : 'X1 terminou empatado. Ninguém perdeu.');
+    cls = r.state === 'live' ? 'on' : (r.winner === me_ ? 'win' : r.winner ? 'lose' : 'off');
+    body = `<b>${head}</b><span>${esc(what)} · ${x.stake} XP · 📊 o app confere</span><div class="z26-prs">${rows}</div>`;
+  }
+  return `<div class="zx1-item z26-item ${cls} ${home ? 'home' : ''}">${body}${btns}</div>`;
+};
+
+/* ---------- Seção do X1 no placar ---------- */
+z10X1SectionHTML = function (p, t) {
+  const items = z10X1All().filter(x => { const r = z10X1Eval(x); return z26Mine(x) && r.state !== 'gone' && (['pending', 'scheduled', 'live'].includes(r.state) || diffDays(x.day, t) <= 3); }).slice(0, 5);
+  const others = z10X1All().filter(x => !z26Mine(x) && ['scheduled', 'live'].includes(z10X1Eval(x).state)).slice(0, 3);
+  const why = z10X1CanLaunch(p); const fri = dow(t) === 5 ? t : dow(t) === 6 ? addDays(t, -1) : dow(t) === 0 ? addDays(t, -2) : dow(t) === 1 ? addDays(t, -3) : null;
+  let sx = '';
+  if (fri && fri >= zFrom() && S.players.length > 1) {
+    const ax = z10AutoX1(fri); const rows = ax.rows || [{ q: ax.A, v: ax.va }, { q: ax.B, v: ax.vb }].sort((a, b) => b.v - a.v);
+    const head = ax.state === 'done' ? (ax.winner ? (ax.winner === p.id ? 'Você venceu a Sexta do X1! +30 XP 🏆' : `${esc(z26Nm(ax.winner))} venceu a Sexta do X1`) : 'Sexta do X1 terminou empatada no topo') : 'Sexta do X1 · todo mundo da sala';
+    sx = `<div class="zx1-item auto ${ax.state === 'done' ? (ax.winner === p.id ? 'win' : 'off') : 'on'}"><b>${head}</b><span>${ax.ty.ic} ${esc(ax.ty.t)} · sábado e domingo · quem ficar em 1º ganha +30 XP do app, ninguém perde nada</span>
+      ${ax.state !== 'soon' ? `<div class="z14-sx">${rows.slice(0, 3).map((r, i) => `<div class="${r.q.id === p.id ? 'me' : ''}"><em>${i + 1}º</em><b>${esc(r.q.name)}</b><span>${ax.ty.f(r.v)}</span></div>`).join('')}</div>` : '<span class="zk-note">Começa no sábado. Vale para todo mundo da sala.</span>'}</div>`;
+  }
+  const ox = others.map(x => { const r = z10X1Eval(x); return `<div class="z14-ox">⚔️ ${z26Is(x) && x.mode === 'all' ? `<b>${esc(z26Nm(x.from))}</b> × sala (${(r.parts || []).length})` : `<b>${esc(z26Nm(x.from))}</b> × <b>${esc(z26Nm(x.to))}</b>`} · ${esc(z26Is(x) ? z26What(x) : (ZX1.find(y => y.id === x.type) || ZX1[0]).ic)} · ${zX1Day(x.day)}</div>`; }).join('');
+  return `<section class="zx1"><div class="zx1-head"><span class="zx1-sw">⚔️</span><div class="grow"><b>X1</b><small>Desafie uma pessoa ou a sala toda, com desafio do app ou escrito por você</small></div></div>
+    ${items.map(x => z10X1Item(x, p)).join('')}${sx}${ox ? `<div class="z14-oxs"><small>Rolando na sala</small>${ox}</div>` : ''}
+    ${why ? `<div class="zk-note" style="margin-top:10px">${why}</div>` : `<button class="btn red" data-act="z10-x1-new" style="margin-top:12px">⚔️ Lançar um X1</button>`}</section>`;
+};
+
+/* ---------- Avisos de X1 para a sala toda ---------- */
+const z26PendAll = p => z10X1All().filter(x => z26Is(x) && x.mode === 'all' && x.from !== p.id && z26Eval(x).state === 'pending' && !(x.acc || {})[p.id] && !(x.dec || {})[p.id]);
+const __z26Items = z15Items;
+z15Items = function () { const out = __z26Items.apply(this, arguments); try { const p = me(); if (p && S.room) for (const x of z26PendAll(p)) out.agora.push({ k: 'x1|' + x.id, ic: '⚔️', t: `${z26Nm(x.from)} desafiou a sala toda para um X1`, s: 'Entre ou fique de fora até o fim do dia', go: 'x1' }); } catch (e) { } return out; };
+const __z26Inc = z10Incoming;
+z10Incoming = function () {
+  if (__z26Inc.apply(this, arguments)) return true;
+  if (!S || !session.pid || $('#overlay') || $('#ck') || $('#story') || $('#sun') || $('#zcoach') || session.ob) return false;
+  const p = me(); const x = z26PendAll(p).find(x => !(session.z10asked || {})[x.id]); if (!x) return false;
+  session.z10asked = Object.assign(session.z10asked || {}, { [x.id]: 1 });
+  openSheet(`<div class="zx1-pop"><div class="zx1-swb">⚔️</div><h2>Desafio para a sala toda!</h2></div>${z10X1Item(x, p)}`, { center: true }); sfx('level'); return true;
+};
+if (typeof z18PendX1 === 'function') { const __z26Pend = z18PendX1; z18PendX1 = function (code) { let n = __z26Pend.apply(this, arguments); try { const f = () => z26PendAll(me()).length; n += code === S.room.code ? f() : (z18In(code, f) || 0); } catch (e) { } return n; }; }
+
+/* ---------- Câmera do app (sem galeria) ---------- */
+function z26Cam(cb, max) {
+  let inp = document.getElementById('z26Cam');
+  if (!inp) { inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.setAttribute('capture', 'environment'); inp.id = 'z26Cam'; inp.style.display = 'none'; document.body.appendChild(inp); }
+  inp.value = '';
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    const age = f.lastModified ? Date.now() - f.lastModified : 0;
+    if (age > 3 * 60 * 1000) return toast('Essa foto não foi tirada agora. Use a câmera do app para tirar na hora.', 'red', '📸');
+    try { cb(await compressImage(f, max || 720), 'cam'); } catch (e) { toast('Não consegui abrir a foto. Tente de novo.', 'red', '📸'); }
+  };
+  inp.click();
+}
+// A IA confere se a foto combina com o desafio ou a legenda
+async function z26AiCheck(img, what) {
+  if (!zaiLeft()) return { v: '', why: 'Sem mensagens da assistente hoje para conferir.' };
+  zaiUse(1);
+  try {
+    const out = await zaiCall(typeof ZAI_FAST !== 'undefined' ? ZAI_FAST : ZAI_CHAT, { contents: [{ role: 'user', parts: [zaiImgPart(img), { text: `Contexto: competição de hábitos saudáveis entre amigos. ${what}\nOlhe a foto e responda SOMENTE com JSON: {"v":"ok|duvida|nao","why":"1 frase curta em português"}.\n"ok" = parece uma foto real, atual, e combina com o desafio/legenda. "duvida" = não dá para ter certeza. "nao" = parece print de tela, foto da internet, montagem, ou não tem nada a ver.` }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 512, responseMimeType: 'application/json' } });
+    const j = zaiJSON(out.text) || {}; const v = ['ok', 'duvida', 'nao'].includes(j.v) ? j.v : 'duvida';
+    return { v, why: String(j.why || '').slice(0, 140) };
+  } catch (e) { if (e.kind !== 'blocked') zaiUse(-1); return { v: '', why: 'A IA não conseguiu conferir agora.' }; }
+}
+const Z26_AI = { ok: ['✅', 'A IA acha que cumpriu'], duvida: ['⚠️', 'A IA ficou na dúvida'], nao: ['❌', 'A IA acha que não vale'], '': ['🤷', 'Sem conferência da IA'] };
+
+/* ---------- Cumpri! (prova por foto ou na confiança) ---------- */
+async function z26Claim(x, img) {
+  const p = me(); const code = S.room.code; const pid = p.id;
+  toast(img ? 'Conferindo a sua foto…' : 'Registrando…', 'violet', '⏳');
+  const ai = img ? await z26AiCheck(img, `Desafio: "${x.txt}". A pessoa diz que cumpriu e mandou esta foto como prova.`) : { v: '', why: '' };
+  const postId = Date.now().toString(36) + pid.slice(0, 5) + 'x1';
+  z26Set(x, 'cl.' + pid, { at: Date.now(), ai: ai.v, why: ai.why, post: postId, vt: {} });
+  try { if (zfbOn && zfbOn()) await z18Post(code, { t: `✅ Cumpri o X1: ${x.txt}${img ? '' : ' (na confiança)'}`, img: img || '', src: img ? 'cam' : '', x1: { id: x.id, pid }, ai: img ? { v: ai.v, why: ai.why } : null }, postId); } catch (e) { }
+  renderMain(true); sfx('level'); confetti(50);
+  toast(img ? `${Z26_AI[ai.v][0]} ${Z26_AI[ai.v][1]}. A prova foi para o chat da sala.` : 'Pronto! Foi para o chat. A sala pode contestar até amanhã.', 'green', '⚔️');
+}
+Object.assign(ACT, {
+  'z26-claim': el => {
+    const x = (S.room.x1 || {})[el.dataset.id]; if (!x) return; const r = z26Eval(x); if (r.state !== 'live' || !r.parts.includes(z26Me()) || (x.cl || {})[z26Me()]) return;
+    if (x.proof === 'foto') return z26Cam(img => z26Claim(x, img), 720);
+    openConfirm(`Confirmar que você cumpriu "${x.txt}"? A sala pode contestar.`, 'Cumpri!', () => z26Claim(x, null));
+  },
+  'z26-vote': el => {
+    const x = (S.room.x1 || {})[el.dataset.id]; if (!x) return; const pid = el.dataset.p; const c = (x.cl || {})[pid]; if (!c) return;
+    const st = z26Eval(x).state; if (!['live', 'voting'].includes(st)) return toast('A votação desse X1 já terminou.', 'violet', '🗳️');
+    if (pid === z26Me()) return toast('Você não vota na própria prova 😉', 'violet', '🗳️');
+    const cur = (c.vt || {})[z26Me()]; const v = cur === el.dataset.v ? '' : el.dataset.v; z26Set(x, 'cl.' + pid + '.vt.' + z26Me(), v);
+    sfx('pop'); if ($('#z19cList')) z19PaintList(false); if (v === 'c') toast('Você contestou. Se a maioria contestar, a prova é anulada.', 'violet', '🤨');
+  }
+});
+
+/* ---------- Chat: selo das fotos, conferir com a IA e contestar ---------- */
+const __z26Post = z18Post;
+z18Post = function (code, data, id) { if (data && data.img && Z26.nextImg && data.img === Z26.nextImg && !data.src) data = Object.assign({}, data, { src: Z26.nextSrc }); return __z26Post.call(this, code, data, id); };
+ACT['z19-img'] = () => { Z26.pick = !Z26.pick; z19PaintFoot(); };
+const __z26Foot = z19FootHTML;
+z19FootHTML = function () {
+  const h = __z26Foot.apply(this, arguments); if (!Z26.pick) return h;
+  return `<div class="z26-pick"><button data-act="z26-cam"><span>📸</span><b>Tirar foto agora</b><small>Ganha o selo "Tirada agora no app"</small></button><button data-act="z26-gal"><span>🖼️</span><b>Da galeria</b><small>Aparece como "Da galeria"</small></button></div>` + h;
+};
+Object.assign(ACT, {
+  'z26-cam': () => { Z26.pick = false; z26Cam((img, src) => { Z19.img = img; Z26.nextImg = img; Z26.nextSrc = src; z19PaintFoot(); }, 720); z19PaintFoot(); },
+  'z26-gal': () => { Z26.pick = false; (typeof zaiPickImg === 'function' ? zaiPickImg : z16Pick)(img => { Z19.img = img; Z26.nextImg = img; Z26.nextSrc = 'gal'; z19PaintFoot(); }, 720); z19PaintFoot(); }
+});
+function z26PostExtra(x) {
+  const uid = z14Uid(); const mine = x.uid === uid; let h = '';
+  if (x.x1 && S.room.x1 && S.room.x1[x.x1.id]) {
+    const X = S.room.x1[x.x1.id]; const c = (X.cl || {})[x.x1.pid]; const st = z26Eval(X).state; const open = ['live', 'voting'].includes(st);
+    if (c) {
+      const vt = c.vt || {}; const yes = Object.entries(vt).filter(([k, v]) => v === 'v' && k !== x.x1.pid).length, no = Object.entries(vt).filter(([k, v]) => v === 'c' && k !== x.x1.pid).length; const my = vt[z26Me()];
+      const ok = z26Valid(X, x.x1.pid); const ai = Z26_AI[c.ai || ''];
+      h += `<div class="z26-x1p"><div class="z26-x1h">⚔️ Prova do X1</div>${x.img || c.ai ? `<div class="z26-ai ${c.ai || 'none'}">${ai[0]} ${ai[1]}${c.why ? `: ${esc(c.why)}` : ''}</div>` : '<div class="z26-ai none">🤝 Na confiança</div>'}
+        <div class="z26-vs">${x.x1.pid !== z26Me() && open ? `<button class="${my === 'v' ? 'on' : ''}" data-act="z26-vote" data-id="${X.id}" data-p="${x.x1.pid}" data-v="v">✅ Valeu <b>${yes}</b></button><button class="c ${my === 'c' ? 'on' : ''}" data-act="z26-vote" data-id="${X.id}" data-p="${x.x1.pid}" data-v="c">🤨 Contestar <b>${no}</b></button>` : `<span>✅ ${yes} · 🤨 ${no}</span>`}</div>
+        <div class="z26-vst ${ok ? 'ok' : 'no'}">${ok ? (open ? '✔️ Valendo por enquanto' : '✔️ Valeu') : '🚫 Anulada pela sala'}</div></div>`;
+    }
+  } else if (x.img && !x.auto) {
+    const ct = x.ct || {}; const nct = Object.keys(ct).filter(k => ct[k]).length;
+    h += `${x.src === 'cam' ? '<span class="z26-tag cam">📸 Tirada agora no app</span>' : x.src === 'gal' ? '<span class="z26-tag gal">🖼️ Da galeria</span>' : ''}`;
+    if (x.ai && x.ai.v != null) { const ai = Z26_AI[x.ai.v || '']; h += `<div class="z26-ai ${x.ai.v || 'none'}">🔍 ${ai[0]} ${ai[1].replace('acha que cumpriu', 'acha que é uma foto real').replace('acha que não vale', 'acha que não é uma foto real')}${x.ai.why ? `: ${esc(x.ai.why)}` : ''}</div>`; }
+    h += `<div class="z26-vs sm">${!x.ai && !x.pend ? `<button data-act="z26-check" data-id="${esc(x.id)}">🔍 Conferir com a IA</button>` : ''}${!mine && !x.pend ? `<button class="c ${ct[uid] ? 'on' : ''}" data-act="z26-ct" data-id="${esc(x.id)}">🤨 Contestar${nct ? ` <b>${nct}</b>` : ''}</button>` : nct ? `<span>🤨 ${nct} ${plural(nct, 'contestou', 'contestaram')}</span>` : ''}</div>`;
+  }
+  return h;
+}
+const __z26List = z19ListHTML;
+z19ListHTML = function () {
+  let h = __z26List.apply(this, arguments);
+  try {
+    for (const x of (Z18.posts[S.room.code] || [])) {
+      const ex = z26PostExtra(x); if (!ex) continue;
+      const key = `data-mid="${esc(x.id)}">`; const i = h.indexOf(key); if (i < 0) continue;
+      const tm = h.indexOf('<span class="tm">', i); if (tm < 0) continue;
+      h = h.slice(0, tm) + `<div class="z26-ex">${ex}</div>` + h.slice(tm);
+    }
+  } catch (e) { }
+  return h;
+};
+async function z26PostUpd(id, fields) {
+  const code = S.room.code; const x = (Z18.posts[code] || []).find(y => y.id === id); if (!x) return;
+  for (const [k, v] of Object.entries(fields)) { const ks = k.split('.'); let o = x; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]] = o[ks[i]] || {}; o[ks[ks.length - 1]] = v; }
+  if ($('#z19cList')) z19PaintList(false);
+  try { const { doc, updateDoc } = ZFB.m; await updateDoc(doc(ZFB.db, 'rooms', code, 'mural', id), fields); } catch (e) { }
+}
+Object.assign(ACT, {
+  'z26-check': async el => {
+    const x = (Z18.posts[S.room.code] || []).find(y => y.id === el.dataset.id); if (!x || !x.img) return; el.disabled = true; el.textContent = '🔍 Conferindo…';
+    const ai = await z26AiCheck(x.img, `Foto enviada no chat da sala${x.t ? ` com a legenda: "${String(x.t).slice(0, 200)}"` : ', sem legenda'}.`);
+    if (!ai.v) { el.disabled = false; el.textContent = '🔍 Conferir com a IA'; return toast(ai.why, 'red', '🔍'); }
+    z26PostUpd(x.id, { ai: { v: ai.v, why: ai.why, by: z14Uid() } });
+  },
+  'z26-ct': el => { const x = (Z18.posts[S.room.code] || []).find(y => y.id === el.dataset.id); if (!x) return; const uid = z14Uid(); const on = !(x.ct || {})[uid]; z26PostUpd(x.id, { ['ct.' + uid]: on }); sfx('pop'); }
+});
+// Votos do X1 ficam na sala: quando a sala muda, o chat se atualiza
+if (typeof zfbAdoptRoom === 'function') { const __z26Adopt = zfbAdoptRoom; zfbAdoptRoom = function () { const r = __z26Adopt.apply(this, arguments); try { if ($('#z19cList')) z19PaintList(false); } catch (e) { } return r; }; }
+
+/* ---------- Tour e novidades ---------- */
+(function () {
+  Z18_NEW.splice(0, Z18_NEW.length,
+    { tab: 'rank', sel: ['.zx1', '.lb-hero'], t: 'X1 novo', d: 'Desafie uma pessoa ou a sala toda. Escolha um desafio medido pelo app ou escreva o seu, com prova por foto tirada na hora ou na confiança.' },
+    { tab: 'rank', sel: ['.z18-mcard', '.zx1'], t: 'Provas no chat', d: 'As provas do X1 vão para o chat. A IA confere a foto e a sala vota: ✅ Valeu ou 🤨 Contestar. Se a maioria contestar, a prova é anulada.' });
+})();
+ZNEWS.splice(0, ZNEWS.length,
+  ['⚔️', 'X1 para a sala toda', 'Desafie uma pessoa ou todo mundo (X3, X4…). Quem ficar em 1º leva o XP apostado de cada um.'],
+  ['✍️', 'Desafio escrito por você', 'Escreva o seu desafio ("zero refrigerante", "caminhar 30 min"). Água, treino, refeições e sono o app confere sozinho.'],
+  ['📸', 'Prova por foto na hora', 'Só pela câmera do app. A IA confere a foto e a sala vota no chat: ✅ Valeu ou 🤨 Contestar.'],
+  ['🏷️', 'Selo nas fotos do chat', 'Toda foto mostra se foi "📸 Tirada agora no app" ou "🖼️ Da galeria", com botão para conferir com a IA.']);
+</script>
+<style>
+.z26-opp button.all{border-style:dashed}.z26-allic{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;font-size:24px;background:rgba(255,75,75,.12)}
+.z26-opp small{display:block;font-size:11px;font-weight:900;color:#E0483C}
+.z26-seg{margin:6px 0 10px}.z26-seg button.on{background:var(--card);color:var(--ink);box-shadow:0 2px 0 var(--line)}
+.z26-ideas{margin:-4px 0 10px}
+.z26-prs{display:grid;gap:4px;margin-top:8px}
+.z26-pr{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.55);border-radius:10px;padding:6px 10px;font-size:13.5px;font-weight:800;color:var(--ink)}
+.z26-pr.me{outline:2px solid #1CB0F6}.z26-pr b{flex:1}.z26-pr span{font-weight:700;color:var(--ink-2)}.z26-pr em{font-style:normal;font-weight:900;font-size:12.5px;margin-left:6px}.z26-pr em.up{color:#46A302}.z26-pr em.dn{color:#E0483C}.z26-pr em.pos{margin:0;color:var(--ink-3);min-width:22px}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .z26-pr{background:rgba(0,0,0,.25)}}
+:root[data-theme="dark"] .z26-pr{background:rgba(0,0,0,.25)}
+.z26-pick{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.z26-pick button{display:flex;flex-direction:column;align-items:center;gap:2px;border:2px solid var(--line);border-radius:14px;padding:8px;font:inherit;background:var(--card);color:var(--ink)}
+.z26-pick span{font-size:22px}.z26-pick b{font-size:13.5px;font-weight:900}.z26-pick small{font-size:11px;color:var(--ink-3);font-weight:700;text-align:center}
+.z26-ex{margin-top:6px}
+.z26-tag{display:inline-block;font-size:11.5px;font-weight:900;border-radius:8px;padding:2px 8px;margin:2px 0}.z26-tag.cam{background:rgba(88,204,2,.16);color:#46A302}.z26-tag.gal{background:rgba(119,119,119,.16);color:var(--ink-2)}
+.z26-ai{font-size:12.5px;font-weight:800;border-radius:10px;padding:5px 8px;margin:4px 0;background:var(--surface-2)}.z26-ai.ok{background:rgba(88,204,2,.14);color:#3E8E00}.z26-ai.duvida{background:rgba(255,200,0,.18);color:#9A6B00}.z26-ai.nao{background:rgba(255,75,75,.14);color:#C93A30}
+.z26-vs{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}.z26-vs button{border:2px solid var(--line);border-radius:12px;padding:5px 10px;font:inherit;font-size:12.5px;font-weight:900;background:var(--card);color:var(--ink)}
+.z26-vs button.on{border-color:#58CC02;background:rgba(88,204,2,.14)}.z26-vs button.c.on{border-color:#FF4B4B;background:rgba(255,75,75,.12)}.z26-vs span{font-size:12.5px;font-weight:800;color:var(--ink-2)}
+.z26-vs.sm button{padding:4px 8px;font-size:12px}
+.z26-x1p{border:2px solid #FF9600;border-radius:12px;padding:6px 8px;margin-top:4px;background:rgba(255,150,0,.06)}.z26-x1h{font-size:11.5px;font-weight:900;color:#E07F00;text-transform:uppercase;letter-spacing:.06em}
+.z26-vst{font-size:12px;font-weight:900;margin-top:4px}.z26-vst.ok{color:#46A302}.z26-vst.no{color:#E0483C}
 </style>
 
 </body>
