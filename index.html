@@ -1145,7 +1145,7 @@ function monthName(mk) { return MONTHS[+mk.slice(5, 7) - 1]; }
 /* ---------- Constantes do jogo ---------- */
 const LV = [0, 150, 400, 750, 1150, 1600];
 const LV_NAMES = {
-  A: ['Largada', 'Em Movimento', 'Queimando', 'Imparável', 'Elite', 'Lenda do Réveillon'],
+  A: ['Largada', 'Em Movimento', 'Queimando', 'Imparável', 'Elite', 'Lenda do Zênite'],
   B: ['Frango', 'Aquecendo', 'Na Série', 'Marombeiro', 'Monstro', 'Lenda do Shape']
 };
 const STAGES = ['Filhote', 'Em forma', 'Lendário'];
@@ -1987,7 +1987,7 @@ function helloHTML(p, t) {
   const left = Math.max(0, diffDays(t, S.room.end));
   return `<section class="hello">
     <div class="hello-top"><div><div class="hi">${greet()}, ${esc(p.name)}!</div><div class="date">${capWord(DOW[dow(t)])}, ${+t.slice(8)} de ${MONTHS[+t.slice(5, 7) - 1]}</div></div>${S.mode === 'demo' ? '<span class="pill gold">Modo teste</span>' : ''}</div>
-    <div class="cdown"><div class="cd-fw">${fireworkSVG('#FFB91F')}</div><div class="grow"><div class="cd-t"><b>${left} ${plural(left, 'dia', 'dias')}</b> para o Réveillon</div>
+    <div class="cdown"><div class="cd-fw">${fireworkSVG('#FFB91F')}</div><div class="grow"><div class="cd-t"><b>${left} ${plural(left, 'dia', 'dias')}</b> para ${zAte()}</div>
       <div class="cd-bar"><i data-w="${(dayN / total * 100).toFixed(1)}%" style="width:0"></i></div><div class="cd-s">Dia ${dayN} de ${total} da competição</div></div></div>
   </section>`;
 }
@@ -2042,8 +2042,8 @@ function weekStripHTML(p, t) {
 }
 function openTrail() {
   closePops(); const old = $('#trail'); if (old) old.remove();
-  const el = document.createElement('div'); el.className = 'trail'; el.id = 'trail'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Trilha até o Réveillon');
-  el.innerHTML = `<div class="trail-head"><button class="ck-x" data-act="trail-close" aria-label="Fechar">${IC.x}</button><b class="grow">Trilha até o Réveillon</b><button class="btn xs sec" data-act="trail-today">Hoje</button></div><div id="trailBody">${pathHTML()}</div>`;
+  const el = document.createElement('div'); el.className = 'trail'; el.id = 'trail'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Trilha da temporada');
+  el.innerHTML = `<div class="trail-head"><button class="ck-x" data-act="trail-close" aria-label="Fechar">${IC.x}</button><b class="grow">Trilha até ${zAte()}</b><button class="btn xs sec" data-act="trail-today">Hoje</button></div><div id="trailBody">${pathHTML()}</div>`;
   document.body.appendChild(el); document.body.style.overflow = 'hidden';
   setTimeout(() => { const n = el.querySelector('.prow[data-today] .pnode'); if (n) try { n.scrollIntoView({ block: 'center' }); } catch (e) { } }, 40);
 }
@@ -2804,7 +2804,7 @@ function openLevels() {
   const p = me(), t = T(); const xp = xpInfo(p, t).total; const lv = levelOf(xp); const theme = S.settings.levelTheme || 'A';
   openSheet(`<h2>Seu nível</h2><div class="sub">${fmtInt(xp)} XP no total.${lv < LV.length - 1 ? ` Faltam ${fmtInt(LV[lv + 1] - xp)} XP para ${esc(levelName(lv + 1))}.` : ' Nível máximo!'}</div>
     <div class="bar gold" style="margin-top:12px"><i data-w="${lv >= LV.length - 1 ? 100 : clamp((xp - LV[lv]) / (LV[lv + 1] - LV[lv]) * 100, 3, 100)}%" style="width:0"></i></div>
-    <div class="chips" style="margin-top:16px"><button class="chip ${theme === 'A' ? 'on' : ''}" data-act="theme" data-v="A">Rumo ao Réveillon</button><button class="chip ${theme === 'B' ? 'on' : ''}" data-act="theme" data-v="B">Academia</button></div>
+    <div class="chips" style="margin-top:16px"><button class="chip ${theme === 'A' ? 'on' : ''}" data-act="theme" data-v="A">Zênite</button><button class="chip ${theme === 'B' ? 'on' : ''}" data-act="theme" data-v="B">Academia</button></div>
     <div class="card">${LV.map((th, i) => `<div class="kv" style="border-radius:12px;padding:9px 10px;${i === lv ? 'background:var(--gold-soft);color:var(--gold-text)' : i > lv ? 'opacity:.5' : ''}"><span>${i < lv ? '✅' : i === lv ? '⭐' : '🔒'} ${esc(LV_NAMES[theme][i])}</span><b>${fmtInt(th)} XP</b></div>`).join('')}</div>
     <div class="hint">Seu companheiro evolui no nível 3 e no nível 5.</div>`, {
     onOpen: ov => $$('[data-w]', ov).forEach(el => requestAnimationFrame(() => requestAnimationFrame(() => { el.style.width = el.dataset.w; })))
@@ -3133,14 +3133,14 @@ function openSettings() {
     <div class="card"><h3>Cardápio</h3><div class="sub">Um para cada dia da semana, com sugestões e pratos prontos.</div><div style="margin-top:10px"><button class="btn sec sm" data-act="menu-edit">Editar cardápio</button></div></div>
     <div class="card"><h3>Preferências</h3>
       <div class="kv" style="align-items:center"><span>Sons e efeitos</span><button class="switch ${S.settings.sound ? 'on' : ''}" data-act="toggle-sound" aria-label="Sons"><i></i></button></div>
-      <div class="field"><span>Nomes dos níveis</span><div class="chips"><button class="chip ${S.settings.levelTheme === 'A' ? 'on' : ''}" data-act="theme" data-v="A">Rumo ao Réveillon</button><button class="chip ${S.settings.levelTheme === 'B' ? 'on' : ''}" data-act="theme" data-v="B">Academia</button></div></div></div>
+      <div class="field"><span>Nomes dos níveis</span><div class="chips"><button class="chip ${S.settings.levelTheme === 'A' ? 'on' : ''}" data-act="theme" data-v="A">Zênite</button><button class="chip ${S.settings.levelTheme === 'B' ? 'on' : ''}" data-act="theme" data-v="B">Academia</button></div></div></div>
     <div class="card"><h3>Backup</h3><div class="sub">Seus dados ficam guardados neste aparelho. Baixe um backup de vez em quando para não perder nada.</div>
       <div class="grid2" style="margin-top:10px"><button class="btn sm blue" data-act="backup-save">Baixar backup</button><button class="btn sec sm" data-act="backup-load">Restaurar</button></div></div>
     ${S.mode === 'demo' ? `<div class="card tint-gold"><h3>Modo teste</h3><div class="sub">Tudo aqui é fictício. Use à vontade para testar.</div>
       ${other ? `<div style="margin-top:10px"><button class="btn sec sm" data-act="switch-player">Ver o app como ${esc(other.name)}</button></div>` : ''}
       <button class="btn red sm" data-act="reset-real">Começar do zero de verdade</button></div>`
       : `<div class="card"><h3>Conta</h3><button class="btn sec sm" data-act="lock">Bloquear e pedir o PIN</button><button class="btn red sm" data-act="wipe">Apagar todos os dados</button></div>`}
-    <div class="hint" style="text-align:center">Rumo ao Réveillon, versão de teste 1.0</div>`);
+    <div class="hint" style="text-align:center">Zenit ${ZV}</div>`);
 }
 function saveSettings() {
   const p = me();
@@ -3303,7 +3303,7 @@ function _welcomeHTML() {
     const left = S0DaysLeft();
     return `<div class="cover">${coverTopHTML(true)}
       <div class="cover-bot"><div class="cover-pets">${['gota', 'capivara', 'abacate', 'brasa', 'polvo'].map((id, i) => `<div style="animation-delay:${i * .18}s">${petSVG(id, { mood: 'feliz', stage: 1, anim: false })}</div>`).join('')}</div>
-        <div class="cb-t">Água, refeições e treino viram XP. Suba de nível até o Réveillon.</div>
+        <div class="cb-t">Água, refeições e treino viram XP. Suba de nível até o topo.</div>
         <div class="cb-cd"><b>${left}</b> ${plural(left, 'dia', 'dias')} para a virada</div>
         <div class="cb-btns"><button class="btn" data-act="ob-start">Começar agora</button><button class="btn sec" data-act="tour">Conhecer o Zenit</button></div>
         <div class="hint">Um jogo de hábitos para subir até o topo junto com a sua dupla.</div></div></div>`;
@@ -3317,7 +3317,7 @@ function _welcomeHTML() {
     ${sel ? `<div class="card tint-water" style="text-align:center">${esc(sel.name)}: ${esc(sel.vibe)}.</div>` : ''}`; }
   if (ob.step === 3) body = `<div class="field"><span>Peso atual</span><div class="big-input"><input id="obW" type="number" inputmode="decimal" step="0.1" value="${ob.w || ''}" placeholder="85,0" aria-label="Peso atual em kg"><span>kg</span></div></div>
     <div class="field"><span>Meta de peso até 31/12</span><div class="big-input"><input id="obGoal" type="number" inputmode="decimal" step="0.1" value="${ob.goal || ''}" placeholder="78,0" aria-label="Meta de peso em kg"><span>kg</span></div></div>
-    <div class="hint">Os quilos ficam só com você. Na sala, sua dupla vê apenas a % de peso perdido. Uma meta realista fica perto de 0,5% a 1% do peso por semana, e até o Réveillon são umas 13 semanas.</div>`;
+    <div class="hint">Os quilos ficam só com você. Na sala, sua dupla vê apenas a % de peso perdido. Uma meta realista fica perto de 0,5% a 1% do peso por semana.</div>`;
   if (ob.step === 4) { const rec = Math.round(ob.w * 35 / 100) * 100; if (!ob.water) ob.water = rec; body = `<div class="card tint-water" style="margin-top:0">Recomendado pelo seu peso: <b>${fmtL(rec)}</b> por dia (35 ml por kg).</div>
     <div class="field"><span>Sua meta diária</span><div class="big-input"><input id="obWater" type="number" inputmode="decimal" step="0.1" value="${(ob.water / 1000).toFixed(1)}" aria-label="Meta de água em litros"><span>L</span></div></div>
     <div class="hint">Nos dias de treino, vale beber uns 500 ml a mais. Dá para mudar depois.</div>`; }
@@ -3365,7 +3365,7 @@ function coverTopHTML(big) {
   const fws = [['#FFB91F', '8%', '14%', '0s'], ['#FF86D0', '74%', '8%', '.9s'], ['#2EB4E8', '80%', '58%', '1.7s'], ['#FFFFFF', '4%', '62%', '2.4s']];
   return `<div class="cover-top ${big ? '' : 'small'}"><div class="dotbg"></div>${fws.map(([c, x, y, d]) => `<div class="fw" style="left:${x};top:${y};animation-delay:${d}">${fireworkSVG(c)}</div>`).join('')}
     <div class="logo-wrap">${logoBadgeSVG()}</div>
-    <div class="wm"><span class="wm-a">RUMO AO</span><span class="wm-b">Réveillon</span></div>
+    <div class="wm"><span class="wm-a">SUBA ATÉ O</span><span class="wm-b">Zênite</span></div>
     ${big ? '<div class="cover-chip">🏆 Temporada 2026</div>' : ''}</div>`;
 }
 function pinHTML() {
@@ -3718,7 +3718,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '3.6';
+const ZV = '3.8';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#2EB4E8"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -3901,7 +3901,7 @@ function zHeroHTML(p, t) {
   return `<section class="zhero m${mk}"><div class="zh-sky" style="background:linear-gradient(160deg,${c1},${c2})"></div><svg class="zh-deco" viewBox="0 0 400 200" preserveAspectRatio="xMidYMid slice" width="100%" height="100%">${deco}</svg>${lights}
     <div class="zh-in"><div class="zh-txt"><div class="zh-hi">${hi}, ${esc(p.name)}!</div><div class="zh-date">${capWord(DOW[dow(t)])}, ${+t.slice(8)} de ${MONTHS[+t.slice(5, 7) - 1]}${S.mode === 'demo' ? ' · teste' : ''}</div>
       <button class="zh-lvl" data-act="levels"><i>${lv + 1}</i>${esc(levelName(lv))}</button>
-      <div class="zh-cd"><b>${left} ${plural(left, 'dia', 'dias')}</b> <span>para o Réveillon</span><div class="zh-bar"><i data-w="${(dayN / total * 100).toFixed(1)}%" style="width:0"></i></div></div></div>
+      <div class="zh-cd"><b>${left} ${plural(left, 'dia', 'dias')}</b> <span>para ${zAte()}</span><div class="zh-bar"><i data-w="${(dayN / total * 100).toFixed(1)}%" style="width:0"></i></div></div></div>
       <button class="zh-pet" data-act="pet-poke" aria-label="Seu mascote">${session.petSay ? `<div class="zh-say">${esc(session.petSay)}</div>` : ''}<div class="zp">${petSVG(p.pet, { mood, stage: stageOf(lv), equip: p.equip })}</div></button></div></section>`;
 }
 function dashHTML() {
@@ -4046,7 +4046,7 @@ function zRoutineCardHTML(p) {
   return `<div class="zrc"><h3>Minha rotina</h3><div class="zrc-s">Hoje: ${fr ? 'dia livre planejado' : esc(ZK[pl.k] || 'Descanso')}${pl.h && !fr && pl.k !== 'rest' ? ` às ${pl.h.replace(':', 'h')}` : ''}</div>
     <div class="zrc-b"><button data-act="z-crono">${ZI.cal}Cronograma</button><button data-act="z-rem">${ZI.bell}Lembretes</button><button data-act="z-agenda">${ZI.party}Agenda</button></div></div>`;
 }
-function zFootHTML() { return `<div class="zfoot"><div class="zf-logo" data-act="logo-tap">${zLogoSVG()}</div>Zenit ${ZV} · Temporada Rumo ao Réveillon</div>`; }
+function zFootHTML() { return `<div class="zfoot"><div class="zf-logo" data-act="logo-tap">${zLogoSVG()}</div>Zenit ${ZV} · ${zSeasonLabel()}</div>`; }
 function zOpenCrono() {
   const p = me(); const r = zRoutine(p); session.zr = JSON.parse(JSON.stringify(r)); zDrawCrono();
 }
@@ -4093,13 +4093,13 @@ function coverTopHTML(big) {
   return `<div class="cover-top ${big ? '' : 'small'}"><div class="dotbg"></div>${fws.map(([c, x, y, d]) => `<div class="fw" style="left:${x};top:${y};animation-delay:${d}">${fireworkSVG(c)}</div>`).join('')}
     <div class="logo-wrap zlogo" data-act="logo-tap">${zLogoSVG()}</div>
     <div class="zwm"><b>ZENIT</b><span>SUBA ATÉ O TOPO</span></div>
-    ${big ? '<div class="cover-chip">Temporada 1: Rumo ao Réveillon</div>' : ''}</div>`;
+    ${big ? '<div class="cover-chip">Temporadas com pódio e prêmio</div>' : ''}</div>`;
 }
 const Z_TOUR = [
-  { t: 'Suba até o Zênite', d: 'Cada copo de água, refeição e treino vira XP. Você sobe de nível, mundo a mundo, até o ponto mais alto no Réveillon.', art: () => `<div style="background:#FFF5D6">${zLogoSVG()}</div>` },
+  { t: 'Suba até o Zênite', d: 'Cada copo de água, refeição e treino vira XP. Você sobe de nível, mundo a mundo, até o ponto mais alto: o Zênite.', art: () => `<div style="background:#FFF5D6">${zLogoSVG()}</div>` },
   { t: 'Sua rotina, seus lembretes', d: 'Monte o cronograma da semana, marque dias especiais e receba lembretes na hora certa. Dia leve e dia livre planejado não quebram a sequência.', art: () => `<div style="background:#DDF3FD"><div style="width:62%;display:grid;grid-template-columns:1fr 1fr;gap:14px">${[ZI.cal, ZI.bell, ZI.drop, ZI.dumb].map(s => `<div style="background:#fff;border-radius:22px;padding:14px;box-shadow:0 4px 0 #BFE6FF">${s}</div>`).join('')}</div></div>` },
   { t: 'Um jogo de verdade', d: 'Mapa com 50 níveis em 5 mundos, chefões mensais, baús, roleta e um mascote que evolui junto com você.', art: () => `<div style="background:#EEECFF"><div style="width:70%">${petSVG('gota', { mood: 'feliz', stage: 1 })}</div></div>` },
-  { t: 'Compita com a sua dupla', d: 'Placar, semanas vencidas e um pódio no Réveillon. Peso e fotos nunca saem do seu celular.', art: () => `<div style="background:#F3E8FF"><div style="width:56%">${trophySVG ? trophySVG() : ZI.star}</div></div>` }
+  { t: 'Compita com a sua dupla', d: 'Placar, semanas vencidas e um pódio no fim da temporada. Seus quilos nunca aparecem para a sala.', art: () => `<div style="background:#F3E8FF"><div style="width:56%">${trophySVG ? trophySVG() : ZI.star}</div></div>` }
 ];
 function zTour(i) {
   const s = Z_TOUR[i]; let el = document.getElementById('ztour');
@@ -4331,7 +4331,7 @@ function dashHTML() {
     <button class="zmi ${trainDone(d) ? 'ok' : ''}" data-act="go" data-tab="reg" data-sub="treino">${trainDone(d) ? `<span class="zm-ok">${ZI.check}</span>` : ''}<div class="zm-ring">${zRing2(trainDone(d) ? 1 : 0, '#FF7A3D')}<div class="zm-art">${dumbbellSVG(trainDone(d) ? (d.rest ? 'rest' : (d.workout && d.workout.full ? 'full' : 'partial')) : 'none')}</div></div><div class="zm-t">Treino</div><div class="zm-v">${esc(trTxt)}</div></button></div>`;
   const scene = `<section class="zs ${tod}">${zSceneSVG(tod, mk)}
     <div class="zs-head"><div class="zs-hi">${hi}, ${esc(p.name)}!<small>${capWord(DOW[dow(t)])}, ${+t.slice(8)} de ${MONTHS[mk - 1]}${S.mode === 'demo' ? ' · demonstração' : ''}</small></div>
-      <div class="zs-ticket">${fireworkSVG('#F2456A')}<div><b>${left}</b><span>${left === 1 ? 'DIA' : 'DIAS'} P/ RÉVEILLON</span></div></div></div>
+      <div class="zs-ticket">${fireworkSVG('#F2456A')}<div><b>${left}</b><span>${left === 1 ? 'DIA' : 'DIAS'} P/ ${zAteCurto()}</span></div></div></div>
     ${say ? `<div class="zs-say">${esc(say)}</div>` : ''}
     <button class="zs-pet" data-act="pet-poke" aria-label="Seu mascote"><div class="zp">${petSVG(p.pet, { mood, stage: stageOf(lv), equip: p.equip })}</div></button>
     <button class="zs-lvl" data-act="world"><b>Nível ${lv + 1} · ${esc(levelName(lv))}</b><span>${lv >= 49 ? 'Zênite!' : `${fmtInt(b - xp)} XP para o próximo`}</span><i><em data-w="${lv >= 49 ? 100 : clamp((xp - a) / (b - a) * 100, 4, 100)}%" style="width:0"></em></i></button></section>`;
@@ -4367,7 +4367,7 @@ const Z_COACH = [
   { sel: '.topbar', t: 'Sequência, moedas e XP', d: 'O fogo conta os dias seguidos, as moedas compram itens e o raio é o seu XP total.' },
   { sel: '[data-act=tab][data-tab=reg]', t: 'Registrar', d: 'Tudo em detalhe: copos, cardápio, treino e pesagem.' },
   { sel: '[data-act=tab][data-tab=quest]', t: 'Missões', d: 'Mapa do mundo, desafio da semana, chefão do mês, baús e roleta.' },
-  { sel: '[data-act=tab][data-tab=rank]', t: 'Placar', d: 'O duelo com a sua dupla, semana a semana, até o pódio do Réveillon.' },
+  { sel: '[data-act=tab][data-tab=rank]', t: 'Placar', d: 'O duelo com a sua dupla, semana a semana, até o pódio da temporada.' },
   { sel: '[data-act=tab][data-tab=me]', t: 'Perfil', d: 'Seus mascotes, sua rotina, lembretes, relatórios e backup. Pronto, agora é com você!' }
 ];
 function zCoach(i) {
@@ -4395,7 +4395,7 @@ function afterMain(keepScroll) {
   if (session.tab === 'home' && !p.coachDone && !document.getElementById('zcoach') && !document.getElementById('overlay') && !document.getElementById('sun') && !session.coachQueued) { session.coachQueued = true; setTimeout(() => { session.coachQueued = false; if (!p.coachDone && session.tab === 'home' && !document.getElementById('overlay') && !document.getElementById('sun')) zCoach(0); }, 1100); }
   for (const pt of PETS.filter(x => x.locked)) { if (zPetHas(p, pt.id) && !(p.petsSeen || []).includes(pt.id)) { p.petsSeen = (p.petsSeen || []).concat(pt.id); save(); if (!document.getElementById('overlay')) setTimeout(() => zNewPet(pt.id), 700); break; } }
 }
-function zFootHTML() { return `<div class="zfoot"><button class="btn sec" data-act="coach" style="max-width:260px;margin:0 auto 14px">Refazer o tour guiado</button><div class="zf-logo" data-act="logo-tap">${zLogoSVG()}</div>Zenit ${ZV} · Temporada Rumo ao Réveillon</div>`; }
+function zFootHTML() { return `<div class="zfoot"><button class="btn sec" data-act="coach" style="max-width:260px;margin:0 auto 14px">Refazer o tour guiado</button><div class="zf-logo" data-act="logo-tap">${zLogoSVG()}</div>Zenit ${ZV} · ${zSeasonLabel()}</div>`; }
 
 /* =========================================================
    ZENIT 1.2 · água, cardápio semanal, atualização
@@ -4659,7 +4659,7 @@ function zCoverHTML() {
   return `<div class="zcover">${zSkySVG({})}
     <div class="zc-top"><div class="zc-word">ZENIT</div><div class="zc-tag">Suba até o topo.</div></div>
     <div class="zc-bot">
-      <div class="zc-chip"><span class="zc-dot"></span>Temporada 1 · Rumo ao Réveillon · <b>${left}</b> ${plural(left, 'dia', 'dias')}</div>
+      <div class="zc-chip"><span class="zc-dot"></span>Temporadas com pódio e prêmio, com amigos ou gente nova</div>
       <p class="zc-lead">Água, comida de verdade e movimento viram XP. Cinco mundos, cinquenta níveis e um só objetivo: chegar ao topo.</p>
       <button class="btn zc-go" data-act="ob-start">Começar agora</button>
       <button class="btn zc-sec" data-act="tour">Conhecer o Zenit</button>
@@ -4692,7 +4692,7 @@ function zAbout() {
   el.innerHTML = `<div class="za-hero">${zSkySVG({})}<button class="za-x" data-act="about-close" aria-label="Fechar">✕</button><div class="za-ht"><div class="za-k">CONHEÇA O ZENIT</div><h1>Um jogo em que o personagem principal é você.</h1></div></div>
     <div class="za-body"><p class="za-intro">O Zenit transforma o cuidado de todo dia em uma jornada. Você bebe água, come comida de verdade e se movimenta. O jogo transforma isso em XP, níveis e mundos, até você chegar ao ponto mais alto: o <b>zênite</b>.</p>
       ${ZABOUT.map(([i, t, d], k) => `<div class="za-item" style="animation-delay:${.08 * k}s"><div class="za-ic">${i}</div><div><h3>${t}</h3><p>${d}</p></div></div>`).join('')}
-      <div class="za-season"><div class="za-sk">TEMPORADA 1</div><b>Rumo ao Réveillon</b><p>92 dias, do começo de outubro até a virada do ano. Quem chegar mais longe sobe ao pódio.</p></div>
+      <div class="za-season"><div class="za-sk">TEMPORADAS</div><b>Com começo, fim e pódio</b><p>Cada sala tem a sua temporada, com data para acabar e prêmio combinado. No fim, quem chegar mais longe sobe ao pódio, e uma nova temporada começa do zero.</p></div>
       <button class="btn zc-go" data-act="about-go">Começar agora</button><div style="height:10px"></div></div>`;
   el.scrollTop = 0; document.body.style.overflow = 'hidden';
 }
@@ -5650,7 +5650,7 @@ function z10PrizeHTML(p, t) {
     const lw = addDays(wk, -7);
     if (lw >= weekKey(S.room.start)) { const la = xpBetween(p, lw, addDays(lw, 6)), lb = xpBetween(m, lw, addDays(lw, 6)); rows += `<div class="zkp-row"><span>Semana passada</span><b>${who(la, lb, 'Você venceu 🏆', esc(m.name) + ' venceu')}</b><em></em></div>`; }
   }
-  return `<button class="zk-prize" data-act="tab" data-tab="rank"><div class="zkp-top"><div class="zkp-trophy">🏆</div><div class="grow"><small>Prêmio do Réveillon</small><b>${esc(prize)}</b></div><div class="zkp-days"><b>${left}</b><span>${plural(left, 'dia', 'dias')}</span></div></div>
+  return `<button class="zk-prize" data-act="tab" data-tab="rank"><div class="zkp-top"><div class="zkp-trophy">🏆</div><div class="grow"><small>Prêmio da temporada</small><b>${esc(prize)}</b></div><div class="zkp-days"><b>${left}</b><span>${plural(left, 'dia', 'dias')}</span></div></div>
     <div class="zkp-bar"><i data-w="${pct.toFixed(1)}%" style="width:0"></i></div><div class="zkp-rows">${rows}</div></button>`;
 }
 
@@ -6212,7 +6212,7 @@ document.addEventListener('pointerdown', () => {
 }, { capture: true });
 
 /* ---------- Frase do dia ---------- */
-const ZFRASES = ['Constância vence pressa. Bora!', 'Um copo de água agora já é vitória.', 'Hoje conta. Amanhã agradece.', 'Devagar também é rumo ao topo.', 'Seu corpo é sua casa. Cuida dela.', 'Feito é melhor que perfeito.', 'Pequenos passos, grandes subidas.', 'Treino bom é treino feito.', 'Água, prato bom e movimento. Simples.', 'Não precisa ser perfeito, só constante.', 'O topo é feito de dias comuns.', 'Respira. Um passo de cada vez.', 'Seu eu do Réveillon vai te agradecer.', 'Ninguém sobe a montanha num pulo só.', 'Cansou? Descansa. Mas não desiste.', 'Cada copo é um degrau.', 'Hoje é um ótimo dia pra começar.', 'A melhor hora era antes. A segunda é agora.', 'Foco no processo, o resultado vem.', 'Mais forte que ontem. É isso.', 'Sem pressa, sem pausa.', 'Você já fez coisas mais difíceis.', 'Pequenas escolhas, grandes mudanças.', 'Bora encher essa garrafa?', 'Movimento é remédio.', 'O hábito de hoje é o corpo de amanhã.', 'Confia no processo.', 'Dia difícil também conta, se você aparece.', 'Seu único rival é o você de ontem.', 'Energia boa começa com água.', 'Uma refeição de cada vez.', 'Você é mais constante do que imagina.', 'O Zênite está te esperando!', 'Sorria: você está cuidando de você.', 'Quem planta hábito colhe resultado.', 'Hoje: menos desculpa, mais ação.', 'Bora fazer esse dia valer?', 'Disciplina é lembrar do que você quer.', 'Cuidar de si é o melhor investimento.', 'Lento ou rápido, o importante é seguir.'];
+const ZFRASES = ['Constância vence pressa. Bora!', 'Um copo de água agora já é vitória.', 'Hoje conta. Amanhã agradece.', 'Devagar também é rumo ao topo.', 'Seu corpo é sua casa. Cuida dela.', 'Feito é melhor que perfeito.', 'Pequenos passos, grandes subidas.', 'Treino bom é treino feito.', 'Água, prato bom e movimento. Simples.', 'Não precisa ser perfeito, só constante.', 'O topo é feito de dias comuns.', 'Respira. Um passo de cada vez.', 'Seu eu do futuro vai te agradecer.', 'Ninguém sobe a montanha num pulo só.', 'Cansou? Descansa. Mas não desiste.', 'Cada copo é um degrau.', 'Hoje é um ótimo dia pra começar.', 'A melhor hora era antes. A segunda é agora.', 'Foco no processo, o resultado vem.', 'Mais forte que ontem. É isso.', 'Sem pressa, sem pausa.', 'Você já fez coisas mais difíceis.', 'Pequenas escolhas, grandes mudanças.', 'Bora encher essa garrafa?', 'Movimento é remédio.', 'O hábito de hoje é o corpo de amanhã.', 'Confia no processo.', 'Dia difícil também conta, se você aparece.', 'Seu único rival é o você de ontem.', 'Energia boa começa com água.', 'Uma refeição de cada vez.', 'Você é mais constante do que imagina.', 'O Zênite está te esperando!', 'Sorria: você está cuidando de você.', 'Quem planta hábito colhe resultado.', 'Hoje: menos desculpa, mais ação.', 'Bora fazer esse dia valer?', 'Disciplina é lembrar do que você quer.', 'Cuidar de si é o melhor investimento.', 'Lento ou rápido, o importante é seguir.'];
 function z12Frase(p, t) { return ZFRASES[hashStr(t + '|' + (p.id || '')) % ZFRASES.length]; }
 
 /* ---------- Nome do mascote ---------- */
@@ -6318,7 +6318,7 @@ function z12Marks(t) {
     { id: 'd30', ok: d >= 30, when: addDays(st, 30), big: '1', unit: 'mês', t: 'Um mês de Zenit!', s: 'Trinta dias cuidando de você. Isso já virou hábito.' },
     { id: 'meio', ok: total > 20 && d >= Math.floor(total / 2), when: addDays(st, Math.floor(total / 2)), big: '½', unit: 'do caminho', t: 'Metade do caminho!', s: 'Você já subiu metade da montanha. Agora é rumo ao topo.' },
     { id: 'd60', ok: d >= 60, when: addDays(st, 60), big: '2', unit: 'meses', t: 'Dois meses de Zenit!', s: 'Quem chega até aqui não para mais.' },
-    { id: 'f30', ok: total > 40 && left <= 30, when: addDays(end, -30), big: '30', unit: 'dias', t: 'Faltam 30 dias para o Réveillon!', s: 'Reta final. Cada dia conta muito agora.' },
+    { id: 'f30', ok: total > 40 && left <= 30, when: addDays(end, -30), big: '30', unit: 'dias', t: `Faltam 30 dias para ${zAte()}!`, s: 'Reta final. Cada dia conta muito agora.' },
     { id: 'd90', ok: d >= 90, when: addDays(st, 90), big: '3', unit: 'meses', t: 'Três meses de Zenit!', s: 'Uma temporada inteira de constância. Que orgulho.' },
     { id: 'f7', ok: total > 14 && left <= 7, when: addDays(end, -7), big: '7', unit: 'dias', t: 'Última semana!', s: 'Sete dias para o Zênite. Dá tudo de você!' },
     { id: 'f1', ok: total > 3 && left <= 1, when: addDays(end, -1), big: '1', unit: 'dia', t: 'Amanhã é o grande dia!', s: 'Amanhã a gente descobre quem leva o prêmio.' }
@@ -6409,7 +6409,7 @@ function z12Climb() {
       ${ps.map((q, i) => `<svg id="zescP${i}" x="40" y="640" width="58" height="60" viewBox="0 0 120 124" overflow="visible"><ellipse cx="60" cy="120" rx="30" ry="6" fill="#000" opacity=".25"/>${z12PetInner(q.pet, { mood: 'feliz', stage: stageOf(levelOf(xpInfo(q, t).total)), equip: q.equip, anim: false })}</svg>`).join('')}
     </svg>
     <canvas class="zesc-fx" id="zescFx"></canvas>
-    <div class="zesc-top"><small>Temporada 1 · ${fmtDay(start)} → ${final ? fmtDay(S.room.end) : 'hoje'}</small><b>A Escalada do Zênite</b><span>${m ? `${esc(p.name)} e ${mn}` : esc(p.name)}, rumo ao topo</span></div>
+    <div class="zesc-top"><small>${zSeasonLabel()} · ${fmtDay(start)} → ${final ? fmtDay(S.room.end) : 'hoje'}</small><b>A Escalada do Zênite</b><span>${m ? `${esc(p.name)} e ${mn}` : esc(p.name)}, rumo ao topo</span></div>
     <button class="zesc-x" data-act="z12-climb-close" aria-label="Fechar">✕</button>
     <div class="zesc-card" id="zescCard"></div>`;
   document.body.appendChild(el); document.body.style.overflow = 'hidden';
@@ -6418,7 +6418,7 @@ function z12Climb() {
   const done = el.querySelector('#zescDone'); done.style.strokeDasharray = L; done.style.strokeDashoffset = L;
   ZESC = { p, m, t, final, stops, i: -1, L, at: 0, cps: Z12_CPS.map(([x, y]) => lenAt(x, y)), busy: false, path, done, fx: null };
   z12PlaceAll(0);
-  z12Card(`<div class="zesc-intro"><div class="zesc-em">🏔️</div><b>${final ? 'A grande final chegou!' : 'Vamos ver o quanto vocês já subiram?'}</b><span>${final ? 'Bora subir até o topo uma última vez.' : `Faltam ${diffDays(t, S.room.end)} ${plural(diffDays(t, S.room.end), 'dia', 'dias')} para o Réveillon.`}</span></div><button class="btn gold" data-act="z12-climb-next">Começar a subida</button>`);
+  z12Card(`<div class="zesc-intro"><div class="zesc-em">🏔️</div><b>${final ? 'A grande final chegou!' : 'Vamos ver o quanto vocês já subiram?'}</b><span>${final ? 'Bora subir até o topo uma última vez.' : `Faltam ${diffDays(t, S.room.end)} ${plural(diffDays(t, S.room.end), 'dia', 'dias')} para ${zAte()}.`}</span></div><button class="btn gold" data-act="z12-climb-next">Começar a subida</button>`);
 }
 function z12PlaceAll(len) {
   const Z = ZESC; if (!Z) return; Z.at = len;
@@ -6449,7 +6449,7 @@ async function z12Next() {
     const rows = rankRows(S.players, Z.t); const lead = rows[0]; const tie = rows.length > 1 && rows[0].xp === rows[1].xp;
     const prize = typeof z6Prize === 'function' ? z6Prize() : S.room.prize; const left = diffDays(Z.t, S.room.end);
     const podium = rows.map((r, i) => `<div class="zesc-pod ${i === 0 && !tie ? 'gold' : ''}"><div class="zesc-pav">${petSVG(r.p.pet, { mood: 'feliz', stage: 1, equip: r.p.equip, anim: false })}</div><b>${i === 0 && !tie ? '👑 ' : ''}${esc(r.p.name)}</b><span>${fmtInt(r.xp)} XP</span></div>`).join('');
-    const head = Z.m ? (tie ? 'Empate no topo!' : Z.final ? `${esc(lead.p.name)} venceu o Réveillon!` : `${esc(lead.p.name)} lidera a subida`) : 'Você chegou ao Zênite!';
+    const head = Z.m ? (tie ? 'Empate no topo!' : Z.final ? `${esc(lead.p.name)} venceu a temporada!` : `${esc(lead.p.name)} lidera a subida`) : 'Você chegou ao Zênite!';
     z12Card(`<div class="zesc-sum"><small>${Z.final ? 'A grande final' : 'Até agora'}</small><b>${head}</b><div class="zesc-pods">${podium}</div>
       <div class="zesc-prize">${Z.final && Z.m && !tie ? `<div class="zesc-chest">${chestSVG('open')}</div><span>${esc(lead.p.name)} leva:</span>` : '<span>🏆 Em jogo:</span>'}<b>${esc(prize)}</b>${Z.final ? '' : `<em>Decide em ${left} ${plural(left, 'dia', 'dias')}</em>`}</div></div>
       <div class="grid2"><button class="btn gold" data-act="z12-diploma">📜 Meu diploma</button><button class="btn gray" data-act="z12-climb-close">Fechar</button></div>`);
@@ -6481,7 +6481,7 @@ async function z12Diploma() {
   c.strokeStyle = '#FFB91F'; c.lineWidth = 10; c.strokeRect(40, 40, 1000, 1270); c.strokeStyle = 'rgba(255,185,31,.45)'; c.lineWidth = 3; c.strokeRect(62, 62, 956, 1226);
   const star = (cx, cy, R, r) => { c.beginPath(); for (let i = 0; i < 10; i++) { const an = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r : R; c.lineTo(cx + Math.cos(an) * rr, cy + Math.sin(an) * rr); } c.closePath(); };
   c.shadowColor = 'rgba(255,185,31,.8)'; c.shadowBlur = 40; c.fillStyle = '#FFB91F'; star(540, 175, 70, 30); c.fill(); c.shadowBlur = 0;
-  c.textAlign = 'center'; c.fillStyle = '#FFB91F'; c.font = '900 30px Nunito, sans-serif'; c.fillText('T E M P O R A D A   1   ·   R U M O   A O   R É V E I L L O N', 540, 300);
+  c.textAlign = 'center'; c.fillStyle = '#FFB91F'; c.font = '900 30px Nunito, sans-serif'; c.fillText(('TEMPORADA ' + zSeasonN() + ' · ZENIT').split('').join(' '), 540, 300);
   c.fillStyle = '#fff'; c.font = '900 84px Nunito, sans-serif'; c.fillText('Diploma do Zênite', 540, 400);
   c.fillStyle = '#C9CEFF'; c.font = '800 34px Nunito, sans-serif'; c.fillText('conferido a', 540, 470);
   c.fillStyle = '#FFE07A'; c.font = '900 110px Nunito, sans-serif'; c.fillText(p.name, 540, 590);
@@ -6787,8 +6787,8 @@ function z13Step3(ob) {
   const chips = Object.entries(ZOBJ).map(([k, v]) => `<button class="zobj ${o === k ? 'on' : ''}" data-act="z13-obj" data-v="${k}"><span>${v.ic}</span><b>${v.t}</b><small>${v.s}</small></button>`).join('');
   const goal = o === 'manter' ? '' : `<div class="field"><span>${o === 'ganhar' ? 'Meta de peso (ganho) até 31/12' : 'Meta de peso até 31/12'}</span><div class="big-input"><input id="obGoal" type="number" inputmode="decimal" step="0.1" value="${ob.goal || ''}" placeholder="${o === 'ganhar' ? '68,0' : '78,0'}" aria-label="Meta de peso em kg"><span>kg</span></div></div>`;
   const hint = {
-    perder: 'Uma meta realista fica perto de 0,5% a 1% do peso por semana. Até o Réveillon são umas 13 semanas.',
-    ganhar: 'Para ganhar massa com qualidade, o ritmo bom é de 0,25% a 0,5% do peso por semana. Até o Réveillon, algo como 2 a 4 kg.',
+    perder: 'Uma meta realista fica perto de 0,5% a 1% do peso por semana.',
+    ganhar: 'Para ganhar massa com qualidade, o ritmo bom é de 0,25% a 0,5% do peso por semana. Em uns 3 meses, algo como 2 a 4 kg.',
     manter: `O foco aqui são os hábitos. O peso de hoje vira a referência, e a ideia é ficar perto dele (${fmt1(Z13_BAND)}% para mais ou para menos).`
   }[o];
   return `<div class="zobj-row">${chips}</div>
@@ -6816,7 +6816,7 @@ obNext = function () {
   const g = o === 'manter' ? w : z13Num('obGoal');
   if (o === 'perder' && !(g >= 30 && g < w)) return toast('Para emagrecer, a meta precisa ser menor que o peso atual.', 'red', '🎯');
   if (o === 'ganhar' && !(g > w && g <= 300)) return toast('Para ganhar massa, a meta precisa ser maior que o peso atual.', 'red', '🎯');
-  if (o === 'ganhar' && g > w * 1.15) return toast('Essa meta é alta demais para até o Réveillon. Tente algo mais perto do seu peso atual.', 'red', '🎯');
+  if (o === 'ganhar' && g > w * 1.15) return toast('Essa meta é alta demais para uma temporada. Tente algo mais perto do seu peso atual.', 'red', '🎯');
   if (ob.w !== w) ob.water = 0;
   ob.w = Math.round(w * 10) / 10; ob.goal = Math.round(g * 10) / 10; ob.obj = o; ob.step++; render();
 };
@@ -8449,7 +8449,7 @@ const zaiImgPart = url => ({ inlineData: { mimeType: (String(url).match(/^data:(
 function zaiContext() {
   const p = me(), t = T(), d = dget(p, t); const L = [];
   const x = (f) => { try { const v = f(); if (v) L.push(v); } catch (e) { } };
-  x(() => `Hoje é ${ZDOW[dow(t)].toLowerCase()}, ${fmtDay(t)}/${t.slice(0, 4)}. Faltam ${Math.max(0, diffDays(t, t.slice(0, 4) + '-12-31'))} dias para o Réveillon (31/12), quando a competição termina.`);
+  x(() => `Hoje é ${ZDOW[dow(t)].toLowerCase()}, ${fmtDay(t)}/${t.slice(0, 4)}. Faltam ${Math.max(0, diffDays(t, S.room.end))} dias para o fim da temporada (${fmtDay(S.room.end)}), quando a competição da sala termina.`);
   x(() => `Nome: ${p.name}. Objetivo: ${ZOBJ[zObj(p)].t} (${ZOBJ[zObj(p)].s}).`);
   x(() => `Peso inicial ${fmt1(startW(p))} kg, peso atual ${fmt1(latestW(p, t))} kg, meta ${fmt1(+p.goalWeight)} kg. Última pesagem: ${(() => { const w = weighinsUpTo(p, t).pop(); return w ? fmtDay(w.date) : 'nenhuma'; })()}.`);
   x(() => `Água hoje: ${fmtInt(d.water || 0)} ml de ${fmtInt(p.waterGoal)} ml (meta).`);
@@ -8464,7 +8464,7 @@ function zaiContext() {
 }
 function zaiSystem() {
   const p = me(), pet = petOf(p); const art = pet.a === 'o' ? 'o' : 'a';
-  return `Você é ${art} ${pet.name}, mascote e assistente do Zenit, um app de competição de hábitos saudáveis entre amigos que vai até o Réveillon (31/12). Você está conversando com ${p.name}.
+  return `Você é ${art} ${pet.name}, mascote e assistente do Zenit, um app de competição de hábitos saudáveis entre amigos, organizado em temporadas. Você está conversando com ${p.name}.
 
 Como você conversa:
 - Português do Brasil, jeito leve, amigo e animado, como um personal trainer parceiro. Use emojis com moderação.
@@ -9392,7 +9392,7 @@ z14RoomHTML = function () {
 
 /* ---------- Mural da sala ---------- */
 const Z18_RE = ['🔥', '👏', '💪', '😂', '😱', '❤️'];
-const Z18_PROV = ['Hoje eu passo você 😏', 'Cadê o treino? 👀', 'Bora, time! 💪', 'Tô na frente 🏆', 'Ninguém me para 🔥', 'Bebe água! 💧', 'Foco no Réveillon 🎆', 'Quem treinou hoje? 🙋'];
+const Z18_PROV = ['Hoje eu passo você 😏', 'Cadê o treino? 👀', 'Bora, time! 💪', 'Tô na frente 🏆', 'Ninguém me para 🔥', 'Bebe água! 💧', 'Foco no topo 🏔️', 'Quem treinou hoje? 🙋'];
 function z18MuralListen(code, lim) {
   try {
     const { doc, collection, query, orderBy, limit, onSnapshot } = ZFB.m;
@@ -13076,8 +13076,8 @@ function z28Data(k, id) {
   }
   return null;
 }
-const z28Native = () => { try { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); } catch (e) { return false; } };
-const z28CanShare = () => { try { return !!(navigator.canShare && navigator.canShare({ files: [new File([new Blob(['x'])], 'x.png', { type: 'image/png' })] })); } catch (e) { return false; } };
+function z28Native() { try { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); } catch (e) { return false; } }
+function z28CanShare() { try { return !!(navigator.canShare && navigator.canShare({ files: [new File([new Blob(['x'])], 'x.png', { type: 'image/png' })] })); } catch (e) { return false; } }
 async function z28Open(k, id) {
   const d = z28Data(k, id); if (!d) return toast('Esse card ainda não está disponível.', 'violet', '📸');
   const old = $('#z28v'); if (old) old.remove();
@@ -13260,6 +13260,564 @@ ZNEWS.unshift(['🏁', 'Final de temporada', 'No dia seguinte ao fim da sala, o 
 /* Zenit 3.6 · Cara nova: paleta própria (índigo da noite, dourado da estrela e azul-céu). */
 ZNEWS.unshift(['🎨', 'Cara nova do Zenit', 'O app ganhou cores próprias: o índigo da noite, o dourado da estrela do Zênite e o azul do céu. Tudo continua no mesmo lugar.']);
 </script>
+
+<script>
+'use strict';
+const Z30_POL_RAW = "<h2>Pol\u00edtica de Privacidade</h2>\n<p class=\"pz-up\">Atualizada em {{DATA}}. Vers\u00e3o {{VER}}.</p>\n<p>O Zenit \u00e9 um app de h\u00e1bitos saud\u00e1veis em forma de jogo: \u00e1gua, refei\u00e7\u00f5es, sono e treino viram XP, e voc\u00ea pode competir com amigos em salas. Esta pol\u00edtica explica, em linguagem simples, quais dados o Zenit usa, para qu\u00ea e quais s\u00e3o os seus direitos pela Lei Geral de Prote\u00e7\u00e3o de Dados (LGPD, Lei 13.709/2018).</p>\n\n<h3>1. Quem \u00e9 o respons\u00e1vel</h3>\n<p>O Zenit \u00e9 desenvolvido por {{RESP}}, que \u00e9 o controlador dos dados. Contato para qualquer assunto de privacidade: <b>{{MAIL}}</b>.</p>\n\n<h3>2. Quais dados usamos</h3>\n<ul>\n<li><b>Conta:</b> e-mail e senha, se voc\u00ea criar uma conta. A senha \u00e9 guardada de forma protegida pelo Google Firebase; n\u00f3s n\u00e3o temos acesso a ela.</li>\n<li><b>Perfil:</b> nome ou apelido, mascote escolhido e prefer\u00eancias do app.</li>\n<li><b>Dados de sa\u00fade e h\u00e1bitos:</b> peso inicial, meta e pesagens, \u00e1gua, refei\u00e7\u00f5es, calorias, sono, treinos, cargas e medidas que voc\u00ea registrar. Esses s\u00e3o dados sens\u00edveis pela LGPD e s\u00f3 s\u00e3o usados com o seu consentimento.</li>\n<li><b>Fotos:</b> fotos de evolu\u00e7\u00e3o e das m\u00e1quinas ficam <b>s\u00f3 no seu aparelho</b>. Fotos que voc\u00ea manda no chat de uma sala ficam vis\u00edveis para quem est\u00e1 nela.</li>\n<li><b>Chat e salas:</b> mensagens, rea\u00e7\u00f5es, desafios (X1) e votos que voc\u00ea faz em uma sala.</li>\n<li><b>Dados t\u00e9cnicos:</b> verifica\u00e7\u00f5es de seguran\u00e7a do aparelho (Firebase App Check e reCAPTCHA) para impedir uso abusivo.</li>\n</ul>\n\n<h3>3. Para que usamos</h3>\n<ul>\n<li>Fazer o app funcionar: calcular XP, n\u00edveis, sequ\u00eancias, metas e placares.</li>\n<li>Guardar o seu progresso na nuvem e deixar todos os seus aparelhos iguais, se voc\u00ea tiver conta.</li>\n<li>Mostrar o placar e o chat para quem est\u00e1 na mesma sala que voc\u00ea.</li>\n<li>Gerar respostas da assistente, calcular calorias de fotos de pratos, ler fichas de treino, montar card\u00e1pios e conferir provas de desafios, quando voc\u00ea usa esses recursos.</li>\n</ul>\n<p>O Zenit <b>n\u00e3o vende</b> seus dados, <b>n\u00e3o mostra an\u00fancios</b> e n\u00e3o usa seus dados para publicidade.</p>\n\n<h3>4. O que a sua sala v\u00ea</h3>\n<p>Quem est\u00e1 na mesma sala v\u00ea o seu nome, mascote, XP, n\u00edvel, sequ\u00eancia, os h\u00e1bitos do dia (\u00e1gua, refei\u00e7\u00f5es, treino, sono) e a <b>porcentagem</b> do seu progresso de peso. <b>Seus quilos nunca aparecem para a sala.</b> No chat, todos da sala veem as mensagens e fotos enviadas ali.</p>\n\n<h3>5. Com quem compartilhamos</h3>\n<ul>\n<li><b>Google Firebase</b> (Google LLC): login, banco de dados na nuvem e seguran\u00e7a do app. Os servidores podem ficar fora do Brasil, com as prote\u00e7\u00f5es exigidas pela LGPD.</li>\n<li><b>Google Gemini, pelo Firebase AI Logic</b>: quando voc\u00ea usa a assistente, a foto do prato, a leitura de ficha, o card\u00e1pio, a confer\u00eancia de prova ou as vozes naturais, o texto ou a imagem necess\u00e1rios s\u00e3o enviados ao Google s\u00f3 para gerar aquela resposta.</li>\n<li>Autoridades, apenas quando a lei obrigar.</li>\n</ul>\n\n<h3>6. Por quanto tempo guardamos</h3>\n<p>Enquanto voc\u00ea tiver conta. Ao apagar a conta, seus dados na nuvem s\u00e3o apagados na hora; c\u00f3pias t\u00e9cnicas de seguran\u00e7a do provedor podem levar at\u00e9 30 dias para sumir. Mensagens que voc\u00ea mandou em salas de outras pessoas s\u00e3o apagadas junto.</p>\n\n<h3>7. Seus direitos</h3>\n<p>Pela LGPD voc\u00ea pode, a qualquer momento: confirmar e acessar seus dados, corrigir, baixar uma c\u00f3pia (portabilidade), revogar o consentimento e pedir a exclus\u00e3o. No app: <b>Configura\u00e7\u00f5es \u2192 Baixar meus dados</b> e <b>Configura\u00e7\u00f5es \u2192 Apagar minha conta</b>. Tamb\u00e9m pelo e-mail <b>{{MAIL}}</b>.</p>\n\n<h3 id=\"apagar\">8. Como apagar a sua conta</h3>\n<p>No app: <b>Configura\u00e7\u00f5es \u2192 Apagar minha conta</b>, confirme com a sua senha. Tudo \u00e9 apagado: progresso na nuvem, participa\u00e7\u00e3o nas salas e mensagens. Se n\u00e3o conseguir entrar no app, mande um e-mail para <b>{{MAIL}}</b> com o assunto \"Apagar conta\", usando o e-mail da conta, e apagamos em at\u00e9 15 dias.</p>\n\n<h3>9. Idade</h3>\n<p>O Zenit \u00e9 destinado a pessoas com <b>18 anos ou mais</b>.</p>\n\n<h3>10. Seguran\u00e7a</h3>\n<p>Usamos conex\u00e3o criptografada, regras de acesso no banco de dados (cada pessoa s\u00f3 l\u00ea e altera o que \u00e9 dela e das salas em que est\u00e1) e verifica\u00e7\u00e3o de aparelho contra uso abusivo. Nenhum sistema \u00e9 100% seguro; se algo acontecer, avisaremos quem for afetado.</p>\n\n<h3>11. Mudan\u00e7as</h3>\n<p>Se esta pol\u00edtica mudar, o app avisa e pede o seu aceite de novo.</p>\n\n<h2 id=\"termos\">Termos de Uso</h2>\n<ul>\n<li><b>N\u00e3o \u00e9 orienta\u00e7\u00e3o m\u00e9dica.</b> Metas, calorias, card\u00e1pios e treinos do Zenit (inclusive os feitos pela IA) s\u00e3o sugest\u00f5es gerais. Procure um m\u00e9dico, nutricionista ou educador f\u00edsico antes de mudan\u00e7as grandes na alimenta\u00e7\u00e3o ou nos exerc\u00edcios.</li>\n<li><b>Respeito nas salas.</b> \u00c9 proibido enviar conte\u00fado ofensivo, de \u00f3dio, ass\u00e9dio, amea\u00e7as, nudez ou conte\u00fado sexual, golpes ou spam. Voc\u00ea pode <b>denunciar</b> mensagens e respostas da IA e <b>bloquear</b> pessoas. O dono da sala pode apagar mensagens e tirar pessoas da sala.</li>\n<li><b>Modera\u00e7\u00e3o.</b> Den\u00fancias s\u00e3o analisadas pela equipe do Zenit. Conte\u00fados que quebram estas regras s\u00e3o removidos e contas podem ser suspensas ou apagadas.</li>\n<li><b>Pr\u00eamios das salas</b> s\u00e3o combinados entre os participantes. O Zenit n\u00e3o fornece, n\u00e3o garante e n\u00e3o se responsabiliza por pr\u00eamios.</li>\n<li><b>Sua conta</b> \u00e9 pessoal. Guarde bem a sua senha.</li>\n<li>O app \u00e9 oferecido \"como est\u00e1\". Faremos o poss\u00edvel para que funcione bem, mas pode haver falhas ou interrup\u00e7\u00f5es.</li>\n<li>Estes termos seguem as leis brasileiras.</li>\n</ul>\n";
+/* =========================================================
+   Zenit 3.7 · O que a loja exige
+   - Política de privacidade e termos (com aceite)
+   - Baixar meus dados (LGPD)
+   - Apagar minha conta (tudo, inclusive na nuvem)
+   - Denunciar e bloquear no chat; denunciar respostas da IA
+   - Compartilhar de verdade no app Android (APK novo)
+   ========================================================= */
+const Z30_VER = '1.0';
+const Z30_MAIL = (typeof window !== 'undefined' && window.Z30_MAIL_TEST) || "__Z30_MAIL__";
+const Z30_RESP = 'Ryan Lucas';
+const Z30_DATA = '29 de outubro de 2026';
+const Z30 = { busy: false };
+try { if (typeof Z27_SKIP !== 'undefined' && !Z27_SKIP.includes('z30q')) Z27_SKIP.push('z30q'); } catch (e) { }
+const z30Mail = () => /@/.test(Z30_MAIL) ? Z30_MAIL : 'o e-mail de contato do Zenit';
+function z30PolHTML() { return Z30_POL_RAW.replace(/\{\{MAIL\}\}/g, esc(z30Mail())).replace(/\{\{RESP\}\}/g, esc(Z30_RESP)).replace(/\{\{DATA\}\}/g, esc(Z30_DATA)).replace(/\{\{VER\}\}/g, Z30_VER); }
+const z30Native = () => { try { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); } catch (e) { return false; } };
+const z30Plug = n => { try { return z30Native() && window.Capacitor.Plugins && window.Capacitor.Plugins[n]; } catch (e) { return null; } };
+
+/* ---------- Salvar ou compartilhar um arquivo (no app Android usa o compartilhar do sistema) ---------- */
+async function z30SaveFile(name, blob, title) {
+  const FS = z30Plug('Filesystem'), SH = z30Plug('Share');
+  if (FS && SH) {
+    const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
+    const w = await FS.writeFile({ path: name, data: b64, directory: 'CACHE' });
+    await SH.share({ title: title || name, files: [w.uri] }); return 'shared';
+  }
+  const file = new File([blob], name, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] }) && /image\//.test(blob.type)) { try { await navigator.share({ files: [file], title: title || name }); return 'shared'; } catch (e) { return 'cancel'; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500); return 'saved';
+}
+// Os cards do story agora também compartilham direto no app Android novo
+if (typeof z28Share === 'function') {
+  const __z30Share = z28Share;
+  z28Share = async function () {
+    const c = Z28.cur; if (c && z30Plug('Filesystem') && z30Plug('Share')) { try { const blob = await new Promise(r => c.cv.toBlob(r, 'image/png')); await z30SaveFile(`zenit-${c.k}.png`, blob, 'Zenit'); return; } catch (e) { } }
+    return __z30Share.apply(this, arguments);
+  };
+  const __z30CanShare = z28CanShare; z28CanShare = function () { return !!(z30Plug('Filesystem') && z30Plug('Share')) || __z30CanShare(); };
+}
+
+// As janelas de denúncia e bloqueio abrem na frente do chat e da assistente
+function z30Top() { try { const ov = $('#overlay'); if (ov) ov.style.zIndex = '97'; } catch (e) { } }
+
+/* ---------- Política, termos e aceite ---------- */
+function z30PolOpen(back) {
+  openSheet(`<div class="z30-pol">${z30PolHTML()}</div><div style="margin-top:14px"><button class="btn" data-act="${back ? 'z30-ok' : 'close'}">${back ? 'Li e aceito' : 'Fechar'}</button></div>`, { full: true });
+}
+function z30AskConsent() {
+  try {
+    if (window.Z30_SKIP || !S || !session.pid || session.ob || S.mode === 'demo') return; S.settings = S.settings || {};
+    if (S.settings.z30pol === Z30_VER) return;
+    if ($('#overlay') || $('#zlvup') || $('#zesc') || $('#zgym') || $('#z28f') || $('#zcoach') || $('#ck') || $('#story') || $('#sun') || $('#zai') || $('#z18m')) return;
+    const p = me(); if (!p || !p.coachDone) return;
+    openSheet(`<div style="text-align:center"><div style="font-size:52px;line-height:1">🔒</div><h2 style="margin-top:6px">Sua privacidade no Zenit</h2></div>
+      <div class="z30-sum"><div>📱 <span>Fotos de evolução e das máquinas ficam <b>só no seu aparelho</b>.</span></div><div>⚖️ <span>Na sala aparecem XP, hábitos e a <b>%</b> de progresso. <b>Seus quilos nunca aparecem.</b></span></div><div>☁️ <span>Com conta, o progresso fica salvo na nuvem do Google Firebase, só para você.</span></div><div>✨ <span>A assistente e os recursos de foto usam a IA do Google só para gerar a resposta.</span></div><div>🚫 <span>Sem anúncios. Seus dados <b>nunca</b> são vendidos.</span></div></div>
+      <div class="hint">Peso, refeições e treinos são dados de saúde. Ao aceitar, você autoriza o Zenit a usá-los para funcionar. Você pode baixar ou apagar tudo quando quiser, em Configurações.</div>
+      <button class="link-btn" data-act="z30-pol-full" style="margin:8px auto 0;display:block">Ler a política completa e os termos</button>
+      <div style="margin-top:12px"><button class="btn" data-act="z30-ok">Li e aceito</button></div>`, { sticky: true, center: true });
+  } catch (e) { }
+}
+const __z30Render = render;
+render = function () { const r = __z30Render.apply(this, arguments); clearTimeout(Z30.cT); Z30.cT = setTimeout(z30AskConsent, 2600); return r; };
+// Criar conta: aceite obrigatório
+const __z30AccH = zfbAccountHTML;
+zfbAccountHTML = function (mode) {
+  const h = __z30AccH.apply(this, arguments);
+  if (ZFB.user) {
+    return h + `<div class="z30-acc"><button class="z14-row" data-act="z30-data"><span>📥</span><span class="grow"><b>Baixar meus dados</b><small>Uma cópia de tudo o que é seu</small></span><em>›</em></button><button class="z14-row" data-act="z30-pol"><span>🔒</span><span class="grow"><b>Privacidade e termos</b><small>Como o Zenit cuida dos seus dados</small></span><em>›</em></button><button class="z14-row red" data-act="z30-del"><span>🗑️</span><span class="grow"><b>Apagar minha conta</b><small>Apaga tudo, também na nuvem</small></span><em>›</em></button></div>`;
+  }
+  if (mode === 'in') return h;
+  return h.replace(/(<div style="margin-top:14px"><button class="btn" data-act="zfb-go" data-m="up")/, `<label class="z30-chk"><input type="checkbox" id="z30Ok"><span>Tenho 18 anos ou mais, li e aceito a <button type="button" class="link-btn inl" data-act="z30-pol">Política de Privacidade e os Termos</button> e autorizo o uso dos meus dados de saúde (peso, refeições, treinos) para o app funcionar.</span></label>$1`);
+};
+const __z30Go = ACT['zfb-go'];
+ACT['zfb-go'] = function (el) {
+  if (el && el.dataset.m === 'up') { const c = $('#z30Ok'); if (c && !c.checked && !window.Z30_SKIP) { toast('Para criar a conta, marque que você aceita a política e os termos.', 'red', '🔒'); c.closest('.z30-chk').classList.add('shake'); setTimeout(() => { const k = $('.z30-chk'); if (k) k.classList.remove('shake'); }, 600); return; } if (S) { S.settings = S.settings || {}; S.settings.z30pol = Z30_VER; } }
+  return __z30Go.apply(this, arguments);
+};
+
+/* ---------- Configurações ---------- */
+function z30SetHTML() {
+  const bl = Object.keys(S.blocked || {}).length;
+  return `<div class="h2" style="margin-top:18px">Privacidade</div><div class="card z30-set" style="margin-top:0">
+    <button class="z14-row" data-act="z30-pol"><span>🔒</span><span class="grow"><b>Privacidade e termos</b><small>Como o Zenit cuida dos seus dados</small></span><em>›</em></button>
+    <button class="z14-row" data-act="z30-data"><span>📥</span><span class="grow"><b>Baixar meus dados</b><small>Uma cópia de tudo o que é seu, em arquivo</small></span><em>›</em></button>
+    ${bl ? `<button class="z14-row" data-act="z30-blocks"><span>🚫</span><span class="grow"><b>Pessoas bloqueadas</b><small>${bl} ${plural(bl, 'pessoa', 'pessoas')}</small></span><em>›</em></button>` : ''}
+    <button class="z14-row red" data-act="z30-del"><span>🗑️</span><span class="grow"><b>${ZFB.user ? 'Apagar minha conta' : 'Apagar meus dados'}</b><small>${ZFB.user ? 'Apaga tudo, também na nuvem' : 'Apaga tudo deste aparelho'}</small></span><em>›</em></button></div>`;
+}
+const __z30Set = openSettings;
+openSettings = function () {
+  const r = __z30Set.apply(this, arguments);
+  try { const sh = document.querySelector('#overlay .sheet'); if (sh && !sh.querySelector('.z30-set')) { const hint = [...sh.children].reverse().find(x => x.classList && x.classList.contains('hint')); if (hint) hint.insertAdjacentHTML('beforebegin', z30SetHTML()); else sh.insertAdjacentHTML('beforeend', z30SetHTML()); } } catch (e) { }
+  return r;
+};
+
+/* ---------- Baixar meus dados ---------- */
+async function z30Data() {
+  try {
+    const v = typeof z27View === 'function' ? z27View(S) : JSON.parse(JSON.stringify(S));
+    const out = { app: 'Zenit', versao: ZV, gerado_em: new Date().toISOString(), conta: ZFB.user ? { email: ZFB.user.email || '' } : null, sala_atual: S.room ? { codigo: S.room.code, nome: S.room.name || '', inicio: S.room.start, fim: S.room.end } : null, salas: (S.myRooms || []).slice(), dados: v };
+    const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+    const r = await z30SaveFile(`zenit-meus-dados-${T()}.json`, blob, 'Meus dados do Zenit');
+    if (r === 'saved') toast('Arquivo com os seus dados salvo nos downloads.', 'green', '📥'); else if (r === 'shared') toast('Pronto! Escolha onde guardar o arquivo.', 'green', '📥');
+  } catch (e) { toast('Não consegui gerar o arquivo agora.', 'red', '⚠️'); }
+}
+
+/* ---------- Apagar conta ---------- */
+function z30DelOpen() {
+  const acc = !!ZFB.user;
+  openSheet(`<div style="text-align:center"><div style="font-size:52px;line-height:1">🗑️</div><h2 style="margin-top:6px">${acc ? 'Apagar minha conta' : 'Apagar meus dados'}</h2></div>
+    <div class="card tint-fire"><b>Isso não tem volta.</b><div class="sub">${acc ? 'Vamos apagar a sua conta, todo o progresso na nuvem, a sua participação nas salas e as mensagens que você mandou nos chats. Depois, tudo deste aparelho também é apagado.' : 'Vamos apagar todo o seu progresso, fotos e configurações deste aparelho.'}</div></div>
+    <div class="hint">Se quiser guardar uma cópia, <button class="link-btn inl" data-act="z30-data">baixe os seus dados</button> antes.</div>
+    ${acc ? `<label class="field"><span>Sua senha do Zenit (${esc(ZFB.user.email || '')})</span><input class="input" id="z30Pass" type="password" autocomplete="current-password" placeholder="••••••"></label>` : ''}
+    <label class="field"><span>Para confirmar, escreva <b>APAGAR</b></span><input class="input" id="z30Conf" autocapitalize="characters" placeholder="APAGAR"></label>
+    <div style="margin-top:12px"><button class="btn red" data-act="z30-del-go" id="z30DelGo">${acc ? 'Apagar minha conta para sempre' : 'Apagar tudo deste aparelho'}</button></div>
+    <div style="margin-top:8px"><button class="btn gray" data-act="close">Cancelar</button></div>`, {});
+}
+async function z30WipeLocal() {
+  try { for (const k of Object.keys(localStorage)) if (/^(zenit|rumo|fakeuser)/.test(k) || k === KEY) localStorage.removeItem(k); } catch (e) { }
+  try { await new Promise(res => { const r = indexedDB.deleteDatabase('zenit-fotos'); r.onsuccess = r.onerror = r.onblocked = () => res(); setTimeout(res, 1500); }); } catch (e) { }
+  try { const LN = typeof zLN === 'function' ? zLN() : null; if (LN) { const pend = await LN.getPending(); if (pend && pend.notifications && pend.notifications.length) await LN.cancel({ notifications: pend.notifications.map(n => ({ id: n.id })) }); } } catch (e) { }
+  S = null; memCopy = null; session.pid = null; session.ob = null; Z30.gone = true;
+  try { localStorage.removeItem(KEY); } catch (e) { }
+}
+// Depois de apagar, nada mais é gravado até o app reabrir
+const __z30Save2 = save; save = function () { if (Z30.gone) return; return __z30Save2.apply(this, arguments); };
+const __z30Silent2 = zfbSilentSave; zfbSilentSave = function () { if (Z30.gone) return; return __z30Silent2.apply(this, arguments); };
+async function z30DelGo(el) {
+  if (Z30.busy) return;
+  if (String(($('#z30Conf') || {}).value || '').trim().toUpperCase() !== 'APAGAR') return toast('Escreva APAGAR para confirmar.', 'red', '✍️');
+  const acc = !!ZFB.user; const pass = acc ? String(($('#z30Pass') || {}).value || '') : '';
+  if (acc && !pass) return toast('Digite a sua senha para confirmar.', 'red', '🔑');
+  Z30.busy = true; const lbl = el ? el.textContent : ''; const step = t => { if (el) { el.disabled = true; el.textContent = t; } };
+  try {
+    if (acc) {
+      await zfbLoad(); const m = ZFB.m; const u = ZFB.user; const uid = u.uid;
+      step('Conferindo a senha…');
+      try { await m.reauthenticateWithCredential(u, m.EmailAuthProvider.credential(u.email, pass)); }
+      catch (e) { const c = String((e && e.code) || e); throw new Error(/wrong-password|invalid-credential|invalid-login/.test(c) ? 'senha' : /network|unavailable/.test(c) ? 'rede' : 'senha'); }
+      step('Apagando as salas…');
+      try { if (typeof z27StopListen === 'function') z27StopListen(); } catch (e) { }
+      try { zfbStop(); } catch (e) { }
+      const codes = [...new Set([S && S.room && S.room.code].concat(S ? (S.myRooms || []) : []).filter(Boolean))];
+      for (const code of codes) {
+        const ref = m.doc(ZFB.db, 'rooms', code);
+        try {
+          if (m.getDocs && m.where && m.query) { const qs = await m.getDocs(m.query(m.collection(ref, 'mural'), m.where('uid', '==', uid))); const ids = []; qs.forEach(d => ids.push(d.id)); for (const id of ids) { try { await m.deleteDoc(m.doc(ZFB.db, 'rooms', code, 'mural', id)); } catch (e) { } } }
+        } catch (e) { }
+        try { await m.deleteDoc(m.doc(ZFB.db, 'rooms', code, 'players', uid)); } catch (e) { }
+        try {
+          const s = await m.getDoc(ref); const d = s.exists() ? s.data() || {} : null;
+          if (d && (d.members || []).includes(uid)) {
+            const upd = { members: m.arrayRemove(uid), ['names.' + uid]: m.deleteField(), ['pets.' + uid]: m.deleteField(), ['joined.' + uid]: m.deleteField() };
+            const rest = (d.members || []).filter(x => x !== uid); if ((d.owner || (d.members || [])[0]) === uid && rest.length) upd.owner = rest[0];
+            await m.updateDoc(ref, upd);
+          }
+        } catch (e) { }
+      }
+      step('Apagando a nuvem…');
+      await m.deleteDoc(m.doc(ZFB.db, 'users', uid));
+      step('Apagando a conta…');
+      await m.deleteUser(u);
+      ZFB.user = null;
+    }
+    step('Limpando o aparelho…');
+    await z30WipeLocal();
+    closeSheet(true);
+    openSheet(`<div style="text-align:center"><div style="font-size:56px;line-height:1">👋</div><h2 style="margin-top:6px">Tudo apagado</h2><div class="sub">${acc ? 'Sua conta e seus dados foram apagados.' : 'Os dados deste aparelho foram apagados.'} Obrigado por ter subido com a gente.</div></div><div style="margin-top:14px"><button class="btn" data-act="z30-restart">Voltar ao início</button></div>`, { center: true, sticky: true });
+  } catch (e) {
+    const k = String(e && e.message);
+    toast(k === 'senha' ? 'Senha incorreta. Confira e tente de novo.' : k === 'rede' || navigator.onLine === false ? 'Sem internet agora. Conecte e tente de novo.' : 'Não consegui apagar agora. Tente de novo em instantes.', 'red', '⚠️');
+    if (el) { el.disabled = false; el.textContent = lbl; }
+    try { if (ZFB.user && S) { zfbLinkRoom(); } } catch (e2) { }
+  } finally { Z30.busy = false; }
+}
+
+/* ---------- Denunciar e bloquear ---------- */
+const Z30_WHY = [['ofensa', 'Ofensivo ou discurso de ódio'], ['sexual', 'Nudez ou conteúdo sexual'], ['assedio', 'Assédio, ameaça ou bullying'], ['golpe', 'Spam ou golpe'], ['outro', 'Outro motivo']];
+const Z30_WHY_IA = [['errado', 'Informação errada ou perigosa'], ['ofensa', 'Ofensivo ou preconceituoso'], ['improprio', 'Conteúdo impróprio'], ['outro', 'Outro motivo']];
+const z30Uid = () => (typeof z14Uid === 'function' ? z14Uid() : (ZFB.user && ZFB.user.uid)) || '';
+async function z30SendReport(rep) {
+  rep = Object.assign({ by: z30Uid(), app: ZV, at: Date.now() }, rep);
+  S.z30q = S.z30q || []; S.z30q.push(rep); zfbSilentSave(); return z30Flush();
+}
+async function z30Flush() {
+  if (!S || !(S.z30q || []).length || !zfbOn() || !ZFB.m) return false; const { doc, setDoc, serverTimestamp } = ZFB.m; let ok = true;
+  for (const rep of S.z30q.slice()) {
+    try { await setDoc(doc(ZFB.db, 'reports', 'r' + rep.at.toString(36) + Math.random().toString(36).slice(2, 7)), Object.assign({}, rep, { ts: serverTimestamp() })); S.z30q = S.z30q.filter(x => x !== rep); }
+    catch (e) { ok = false; break; }
+  }
+  zfbSilentSave(); return ok;
+}
+setInterval(() => { try { z30Flush(); } catch (e) { } }, 90000);
+function z30RepOpen(kind, id) {
+  const ia = kind === 'ia'; const L = ia ? Z30_WHY_IA : Z30_WHY;
+  openSheet(`<h2>${ia ? 'Denunciar resposta da IA' : 'Denunciar mensagem'}</h2><div class="sub">${ia ? 'Conte o que houve de errado. A equipe do Zenit revisa e melhora a assistente.' : 'A mensagem some para você na hora. A equipe do Zenit analisa e, se quebrar as regras, ela é removida.'}</div>
+    <div class="z30-why">${L.map(([k, t]) => `<button class="z30-w" data-act="z30-rep-go" data-k="${kind}" data-id="${esc(id)}" data-w="${k}">${esc(t)}</button>`).join('')}</div>`, {}); z30Top();
+}
+async function z30RepGo(el) {
+  const kind = el.dataset.k, id = el.dataset.id, why = el.dataset.w;
+  if (kind === 'ia') {
+    const m = typeof zaiFind === 'function' ? zaiFind(id) : null;
+    await z30SendReport({ kind: 'ia', why, text: String((m && m.t) || '').slice(0, 1500) });
+    if (m) m.rep = 1; S.z30ia = S.z30ia || {}; S.z30ia[id] = why; save();
+    closeSheet(true); try { if (typeof zaiPaint === 'function') zaiPaint(); } catch (e) { }
+    const b = document.querySelector(`.zai-m[data-id="${CSS.escape(id)}"] .z30-flag`); if (b) { b.classList.add('done'); b.textContent = '⚑ denunciada'; }
+    return toast('Obrigado! A resposta foi denunciada.', 'green', '⚑');
+  }
+  const code = S.room.code; const x = (Z18.posts[code] || []).find(y => y.id === id); const uid = z30Uid();
+  S.z30rep = S.z30rep || {}; S.z30rep[id] = why; save();
+  try { const { doc, updateDoc } = ZFB.m; await updateDoc(doc(ZFB.db, 'rooms', code, 'mural', id), { ['rep.' + uid]: why }); } catch (e) { }
+  await z30SendReport({ kind: 'chat', why, room: code, post: id, target: (x && x.uid) || '', targetName: (x && x.name) || '', text: String((x && x.t) || '').slice(0, 500), img: !!(x && x.img) });
+  closeSheet(true); z30Repaint();
+  const nm = x && x.name ? String(x.name).split(' ')[0] : '';
+  openSheet(`<div style="text-align:center"><div style="font-size:48px;line-height:1">🚩</div><h2 style="margin-top:6px">Denúncia enviada</h2><div class="sub">Obrigado por ajudar a deixar o Zenit um lugar legal. A mensagem foi escondida para você.</div></div>
+    ${x && x.uid && x.uid !== uid ? `<div style="margin-top:14px"><button class="btn red" data-act="z30-block" data-u="${esc(x.uid)}" data-n="${esc(x.name || '')}">🚫 Bloquear ${esc(nm || 'essa pessoa')} também</button></div>` : ''}
+    <div style="margin-top:8px"><button class="btn gray" data-act="close">Fechar</button></div>`, { center: true }); z30Top();
+}
+function z30Block(uid, name) {
+  if (!uid || uid === z30Uid()) return; S.blocked = S.blocked || {}; S.blocked[uid] = { name: name || '', at: Date.now() }; save();
+  closeSheet(true); z30Repaint(); toast(`${String(name || 'Pessoa').split(' ')[0]} foi bloqueado. As mensagens somem para você.`, 'violet', '🚫');
+}
+function z30BlocksOpen() {
+  const L = Object.entries(S.blocked || {});
+  openSheet(`<h2>Pessoas bloqueadas</h2><div class="sub">Você não vê as mensagens e fotos delas nos chats, nem os desafios que elas mandarem.</div>
+    <div class="card" style="margin-top:12px">${L.length ? L.map(([u, x]) => `<div class="z30-bl"><b class="grow">🚫 ${esc(x.name || 'Alguém')}</b><button class="zmini" data-act="z30-unblock" data-u="${esc(u)}">Desbloquear</button></div>`).join('') : '<div class="sub">Ninguém bloqueado.</div>'}</div>
+    <div style="margin-top:12px"><button class="btn gray" data-act="close">Fechar</button></div>`, {});
+}
+function z30Repaint() { try { if ($('#z19cList')) z19PaintList(false); else if ($('#z18m') && typeof z18MuralPaint === 'function') z18MuralPaint(S.room.code); } catch (e) { } }
+// Menu da mensagem: denunciar, bloquear e (dono) apagar
+const __z30Menu = z19Menu;
+z19Menu = function (id) {
+  const r = __z30Menu.apply(this, arguments);
+  try {
+    const x = (Z18.posts[S.room.code] || []).find(y => y.id === id); const m = $('#z19Menu .z19-menu'); if (!x || !m) return r;
+    const uid = z30Uid(); if (x.uid === uid || x.auto) return r;
+    const own = typeof z19IsOwner === 'function' && z19IsOwner();
+    m.insertAdjacentHTML('beforeend', `${own ? `<button class="it red" data-act="z30-odel" data-id="${esc(id)}">🗑️ Apagar (dono da sala)</button>` : ''}<button class="it red" data-act="z30-rep" data-id="${esc(id)}">🚩 Denunciar</button>${x.uid ? `<button class="it red" data-act="z30-block" data-u="${esc(x.uid)}" data-n="${esc(x.name || '')}">🚫 Bloquear ${esc(String(x.name || 'pessoa').split(' ')[0])}</button>` : ''}`);
+  } catch (e) { }
+  return r;
+};
+// O chat esconde o que você denunciou, o que a sala denunciou e quem você bloqueou
+const z30Hidden = x => {
+  if (!x || x.auto) return ''; const uid = z30Uid(); if (x.uid === uid) return '';
+  if ((S.blocked || {})[x.uid]) return 'blk';
+  if ((S.z30rep || {})[x.id]) return 'rep';
+  if (Object.keys(x.rep || {}).length >= 2) return 'rep';
+  return '';
+};
+const __z30List = z19ListHTML;
+z19ListHTML = function () {
+  const code = S.room.code; const orig = Z18.posts[code]; if (!orig) return __z30List.apply(this, arguments);
+  Z18.posts[code] = orig.map(x => { const h = z30Hidden(x); return h ? Object.assign({}, x, { t: h === 'blk' ? '🚫 Mensagem de pessoa bloqueada' : '🚩 Mensagem escondida por denúncia', img: null, rp: null, x1: null, z30h: h }) : x; });
+  try { return __z30List.apply(this, arguments).replace(/(<div class="z19-b )/g, '$1'); } finally { Z18.posts[code] = orig; }
+};
+if (typeof z18PostHTML === 'function') { const __z30Post = z18PostHTML; z18PostHTML = function (x) { const h = z30Hidden(x); return __z30Post.call(this, h ? Object.assign({}, x, { t: h === 'blk' ? '🚫 Mensagem de pessoa bloqueada' : '🚩 Mensagem escondida por denúncia', img: null }) : x); }; }
+// Desafios de quem você bloqueou não aparecem
+if (typeof z15Items === 'function') { const __z30Items = z15Items; z15Items = function () { const out = __z30Items.apply(this, arguments); try { const bl = S.blocked || {}; if (Object.keys(bl).length) { const blp = S.players.filter(q => q.remote && bl[q.uid]).map(q => q.id); out.agora = out.agora.filter(it => !(String(it.k).startsWith('x1|') && (z10X1All().find(x => 'x1|' + x.id === it.k) || {}).from && blp.includes((z10X1All().find(x => 'x1|' + x.id === it.k) || {}).from))); } } catch (e) { } return out; }; }
+// Respostas da IA: botão de denunciar
+const __z30Ai = zaiMsgHTML;
+zaiMsgHTML = function (m) {
+  const h = __z30Ai.apply(this, arguments);
+  try { if (m && !m.wait && !m.err && m.r !== 'u' && m.role !== 'user' && !/class="zai-m u/.test(h) && m.t) { const done = m.rep || (S.z30ia || {})[m.id]; return h.replace(/<\/div>$/, `<button class="z30-flag ${done ? 'done' : ''}" data-act="z30-ia" data-id="${esc(m.id)}" aria-label="Denunciar resposta">${done ? '⚑ denunciada' : '⚑'}</button></div>`); } } catch (e) { }
+  return h;
+};
+
+Object.assign(ACT, {
+  'z30-pol': () => z30PolOpen(false),
+  'z30-pol-full': () => z30PolOpen(true),
+  'z30-ok': () => { S.settings = S.settings || {}; S.settings.z30pol = Z30_VER; save(); closeSheet(true); toast('Obrigado! Você pode rever isso em Configurações.', 'green', '🔒'); },
+  'z30-data': () => z30Data(),
+  'z30-del': () => z30DelOpen(),
+  'z30-del-go': el => z30DelGo(el),
+  'z30-restart': () => { closeSheet(true); try { location.reload(); } catch (e) { render(); } },
+  'z30-rep': el => { const id = el.dataset.id; z19MenuX(); z30RepOpen('chat', id); },
+  'z30-ia': el => { if (el.classList.contains('done')) return; z30RepOpen('ia', el.dataset.id); },
+  'z30-rep-go': el => z30RepGo(el),
+  'z30-block': el => { z19MenuX(); const u = el.dataset.u, n = el.dataset.n; closeSheet(true); openConfirm(`Bloquear ${String(n || 'essa pessoa').split(' ')[0]}? Você deixa de ver as mensagens, fotos e desafios dela. Dá para desfazer em Configurações.`, 'Bloquear', () => z30Block(u, n)); z30Top(); },
+  'z30-blocks': () => z30BlocksOpen(),
+  'z30-unblock': el => { if (S.blocked) delete S.blocked[el.dataset.u]; save(); z30BlocksOpen(); z30Repaint(); toast('Desbloqueado.', 'green', '✅'); },
+  'z30-odel': async el => { const id = el.dataset.id; z19MenuX(); openConfirm('Apagar essa mensagem para todo mundo da sala?', 'Apagar', async () => { try { const { doc, deleteDoc } = ZFB.m; await deleteDoc(doc(ZFB.db, 'rooms', S.room.code, 'mural', id)); toast('Mensagem apagada.', 'green', '🗑️'); } catch (e) { toast('Não consegui apagar agora.', 'red', '⚠️'); } }); z30Top(); }
+});
+ZNEWS.unshift(['🔒', 'Privacidade e segurança', 'Em Configurações: política de privacidade, baixar os seus dados, apagar a conta e pessoas bloqueadas. No chat, segure uma mensagem para denunciar ou bloquear.']);
+</script>
+<style>
+.z30-pol{font-size:14.5px;line-height:1.5;font-weight:600;color:var(--ink)}.z30-pol h2{margin:4px 0 2px;padding:0}.z30-pol h3{font-size:16px;font-weight:900;margin:16px 0 4px}.z30-pol p{margin:6px 0}.z30-pol ul{margin:6px 0 6px 18px}.z30-pol li{margin:4px 0}.z30-pol .pz-up{color:var(--ink-3);font-size:12.5px}
+.z30-sum{display:grid;gap:8px;margin-top:12px}.z30-sum>div{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border-radius:14px;padding:10px 12px;font-size:13.5px;line-height:1.4;font-weight:700}
+.z30-chk{display:flex;gap:10px;align-items:flex-start;margin-top:14px;font-size:13px;font-weight:700;line-height:1.4;color:var(--ink-2)}.z30-chk input{width:22px;height:22px;flex:none;margin-top:1px;accent-color:var(--green)}
+.z30-chk.shake{animation:shake .4s}.link-btn.inl{display:inline;padding:0;font-size:inherit;text-decoration:underline;color:var(--blue);background:none;border:0;font-weight:800}
+.z14-row.red b{color:var(--red)}.z30-acc{margin-top:12px;border:2px solid var(--line);border-radius:18px;padding:4px 12px}
+.z30-why{display:grid;gap:8px;margin-top:12px}.z30-w{border:2px solid var(--line);border-radius:14px;padding:13px 14px;text-align:left;font-weight:800;font-size:14.5px;background:var(--card)}
+.z30-bl{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1.5px solid var(--line)}.z30-bl:last-child{border-bottom:0}
+.z30-flag{display:block;margin:4px 0 0 auto;border:0;background:none;color:var(--ink-3);font-size:12px;font-weight:800;padding:2px 6px;cursor:pointer}.z30-flag.done{color:var(--red)}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 3.8 · Pronto para quem não conhece ninguém
+   - Temporadas com nome e data próprios (o Réveillon só aparece
+     quando a temporada termina mesmo em 31/12)
+   - Salas abertas: qualquer pessoa com conta pode achar uma turma
+   ========================================================= */
+const Z31 = { list: null, busy: false };
+function zSeasonEnd() { return (S && S.room && S.room.end) || '2026-12-31'; }
+function zIsRev() { return /-12-31$/.test(zSeasonEnd()); }
+function zAte() { return zIsRev() ? 'o Réveillon' : 'o fim da temporada'; }
+function zAteCurto() { return zIsRev() ? 'RÉVEILLON' : 'O FIM'; }
+function zSeasonN() { return typeof z28SeasonN === 'function' && S && S.room ? z28SeasonN() : 1; }
+function zSeasonName() { if (!S || !S.room) return ''; if (S.room.sname) return S.room.sname; return zSeasonN() === 1 && zIsRev() ? 'Rumo ao Réveillon' : ''; }
+function zSeasonLabel() { const n = zSeasonName(); return `Temporada ${zSeasonN()}${n ? ' · ' + n : ''}`; }
+// O nome da temporada vem da sala
+const __z31Adopt = zfbAdoptRoom;
+zfbAdoptRoom = function (d) { const r = __z31Adopt.apply(this, arguments); try { if (d && S && S.room) { if ('sname' in d) S.room.sname = d.sname || ''; if ('pub' in d) S.room.pub = !!d.pub; } } catch (e) { } return r; };
+// Nova temporada e "Prêmio e data de fim": dá para dar um nome
+if (typeof z28NewOpen === 'function') {
+  const __z31New = z28NewOpen;
+  z28NewOpen = function () { const r = __z31New.apply(this, arguments); try { const f = $('#z28End'); if (f) f.closest('.field').insertAdjacentHTML('beforebegin', `<label class="field"><span>Nome da temporada (opcional)</span><input class="input" id="z31Sn" maxlength="28" placeholder="Ex.: Verão 2027, Projeto Carnaval"></label>`); } catch (e) { } return r; };
+  const __z31Go = ACT['z28-new-go'];
+  ACT['z28-new-go'] = function () { const sn = String(($('#z31Sn') || {}).value || '').trim().slice(0, 28); const s0 = S.room.season; const r = __z31Go.apply(this, arguments); if (S.room.season !== s0) { S.room.sname = sn; save(); if (typeof zfbRoomUpdate === 'function') zfbRoomUpdate({ sname: sn }); } return r; };
+}
+const __z31PE = ACT['prize-edit'];
+ACT['prize-edit'] = function () {
+  const r = __z31PE.apply(this, arguments);
+  try { const f = $('#z19end'); if (f && !$('#z31Sn')) f.closest('.field').insertAdjacentHTML('afterend', `<label class="field"><span>Nome da temporada (opcional)</span><input class="input" id="z31Sn" maxlength="28" value="${esc(S.room.sname || '')}" placeholder="${esc(zSeasonName() || 'Ex.: Verão 2027')}"></label>`); } catch (e) { }
+  return r;
+};
+const __z31PS = ACT['prize-save'];
+ACT['prize-save'] = function () {
+  const el = $('#z31Sn'); const sn = el ? el.value.trim().slice(0, 28) : null; const old = S.room.sname || '';
+  const r = __z31PS.apply(this, arguments);
+  if (sn != null && sn !== old && !$('#z6pr')) { S.room.sname = sn; save(); if (typeof zfbRoomUpdate === 'function' && ZFB.linked) zfbRoomUpdate({ sname: sn }); try { renderMain(true); } catch (e) { } }
+  return r;
+};
+
+/* =========================================================
+   Salas abertas
+   ========================================================= */
+const z31Can = () => typeof zfbOn === 'function' && zfbOn() && ZFB.m && typeof ZFB.m.getDocs === 'function' && typeof ZFB.m.where === 'function';
+async function z31Fetch() {
+  const { collection, query, where, getDocs, limit } = ZFB.m; const uid = z14Uid(); const t = T();
+  const q = limit ? query(collection(ZFB.db, 'rooms'), where('pub', '==', true), limit(40)) : query(collection(ZFB.db, 'rooms'), where('pub', '==', true));
+  const qs = await z14Wait(getDocs(q), 9000); const out = [];
+  qs.forEach(s => { const d = s.data() || {}; const mem = d.members || []; if (!d.code) d.code = s.id; if (mem.includes(uid) || (d.kicked || []).includes(uid) || mem.length >= (d.max || 2) || !d.end || d.end <= t || !mem.length) return; out.push(d); });
+  out.sort((a, b) => (b.members || []).length - (a.members || []).length || String(b.start || '').localeCompare(String(a.start || '')));
+  return out.slice(0, 20);
+}
+function z31RowHTML(d) {
+  const n = (d.members || []).length; const left = Math.max(0, diffDays(T(), d.end));
+  return `<button class="z31-r" data-act="z31-see" data-c="${esc(d.code)}"><span class="z14-ic sm">${esc(d.icon || '🏆')}</span><span class="grow"><b>${esc(z14Title(d))}</b><small>${n} de ${d.max || 2} ${plural(d.max || 2, 'pessoa', 'pessoas')} · ${left} ${plural(left, 'dia', 'dias')} de temporada${d.sname ? ' · ' + esc(d.sname) : ''}</small>${d.prize ? `<small class="pz">🏆 ${esc(String(d.prize).slice(0, 60))}</small>` : ''}</span><em>›</em></button>`;
+}
+async function z31Open() {
+  if (!zfbOn()) { closeSheet(true); toast('Para entrar numa sala aberta, primeiro crie a sua conta (é grátis).', 'violet', '☁️'); return zfbOpenAccount(ZFB.user ? '' : 'up'); }
+  openSheet(`<div id="z31"><h2>🌎 Salas abertas</h2><div class="sub">Turmas que aceitam gente nova. Você entra na hora e compete do zero com elas.</div><div class="z31-load">Procurando salas…</div></div>`, {});
+  let L = null; try { L = z31Can() ? await z31Fetch() : []; } catch (e) { L = null; }
+  const box = $('#z31'); if (!box) return; Z31.list = L;
+  const head = `<h2>🌎 Salas abertas</h2><div class="sub">Turmas que aceitam gente nova. Você entra na hora e compete do zero com elas.</div>`;
+  if (L === null) { box.innerHTML = head + `<div class="card tint-fire" style="margin-top:12px"><b>Sem internet agora</b><div class="sub">Conecte e tente de novo.</div></div><div style="margin-top:10px"><button class="btn sec" data-act="z31-open">Tentar de novo</button></div>`; return; }
+  box.innerHTML = head + (L.length ? `<div class="card z31-list" style="margin-top:12px">${L.map(z31RowHTML).join('')}</div>` : `<div class="z31-empty"><div>🏔️</div><b>Nenhuma sala aberta com vaga agora</b><span>Que tal abrir a primeira? Quem procurar uma turma vai achar a sua.</span></div>`)
+    + `<div style="margin-top:12px"><button class="btn ${L.length ? 'sec' : ''}" data-act="z31-new">🌎 Criar uma sala aberta</button></div><div class="hint" style="text-align:center">Nas salas abertas, só aparece o seu primeiro nome. Seus quilos nunca aparecem. Segure uma mensagem do chat para denunciar ou bloquear alguém.</div>`;
+}
+// Criar sala: opção de sala aberta
+const __z31NewH = z14NewHTML;
+z14NewHTML = function () {
+  const e = session.z14n || {}; const h = __z31NewH.apply(this, arguments);
+  const tg = `<button class="z19-sw" data-act="z31-new-pub"><span class="grow"><b>🌎 Sala aberta</b><small>${e.pub ? 'Aparece em "Salas abertas" e qualquer pessoa entra direto.' : 'Só entra quem tiver o código ou o link.'}</small></span><span class="z19-tg ${e.pub ? 'on' : ''}"></span></button>`;
+  return h.replace('<button class="z19-sw" data-act="z19-new-appr">', tg + '<button class="z19-sw" data-act="z19-new-appr">');
+};
+const __z31NewOk = ACT['z14-new-ok'];
+ACT['z14-new-ok'] = async function (el) {
+  const pub = !!(session.z14n && session.z14n.pub); if (pub) session.z14n.appr = false;
+  const code0 = S.room.code; const r = await __z31NewOk.apply(this, arguments);
+  if (pub && S.room.code !== code0) { S.room.pub = true; S.room.appr = false; save(); if (typeof zfbRoomUpdate === 'function') zfbRoomUpdate({ pub: true, appr: false }); }
+  return r;
+};
+// Minha sala (dono): ligar e desligar "sala aberta"
+const __z31RoomH = z14RoomHTML;
+z14RoomHTML = function () {
+  const h = __z31RoomH.apply(this, arguments);
+  try { if (!(typeof z19IsOwner === 'function' && z19IsOwner() && ZFB.linked) || S.room.solo) return h; const on = !!S.room.pub;
+    return h.replace('<button class="z19-sw" data-act="z19-appr">', `<button class="z19-sw" data-act="z31-pub"><span class="grow"><b>🌎 Sala aberta</b><small>${on ? 'Aparece em "Salas abertas". Quem achar entra direto.' : 'Desligado: só entra quem tiver o código.'}</small></span><span class="z19-tg ${on ? 'on' : ''}"></span></button><button class="z19-sw" data-act="z19-appr">`); } catch (e) { return h; }
+};
+// No início: quem está sozinho ganha o atalho
+function z31HomeCard() {
+  return `<button class="z31-home" data-act="z31-open"><span class="z31-hi">🌎</span><span class="grow"><b>Ache uma turma para competir</b><small>Entre numa sala aberta e dispute com gente nova, do zero.</small></span><em>›</em></button>`;
+}
+const __z31Dash = dashHTML;
+dashHTML = function () {
+  const h = __z31Dash.apply(this, arguments);
+  try {
+    if (!S || !S.room || S.mode === 'demo') return h; const alone = S.room.solo || S.players.length < 2; if (!alone) return h;
+    if (S.settings && S.settings.z31hide === T()) return h;
+    const i = h.indexOf('id="zCheckBtn"'); if (i < 0) return h + z31HomeCard(); const j = h.indexOf('</button>', i); return j < 0 ? h : h.slice(0, j + 9) + z31HomeCard() + h.slice(j + 9);
+  } catch (e) { return h; }
+};
+// Suas salas: botão de salas abertas
+const __z31Rooms = z19RoomsSheet;
+z19RoomsSheet = function () {
+  const r = __z31Rooms.apply(this, arguments);
+  try { const b = document.querySelector('#overlay [data-act="z14-new"]'); if (b) b.insertAdjacentHTML('beforebegin', `<button class="z14-row" data-act="z31-open"><span>🌎</span><span class="grow"><b>Salas abertas</b><small>Ache uma turma que aceita gente nova</small></span><em>›</em></button>`); } catch (e) { }
+  return r;
+};
+
+Object.assign(ACT, {
+  'z31-open': () => z31Open(),
+  'z31-see': el => { closeSheet(true); z14Preview(el.dataset.c); },
+  'z31-new': () => { closeSheet(true); try { ACT['z14-new'](); } catch (e) { } setTimeout(() => { if (session.z14n) { session.z14n.pub = true; session.z14n.appr = false; if (session.z14n.max < 6) session.z14n.max = 6; if (typeof z14Redraw === 'function') z14Redraw(); } }, 80); },
+  'z31-new-pub': () => { if (typeof z19KeepNew === 'function') z19KeepNew(); const e = session.z14n; if (!e) return; e.pub = !e.pub; if (e.pub) e.appr = false; if (typeof z14Redraw === 'function') z14Redraw(); },
+  'z31-pub': () => { if (!z19IsOwner()) return; S.room.pub = !S.room.pub; if (S.room.pub) S.room.appr = false; save(); zfbRoomUpdate(S.room.pub ? { pub: true, appr: false } : { pub: false }); z14Refresh(); toast(S.room.pub ? 'Sua sala agora aparece em "Salas abertas".' : 'Sua sala saiu de "Salas abertas".', 'violet', '🌎'); }
+});
+ZNEWS.unshift(['🌎', 'Salas abertas', 'Sem turma? Entre numa sala aberta e compita com gente nova, do zero. Ou abra a sua e deixe qualquer pessoa entrar.'],
+  ['🗓️', 'Temporadas com nome', 'Cada temporada pode ter um nome e uma data de fim. O dono da sala muda em "Prêmio e data de fim".']);
+</script>
+<style>
+.z31-load{padding:30px 0;text-align:center;font-weight:800;color:var(--ink-3)}
+.z31-list{padding:4px 12px}.z31-r{display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:12px 0;border-bottom:1.5px solid var(--line);background:none;font:inherit;color:inherit}.z31-r:last-child{border-bottom:0}
+.z31-r b{display:block;font-size:15.5px;font-weight:900}.z31-r small{display:block;font-size:12.5px;color:var(--ink-3);font-weight:700;margin-top:1px}.z31-r small.pz{color:var(--gold-text)}.z31-r em{font-style:normal;font-size:22px;color:var(--ink-3);font-weight:900}
+.z31-empty{text-align:center;padding:22px 10px 6px}.z31-empty>div{font-size:52px;line-height:1}.z31-empty b{display:block;font-size:17px;font-weight:900;margin-top:8px}.z31-empty span{display:block;font-size:13.5px;color:var(--ink-2);margin-top:4px}
+.z31-home{display:flex;gap:12px;align-items:center;width:100%;text-align:left;border:2px solid var(--line);border-radius:20px;padding:13px 14px;margin:12px 0 4px;background:var(--card);font:inherit;color:inherit;box-shadow:0 3px 0 var(--line);cursor:pointer}
+.z31-hi{font-size:30px;line-height:1}.z31-home b{display:block;font-size:15.5px;font-weight:900}.z31-home small{display:block;font-size:12.5px;color:var(--ink-2);font-weight:700;margin-top:2px}.z31-home em{font-style:normal;font-size:22px;color:var(--ink-3);font-weight:900}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 3.8 · Continuar com o Google e confirmação de e-mail
+   - Navegador e iPhone: janela do Google (popup; se o aparelho
+     bloquear, vai e volta pela página do Google)
+   - App Android: login nativo do sistema (contas do celular)
+   - Quem cria conta com e-mail e senha recebe um link para
+     confirmar o e-mail (em português)
+   ========================================================= */
+const Z32_WEB_CLIENT = (typeof window !== 'undefined' && window.Z32_CLIENT_TEST) || "__Z32_CLIENT__";
+const Z32 = { busy: false, init: false };
+const Z32_G = '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
+const z32Native = () => { try { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); } catch (e) { return false; } };
+const z32SL = () => { try { return z32Native() && window.Capacitor.Plugins && window.Capacitor.Plugins.SocialLogin; } catch (e) { return null; } };
+function z32Msg(e) {
+  const c = String((e && e.code) || (e && e.message) || e);
+  if (/popup-closed|cancelled|canceled|USER_CANCELLED|16\]/i.test(c)) return '';
+  if (/network|unavailable/i.test(c)) return 'Sem internet agora. Conecte e tente de novo.';
+  if (/unauthorized-domain/.test(c)) return 'O login com Google ainda não foi liberado para este endereço. Avise o Ryan.';
+  if (/operation-not-allowed/.test(c)) return 'O login com Google ainda não foi ligado no Firebase. Avise o Ryan.';
+  if (/account-exists-with-different-credential/.test(c)) return 'Esse e-mail já tem conta com senha. Entre com e-mail e senha.';
+  if (/28444|Developer console/i.test(c)) return 'O login com Google no app ainda está sendo configurado. Use e-mail e senha por enquanto.';
+  return 'Não consegui entrar com o Google agora. Tente de novo.';
+}
+async function z32Google(el) {
+  if (Z32.busy || ZFB.busy) return; Z32.busy = true; const lbl = el ? el.innerHTML : '';
+  if (el) { el.disabled = true; el.innerHTML = Z32_G + '<span>Abrindo o Google…</span>'; }
+  try {
+    await zfbLoad(); const m = ZFB.m; let cred;
+    const SL = z32SL();
+    if (SL) {
+      if (!/apps\.googleusercontent\.com$/.test(Z32_WEB_CLIENT)) throw { code: '28444' };
+      if (!Z32.init) { await SL.initialize({ google: { webClientId: Z32_WEB_CLIENT, mode: 'online' } }); Z32.init = true; }
+      const r = await SL.login({ provider: 'google', options: { scopes: ['email', 'profile'] } });
+      const tok = r && r.result && r.result.idToken; if (!tok) throw { code: 'cancelled' };
+      cred = await m.signInWithCredential(ZFB.auth, m.GoogleAuthProvider.credential(tok));
+    } else {
+      const pr = new m.GoogleAuthProvider(); try { pr.setCustomParameters({ prompt: 'select_account' }); } catch (e) { }
+      try { cred = await m.signInWithPopup(ZFB.auth, pr, m.browserPopupRedirectResolver); }
+      catch (e) {
+        const c = String((e && e.code) || '');
+        if (/popup-blocked|operation-not-supported|web-storage-unsupported/.test(c) && m.signInWithRedirect) { try { localStorage.setItem('zenit-g-redirect', '1'); } catch (e2) { } await m.signInWithRedirect(ZFB.auth, pr, m.browserPopupRedirectResolver); return; }
+        throw e;
+      }
+    }
+    await z32After(cred);
+  } catch (e) { const t = z32Msg(e); if (t) toast(t, 'red', '⚠️'); }
+  finally { Z32.busy = false; const b = $('[data-act="z32-google"]'); if (b) { b.disabled = false; b.innerHTML = lbl || (Z32_G + '<span>Continuar com o Google</span>'); } }
+}
+async function z32After(cred) {
+  const m = ZFB.m; ZFB.user = cred.user;
+  let isNew = false; try { isNew = !!((m.getAdditionalUserInfo && m.getAdditionalUserInfo(cred)) || {}).isNewUser; } catch (e) { }
+  await zfbAfterLogin(isNew);
+}
+// Volta do login pela página do Google (quando o popup foi bloqueado)
+(function () {
+  let want = false; try { want = localStorage.getItem('zenit-g-redirect') === '1'; } catch (e) { }
+  if (!want) return;
+  try { localStorage.removeItem('zenit-g-redirect'); } catch (e) { }
+  setTimeout(async () => { try { await zfbLoad(); const m = ZFB.m; const r = m.getRedirectResult ? await m.getRedirectResult(ZFB.auth, m.browserPopupRedirectResolver) : null; if (r && r.user) await z32After(r); } catch (e) { const t = z32Msg(e); if (t) toast(t, 'red', '⚠️'); } }, 1500);
+})();
+
+/* ---------- Tela da conta ---------- */
+const __z32Acc = zfbAccountHTML;
+zfbAccountHTML = function (mode) {
+  let h = __z32Acc.apply(this, arguments);
+  if (ZFB.user) {
+    const u = ZFB.user; const pw = (u.providerData || []).some(p => p && p.providerId === 'password'); const g = (u.providerData || []).some(p => p && p.providerId === 'google.com');
+    const badge = g ? `<div class="z32-st ok">${Z32_G}<span>Conta Google</span></div>` : pw ? (u.emailVerified ? '<div class="z32-st ok">✅ <span>E-mail confirmado</span></div>' : `<div class="z32-st warn">✉️ <span class="grow">Confirme o seu e-mail para proteger a conta.</span><button class="zmini" data-act="z32-verify">Enviar link</button></div>`) : '';
+    return h.replace(/(<div class="sub">[^<]*<\/div>)/, '$1' + badge);
+  }
+  const up = mode !== 'in';
+  const g = `<button class="z32-g" data-act="z32-google">${Z32_G}<span>Continuar com o Google</span></button>${up ? `<div class="z32-legal">Ao continuar com o Google, você confirma ter 18 anos ou mais e aceita a <button type="button" class="link-btn inl" data-act="z30-pol">Política de Privacidade e os Termos</button>.</div>` : ''}<div class="z32-or"><span>ou com e-mail e senha</span></div>`;
+  return h.replace('<div class="zseg">', g + '<div class="zseg">');
+};
+// Criar conta com e-mail: manda o link de confirmação em português
+const __z32Go = zfbGo;
+zfbGo = async function (mode) {
+  const r = await __z32Go.apply(this, arguments);
+  try { if (mode === 'up' && ZFB.user && !ZFB.user.emailVerified && ZFB.m && ZFB.m.sendEmailVerification) { try { ZFB.auth.languageCode = 'pt-BR'; } catch (e) { } await ZFB.m.sendEmailVerification(ZFB.user); setTimeout(() => toast(`Mandamos um link para ${ZFB.user.email} confirmar o seu e-mail.`, 'green', '✉️'), 1600); } } catch (e) { }
+  return r;
+};
+async function z32Verify(el) {
+  if (!ZFB.user || !ZFB.m) return; const u = ZFB.user;
+  try {
+    if (u.reload) { await u.reload(); if (ZFB.auth.currentUser && ZFB.auth.currentUser.emailVerified) { ZFB.user = ZFB.auth.currentUser; toast('E-mail confirmado! ✅', 'green', '✉️'); const s = $('#zfbSheet'); if (s) s.innerHTML = zfbAccountHTML(); return; } }
+    try { ZFB.auth.languageCode = 'pt-BR'; } catch (e) { }
+    await ZFB.m.sendEmailVerification(u);
+    if (el) { el.disabled = true; el.textContent = 'Enviado ✓'; }
+    openSheet(`<div style="text-align:center"><div style="font-size:56px;line-height:1">✉️</div><h2 style="margin-top:6px">Link enviado!</h2><div class="sub">Abra o e-mail que mandamos para <b>${esc(u.email || '')}</b> e toque no link para confirmar.</div></div>
+      <div class="card"><b>Não chegou?</b><div class="sub" style="margin-top:4px">Pode levar alguns minutos. Confira também as pastas <b>Spam</b> e <b>Promoções</b>. Se estiver lá, marque como "Não é spam": os próximos chegam direto.</div></div>
+      <div style="margin-top:14px"><button class="btn" data-act="close">Entendi</button></div>`, { center: true });
+  } catch (e) { toast(/too-many/.test(String(e && e.code)) ? 'Muitos pedidos seguidos. Espere uns minutos e tente de novo.' : 'Não consegui mandar o link agora.', 'red', '⚠️'); }
+}
+// Apagar conta: quem entrou com o Google confirma pelo Google (não tem senha)
+if (typeof z30DelOpen === 'function') {
+  const __z32DelOpen = z30DelOpen;
+  z30DelOpen = function () {
+    const r = __z32DelOpen.apply(this, arguments);
+    try { const u = ZFB.user; const g = u && (u.providerData || []).some(p => p && p.providerId === 'google.com') && !(u.providerData || []).some(p => p && p.providerId === 'password'); const f = $('#z30Pass'); if (g && f) f.closest('.field').outerHTML = `<div class="hint">Para confirmar, o Google vai pedir para você escolher a sua conta de novo.</div>`; } catch (e) { }
+    return r;
+  };
+}
+if (typeof z30DelGo === 'function') {
+  const __z32DelGo = z30DelGo;
+  z30DelGo = async function (el) {
+    const u = ZFB.user; const g = u && (u.providerData || []).some(p => p && p.providerId === 'google.com') && !(u.providerData || []).some(p => p && p.providerId === 'password');
+    if (!g) return __z32DelGo.apply(this, arguments);
+    if (String(($('#z30Conf') || {}).value || '').trim().toUpperCase() !== 'APAGAR') return toast('Escreva APAGAR para confirmar.', 'red', '✍️');
+    // Reautentica com o Google e segue o mesmo caminho, sem senha
+    try {
+      const m = ZFB.m; const SL = z32SL();
+      if (SL) { if (!Z32.init) { await SL.initialize({ google: { webClientId: Z32_WEB_CLIENT, mode: 'online' } }); Z32.init = true; } const r = await SL.login({ provider: 'google', options: { scopes: ['email', 'profile'] } }); await m.reauthenticateWithCredential(u, m.GoogleAuthProvider.credential(r.result.idToken)); }
+      else await m.reauthenticateWithPopup(u, new m.GoogleAuthProvider(), m.browserPopupRedirectResolver);
+    } catch (e) { const t = z32Msg(e); if (t) toast(t, 'red', '⚠️'); return; }
+    const orig = ZFB.m.reauthenticateWithCredential; ZFB.m.reauthenticateWithCredential = async () => ({ user: u }); const op = ZFB.m.EmailAuthProvider; ZFB.m.EmailAuthProvider = { credential: () => ({}) };
+    const fake = document.createElement('input'); fake.id = 'z30Pass'; fake.type = 'hidden'; fake.value = 'google'; document.body.appendChild(fake);
+    try { return await __z32DelGo.apply(this, arguments); } finally { ZFB.m.reauthenticateWithCredential = orig; ZFB.m.EmailAuthProvider = op; fake.remove(); }
+  };
+}
+Object.assign(ACT, { 'z32-google': el => z32Google(el), 'z32-verify': el => z32Verify(el), 'z30-del-go': el => z30DelGo(el) });
+ZNEWS.unshift(['🔑', 'Continuar com o Google', 'Agora dá para entrar com a sua conta Google, sem criar senha. Quem usa e-mail e senha recebe um link para confirmar o e-mail.']);
+</script>
+<style>
+.z32-g{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin-top:14px;padding:13px 16px;border-radius:16px;border:2px solid var(--line);background:#fff;color:#1F1F1F;font:inherit;font-weight:800;font-size:16px;box-shadow:0 3px 0 var(--line);cursor:pointer}
+.z32-g svg{width:22px;height:22px;flex:none}.z32-g:active{transform:translateY(2px);box-shadow:0 1px 0 var(--line)}.z32-g:disabled{opacity:.7}
+.z32-legal{font-size:12px;color:var(--ink-3);font-weight:700;text-align:center;margin-top:8px;line-height:1.4}
+.z32-or{display:flex;align-items:center;gap:10px;margin:16px 0 4px;color:var(--ink-3);font-size:12.5px;font-weight:800}.z32-or::before,.z32-or::after{content:'';flex:1;height:2px;background:var(--line)}
+.z32-st{display:flex;align-items:center;gap:8px;margin-top:10px;border-radius:14px;padding:9px 12px;font-size:13.5px;font-weight:800}.z32-st svg{width:18px;height:18px}
+.z32-st.ok{background:var(--green-soft);color:var(--ink)}.z32-st.warn{background:var(--gold-soft);color:var(--ink)}
+</style>
 
 </body>
 </html>

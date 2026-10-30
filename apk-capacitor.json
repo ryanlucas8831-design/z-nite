@@ -12,7 +12,16 @@
   "plugins": {
     "LocalNotifications": {
       "smallIcon": "ic_stat_zenit",
-      "iconColor": "#58CC02"
+      "iconColor": "#5B4CF0"
+    },
+    "SocialLogin": {
+      "providers": {
+        "google": true,
+        "facebook": false,
+        "apple": false,
+        "twitter": false
+      },
+      "logLevel": 1
     }
   }
 }

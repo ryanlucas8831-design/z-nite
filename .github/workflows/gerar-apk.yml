@@ -7,13 +7,21 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
+      - uses: android-actions/setup-android@v3
       - run: bash gerar-apk.sh
+        env:
+          ZENIT_KEYSTORE_B64: ${{ secrets.ZENIT_KEYSTORE_B64 }}
+          ZENIT_KEY_PASSWORD: ${{ secrets.ZENIT_KEY_PASSWORD }}
       - uses: actions/upload-artifact@v4
         with:
           name: Zenit-APK
           path: Zenit.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zenit-PlayStore-AAB
+          path: Zenit.aab
