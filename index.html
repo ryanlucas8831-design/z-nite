@@ -3718,7 +3718,7 @@ function beachMap(key, st, lvNow, pl) {
 /* =========================================================
    ZENIT · Fase 1 (camada sobre a V3)
    ========================================================= */
-const ZV = '3.8';
+const ZV = '3.9';
 /* ---------- Ícones desenhados ---------- */
 const ZI = {
   drop: '<svg viewBox="0 0 32 32"><path d="M16 3 C 16 3 6 14 6 20 a10 10 0 0 0 20 0 C 26 14 16 3 16 3Z" fill="#2EB4E8"/><path d="M11 20 a5 5 0 0 0 5 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/></svg>',
@@ -12838,7 +12838,7 @@ function z28Lock() {
   S.room.final = rec; zfbSilentSave(); if (typeof zfbRoomUpdate === 'function') zfbRoomUpdate({ final: rec });
 }
 const z28IsMe = (r, p) => r.id === p.id || (r.uid && r.uid === z28Uid(p));
-const z28Tie = rows => rows.length > 1 && rows[0].xp === rows[1].xp;
+function z28Tie(rows) { return rows.length > 1 && rows[0].xp === rows[1].xp; }
 const __z28Adopt = zfbAdoptRoom;
 zfbAdoptRoom = function (d) {
   const r = __z28Adopt.apply(this, arguments);
@@ -12872,7 +12872,7 @@ function z28EndCard() {
   const win = rows[0]; const iWon = !tie && z28IsMe(win, p);
   const own = z28Owner(); const on = (S.room.names || {})[typeof z19Owner === 'function' ? z19Owner(S.room) : ''] || '';
   return `<div class="z28-end"><div class="z28-eh"><span class="z28-ei">🏁</span><div class="grow"><small>Temporada ${z28SeasonN()} encerrada</small><b>${tie ? 'Empate no topo!' : iWon ? 'Você venceu a temporada! 👑' : esc(win.name) + ' venceu a temporada!'}</b></div></div>
-    ${z28Mini(rows, p)}${prize ? `<div class="z28-prz">🏆 ${tie ? 'Prêmio em jogo:' : (iWon ? 'Você leva:' : esc(String(win.name).split(' ')[0]) + ' leva:')} <b>${esc(prize)}</b></div>` : ''}
+    ${z28Mini(rows, p)}${prize ? `<div class="z28-prz">🏆 ${!tie && win.bot ? `O robô venceu, então o prêmio <b>${esc(prize)}</b> fica para a próxima temporada.` : `${tie ? 'Prêmio em jogo:' : (iWon ? 'Você leva:' : esc(String(win.name).split(' ')[0]) + ' leva:')} <b>${esc(prize)}</b>`}</div>` : ''}${z28MyAward()}
     <div class="grid2" style="margin-top:12px"><button class="btn gold sm" data-act="z28-fin">🏆 Ver a cerimônia</button><button class="btn sec sm" data-act="z28-card" data-k="temporada">📸 Card do story</button></div>
     ${own ? `<button class="btn sm" data-act="z28-new" style="margin-top:8px">🔄 Começar a temporada ${z28SeasonN() + 1}</button>` : `<div class="zk-note" style="margin-top:8px;text-align:center">Quando ${on ? esc(on.split(' ')[0]) : 'o dono da sala'} começar a próxima temporada, o placar volta para zero.</div>`}</div>`;
 }
@@ -12880,7 +12880,7 @@ const __z28Prize = z6PrizeCard;
 z6PrizeCard = function () {
   if (!S || !S.room) return __z28Prize.apply(this, arguments);
   try {
-    if (z28Ended()) { z28Lock(); return z28EndCard(); }
+    if (z28Ended()) { z28Lock(); z28Award(); return z28EndCard(); }
     if (z28Soon()) return `<div class="z28-soon"><span>🚀</span><div class="grow"><b>A temporada ${z28SeasonN()} começa amanhã!</b><small>O placar da sala volta para zero para todo mundo. Termina em ${fmtDay(S.room.end)}.</small></div></div>` + __z28Prize.apply(this, arguments);
     if (T() === S.room.end && S.players.length > 1) return `<div class="z28-last">🏁 <b>Último dia da temporada!</b> O placar fecha hoje à meia-noite.</div>` + __z28Prize.apply(this, arguments);
   } catch (e) { }
@@ -12898,10 +12898,41 @@ rankHTML = function () {
   return h;
 };
 
+/* ---------- Recompensas do fim da temporada (XP e troféus) ---------- */
+const Z28_TROF = [['ouro', '🥇', 'Troféu de ouro', 100], ['prata', '🥈', 'Troféu de prata', 60], ['bronze', '🥉', 'Troféu de bronze', 40]];
+const Z28_BOTXP = { facil: 25, medio: 40, dificil: 60 };
+function z28Award() {
+  try {
+    if (!z28Ended()) return; const p = me(); if (!p || p.remote) return; z28Lock();
+    const f = S.room.final || {}; const rows = z28Rows(); const i = rows.findIndex(r => z28IsMe(r, p)); if (i < 0) return;
+    const key = S.room.code + '|' + (f.end || S.room.end); p.zch = p.zch || {}; p.trofeus = p.trofeus || []; if (p.trofeus.some(x => x.k === key)) return;
+    const day = addDays(f.end || S.room.end, 1); const tie = z28Tie(rows); const pos = tie && rows[0].xp === rows[i].xp ? 0 : i;
+    const tr = Z28_TROF[pos] || null; const beat = rows.slice(i + 1).filter(r => r.bot).map(r => { const b = Object.values(S.room.bots || {}).find(x => 'bot-' + x.id === r.id) || {}; return { name: String(r.name).replace(' 🤖', ''), lvl: b.lvl || 'medio' }; });
+    if (tr) p.zch['temp|' + key] = { date: day, xp: tr[3], cat: 'conquistas' };
+    beat.forEach((b, k) => { p.zch['tbot|' + key + '|' + k] = { date: day, xp: Z28_BOTXP[b.lvl] || 40, cat: 'conquistas' }; });
+    p.trofeus.push({ k: key, n: f.n || z28SeasonN(), room: f.name || z28RoomName(), start: f.start || S.room.start, end: f.end || S.room.end, pos: i + 1, of: rows.length, t: tr ? tr[0] : null, beat });
+    save();
+  } catch (e) { }
+}
+function z28MyAward() {
+  try {
+    const p = me(); const f = S.room.final || {}; const key = S.room.code + '|' + (f.end || S.room.end); const x = (p.trofeus || []).find(y => y.k === key); if (!x) return '';
+    const tr = Z28_TROF.find(t => t[0] === x.t); const parts = [];
+    if (tr) parts.push(`${tr[1]} ${tr[2]} · +${tr[3]} XP`);
+    x.beat.forEach(b => parts.push(`🤖 Derrotou ${esc(b.name)} · +${Z28_BOTXP[b.lvl] || 40} XP`));
+    return parts.length ? `<div class="z28-aw"><small>Suas recompensas</small>${parts.map(t => `<b>${t}</b>`).join('')}</div>` : '';
+  } catch (e) { return ''; }
+}
+// Estante de troféus no Perfil
+function z28ShelfHTML(p) {
+  const L = (p.trofeus || []).slice().reverse(); if (!L.length) return '';
+  return `<div class="card z28-shelf"><h3>🏆 Estante de troféus</h3><div class="z28-tr">${L.map(x => { const tr = Z28_TROF.find(t => t[0] === x.t); return `<div class="${x.t || 'part'}"><span>${tr ? tr[1] : '🎖️'}</span><b>${x.pos}º de ${x.of}</b><small>${esc(x.room)} · T${x.n}</small>${x.beat.length ? `<em>🤖 ×${x.beat.length}</em>` : ''}</div>`; }).join('')}</div></div>`;
+}
+
 /* ---------- Cerimônia de encerramento ---------- */
 function z28Stars(n) { let st = ''; let a = 7; for (let i = 0; i < n; i++) { a = (a * 9301 + 49297) % 233280; const x = a / 2332.8; a = (a * 9301 + 49297) % 233280; const y = a / 2332.8; st += `<i style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%;animation-delay:${(i % 9) * .3}s;${i % 6 ? '' : 'width:3px;height:3px'}"></i>`; } return st; }
 function z28FinOpen() {
-  const rows = z28Rows(); if (!rows.length) return; z28Lock();
+  const rows = z28Rows(); if (!rows.length) return; z28Lock(); z28Award();
   closeSheet(true); const old = $('#z28f'); if (old) old.remove();
   const f = S.room.final || {}; const el = document.createElement('div'); el.id = 'z28f'; el.className = 'z28f'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true');
   el.innerHTML = `<div class="z28f-sky">${z28Stars(70)}</div><canvas id="zescFx" class="zesc-fx"></canvas>
@@ -12924,7 +12955,7 @@ function z28FinStep(n) {
     const rest = rows.slice(3).map((r, i) => `<div class="z28-rr ${z28IsMe(r, p) ? 'me' : ''}"><em>${i + 4}º</em><b>${esc(r.name)}</b><span>${fmtInt(r.xp)} XP</span></div>`).join('');
     const win = rows[0]; const iWon = !tie && z28IsMe(win, p);
     b.innerHTML = `<div class="z28-pod">${col(rows[1], 2)}${col(rows[0], 1)}${col(rows[2], 3)}</div>${rest ? `<div class="z28-rest">${rest}</div>` : ''}
-      <div class="z28f-card z28-win"><b>${tie ? 'Empate no topo! 🤝' : iWon ? 'Você venceu a temporada! 👑' : esc(win.name) + ' venceu a temporada! 👑'}</b>${prize ? `<div class="z28-chest">${typeof chestSVG === 'function' ? chestSVG('open') : '🎁'}<span>${tie ? 'O prêmio fica para vocês decidirem:' : (iWon ? 'Você leva:' : esc(String(win.name).split(' ')[0]) + ' leva:')}</span><em>${esc(prize)}</em></div>` : ''}
+      <div class="z28f-card z28-win"><b>${tie ? 'Empate no topo! 🤝' : iWon ? 'Você venceu a temporada! 👑' : esc(win.name) + ' venceu a temporada! 👑'}</b>${prize ? `<div class="z28-chest">${typeof chestSVG === 'function' ? chestSVG('open') : '🎁'}<span>${!tie && win.bot ? 'O robô venceu! O prêmio fica para a próxima temporada:' : tie ? 'O prêmio fica para vocês decidirem:' : (iWon ? 'Você leva:' : esc(String(win.name).split(' ')[0]) + ' leva:')}</span><em>${esc(prize)}</em></div>` : ''}
       <button class="btn gold" data-act="z28-fin-go" data-n="2" style="margin-top:14px">Ver os meus números</button></div>`;
     setTimeout(() => { if (!$('#z28f')) return; sfx('level'); confetti(160); try { z12Fireworks(3800); } catch (e) { } }, 2300);
     return;
@@ -12934,7 +12965,7 @@ function z28FinStep(n) {
   const from = (() => { const j = (S.room.joined || {})[z28Uid(p)] || ''; const st = f.start || S.room.start; return j > st ? j : st; })(); const end = f.end || S.room.end;
   const A = z12Stats(p, from, end); const x1 = z28X1Wins(p, from, end);
   b.innerHTML = `<div class="z28f-card in"><small class="z28-k">Os seus números</small><h2>${i < 0 ? 'Você entrou depois do fim' : i === 0 && !tie ? 'Campeão da temporada 👑' : `${i + 1}º lugar de ${rows.length}`}</h2>
-    <div class="z28-grid"><div><b>${fmtInt(mine ? mine.xp : 0)}</b><span>XP na sala</span></div><div><b>${A.tr}</b><span>${plural(A.tr, 'treino', 'treinos')}</span></div><div><b>${zUL(A.agua / 1000)} L</b><span>de água</span></div><div><b>🔥 ${A.best}</b><span>maior sequência</span></div><div><b>${A.comp}</b><span>${plural(A.comp, 'dia completo', 'dias completos')}</span></div><div><b>${x1}</b><span>${plural(x1, 'X1 vencido', 'X1 vencidos')}</span></div></div>
+    <div class="z28-grid"><div><b>${fmtInt(mine ? mine.xp : 0)}</b><span>XP na sala</span></div><div><b>${A.tr}</b><span>${plural(A.tr, 'treino', 'treinos')}</span></div><div><b>${zUL(A.agua / 1000)} L</b><span>de água</span></div><div><b>🔥 ${A.best}</b><span>maior sequência</span></div><div><b>${A.comp}</b><span>${plural(A.comp, 'dia completo', 'dias completos')}</span></div><div><b>${x1}</b><span>${plural(x1, 'X1 vencido', 'X1 vencidos')}</span></div></div>${z28MyAward()}
     <button class="btn gold" data-act="z28-card" data-k="temporada" style="margin-top:14px">📸 Card para o story</button>
     <div class="grid2" style="margin-top:8px"><button class="btn sec sm" data-act="z28-fin-retro">🏔️ Minha retrospectiva</button><button class="btn gray sm" data-act="z28-fin-x">Fechar</button></div></div>`;
 }
@@ -13123,7 +13154,7 @@ function z28GalHTML() {
     <div style="margin-top:12px"><button class="btn gray" data-act="close">Fechar</button></div>`;
 }
 const __z28Prof = profileHTML;
-profileHTML = function () { const h = __z28Prof.apply(this, arguments); return h.replace(/(<button class="btn gold" data-act="retro">[^<]*<\/button>)/, `$1<button class="btn sec" data-act="z28-gal" style="margin-top:8px">📸 Cards para o story</button>`); };
+profileHTML = function () { let h = __z28Prof.apply(this, arguments); try { const sh = z28ShelfHTML(me()); if (sh) h = h.replace(/(<button class="btn gold" data-act="retro">)/, sh + '$1'); } catch (e) { } return h.replace(/(<button class="btn gold" data-act="retro">[^<]*<\/button>)/, `$1<button class="btn sec" data-act="z28-gal" style="margin-top:8px">📸 Cards para o story</button>`); };
 // Botão nos momentos certos
 const __z28Lv = openLevelUp;
 openLevelUp = function (lv, preview) {
@@ -13227,6 +13258,8 @@ ZNEWS.unshift(['🏁', 'Final de temporada', 'No dia seguinte ao fim da sala, o 
 .z28-rest{background:rgba(255,255,255,.08);border-radius:18px;padding:4px 12px;margin-bottom:12px;opacity:0;animation:z28up .5s 2.4s both}
 .z28-rr{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1);font-weight:800;font-size:14px}.z28-rr:last-child{border-bottom:0}.z28-rr em{font-style:normal;color:#FFB91F;width:28px}.z28-rr b{flex:1}.z28-rr.me b{color:#FFE07A}
 .z28-win{opacity:0;animation:z28up .6s 2.5s both}.z28-win>b{display:block;font-size:21px;font-weight:900;line-height:1.25}
+.z28-aw{margin-top:12px;background:rgba(255,185,31,.14);border:1.5px solid rgba(255,185,31,.4);border-radius:16px;padding:10px 12px;text-align:center}.z28-aw small{display:block;font-size:11.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#FFB91F}.z28-aw b{display:block;font-size:14.5px;font-weight:900;margin-top:4px}
+.z28-shelf h3{margin-bottom:8px}.z28-tr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.z28-tr>div{border-radius:14px;padding:10px 6px;text-align:center;background:var(--surface-2);position:relative}.z28-tr span{font-size:30px;line-height:1}.z28-tr b{display:block;font-size:13.5px;font-weight:900;margin-top:4px}.z28-tr small{display:block;font-size:11px;color:var(--ink-3);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.z28-tr em{position:absolute;top:4px;right:6px;font-style:normal;font-size:11px;font-weight:900}.z28-tr .ouro{background:#FFF4CC}.z28-tr .prata{background:#EEF1F6}.z28-tr .bronze{background:#FBEADB}
 .z28-chest{display:flex;flex-direction:column;align-items:center;margin-top:10px}.z28-chest svg{width:70px;height:70px}.z28-chest span{font-size:13px;font-weight:800;color:#D9DBFF;margin-top:4px}.z28-chest em{font-style:normal;font-size:17px;font-weight:900;color:#FFE07A}
 .z28-k{display:block;font-size:12px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:#FFB91F}
 .z28-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}.z28-grid>div{background:rgba(255,255,255,.1);border-radius:14px;padding:10px 4px}.z28-grid b{display:block;font-size:18px;font-weight:900}.z28-grid span{display:block;font-size:11.5px;font-weight:800;color:#D9DBFF;margin-top:2px}
@@ -13817,6 +13850,274 @@ ZNEWS.unshift(['🔑', 'Continuar com o Google', 'Agora dá para entrar com a su
 .z32-or{display:flex;align-items:center;gap:10px;margin:16px 0 4px;color:var(--ink-3);font-size:12.5px;font-weight:800}.z32-or::before,.z32-or::after{content:'';flex:1;height:2px;background:var(--line)}
 .z32-st{display:flex;align-items:center;gap:8px;margin-top:10px;border-radius:14px;padding:9px 12px;font-size:13.5px;font-weight:800}.z32-st svg{width:18px;height:18px}
 .z32-st.ok{background:var(--green-soft);color:var(--ink)}.z32-st.warn{background:var(--gold-soft);color:var(--ink)}
+</style>
+
+<script>
+'use strict';
+/* =========================================================
+   Zenit 3.9
+   1) Rivais virtuais 🤖: Fácil, Médio e Difícil. Todos se baseiam
+      no ritmo das pessoas da sala (as últimas 2 semanas), então a
+      disputa é sempre apertada. Agem ao longo do dia, nunca levam
+      prêmio, no máximo 2 por sala. Ficam a temporada toda ou só
+      um duelo da semana.
+   2) Novidades: só o que mudou desde a sua última versão, por
+      versão, em cada aparelho, e o histórico no Perfil.
+   ========================================================= */
+const Z33 = { cache: null, sig: '', newsBase: null, tries: 0 };
+
+/* ---------- Mascote do robô ---------- */
+PET_ART.robo = {
+  a: { cx: 60, eye: 70, mouth: 88, head: 40, hw: 44, neck: [60, 106], spread: 13 },
+  body: g => `<path d="M60 14 V 30" stroke="#5B6BFF" stroke-width="4" stroke-linecap="round"/><circle cx="60" cy="12" r="6" fill="#FFB91F" stroke="#C98500" stroke-width="2"/>
+    <rect x="18" y="30" width="84" height="80" rx="24" fill="url(#${g})" stroke="#3A44B8" stroke-width="2.5"/>
+    <rect x="28" y="52" width="64" height="40" rx="14" fill="#1E2340" opacity=".88"/>
+    <rect x="10" y="58" width="9" height="22" rx="4" fill="#8F9BFF" stroke="#3A44B8" stroke-width="2"/><rect x="101" y="58" width="9" height="22" rx="4" fill="#8F9BFF" stroke="#3A44B8" stroke-width="2"/>
+    <circle cx="30" cy="40" r="2.6" fill="#3A44B8"/><circle cx="90" cy="40" r="2.6" fill="#3A44B8"/>
+    <ellipse cx="38" cy="38" rx="7" ry="4" fill="#fff" opacity=".35"/>`,
+  grad: ['#B9C2FF', '#6E7BFF']
+};
+const Z33_ROBO = { id: 'robo', name: 'Robô', a: 'o', color: '#6E7BFF', vibe: 'rival virtual' };
+const __z33PetOf = petOf;
+petOf = function (p) { return p && p.pet === 'robo' ? Z33_ROBO : __z33PetOf.apply(this, arguments); };
+
+/* ---------- Níveis ---------- */
+const Z33_LV = {
+  facil: { t: 'Fácil', ic: '🟢', f: 0.9, d: 'Anda colado em você, um pouquinho atrás. Dá para ganhar, mas sem relaxar.', names: ['Robozinho', 'Bip', 'Tico-Tico'], base: 16 },
+  medio: { t: 'Médio', ic: '🟡', f: 1.0, d: 'No seu nível. Disputa de igual para igual, cada dia conta.', names: ['Max Turbo', 'Nina Byte', 'Zé Motor'], base: 20 },
+  dificil: { t: 'Difícil', ic: '🔴', f: 1.12, d: 'Sempre um pouco à sua frente. Para ganhar, você precisa melhorar.', names: ['Titã', 'Ômega', 'Vulcão'], base: 24 }
+};
+// Número "aleatório" igual em todos os celulares da sala
+function z33Rnd(seed) { let h = 2166136261; for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619); } return () => { h += 0x6D2B79F5; let t = h; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const z33Bots = () => Object.values((S && S.room && S.room.bots) || {}).filter(b => b && b.id && Z33_LV[b.lvl]);
+function z33Active(b, t) {
+  t = t || T(); if (b.since > t) return false;
+  if (b.mode === 'week' && b.until && t > b.until) return false;
+  if (b.warm && (S.room.members || []).length >= 3) return false;
+  return true;
+}
+const z33Humans = () => S.players.filter(q => !q.bot);
+// Ritmo das pessoas: XP médio por dia nas 2 semanas antes de cada dia
+function z33Bases(from, to) {
+  const out = {}; const hs = z33Humans(); if (!hs.length) return out; const y = addDays(to, -1);
+  const infos = hs.map(q => xpInfo(q, y < S.room.start ? S.room.start : y).byDate);
+  for (const s of range(from, to)) {
+    const a = addDays(s, -14), b = addDays(s, -1); let sum = 0, n = 0;
+    infos.forEach(bd => { let x = 0, c = 0; for (const d of range(a < S.room.start ? S.room.start : a, b)) { x += bd[d] || 0; c++; } if (c >= 3) { sum += x / c; n++; } });
+    out[s] = n ? sum / n : null;
+  }
+  return out;
+}
+// Um dia do robô: hábitos de verdade (para aparecer água, treino…) + o resto do XP para ficar no ritmo
+function z33Day(b, s, t, nowM, base) {
+  const L = Z33_LV[b.lvl]; const r = z33Rnd(`${S.room.code}|${b.id}|${s}`); const target = Math.max(2, (base != null ? base : L.base) * L.f * (0.92 + r() * 0.16));
+  const e = Math.max(0.05, Math.min(0.95, target / 70));
+  const d = {}; const today = s === t; const at = m => !today || m <= nowM;
+  const wGoal = 2500; const wAt = 560 + Math.floor(r() * 560); const okW = r() < e;
+  if (okW && at(wAt)) { d.water = wGoal; d.waterGoalAt = wAt; } else d.water = today ? Math.round(wGoal * Math.max(0, Math.min(1, (nowM - 420) / 720)) * (okW ? 1 : 0.6) / 250) * 250 : Math.round(wGoal * (0.4 + r() * 0.4) / 250) * 250;
+  const meals = {}; [['cafe', 480], ['almoco', 750], ['lanche', 960], ['jantar', 1200]].forEach(([k, m]) => { const ok = r() < Math.min(0.98, e + 0.08); if (at(m + Math.floor(r() * 40))) meals[k] = ok ? 'ok' : 'off'; }); d.meals = meals;
+  const wk = r() < e * 0.85; const wM = r() < 0.5 ? 400 + Math.floor(r() * 90) : 1080 + Math.floor(r() * 120);
+  if (wk && at(wM)) d.workout = { type: 'A', at: wM, full: r() < e, min: 40 + Math.floor(r() * 30), bot: 1 }; else if (!wk && !today && r() < 0.5) d.rest = true;
+  let habit = (d.workout ? (d.workout.full ? 10 : 5) : 0) + (d.waterGoalAt ? 5 : 0) + (Object.values(meals).filter(v => v === 'ok').length === 4 ? 5 : 0);
+  const frac = today ? Math.max(0, Math.min(1, (nowM - 420) / 900)) : 1;
+  const bonus = Math.max(0, Math.round(target * frac - habit));
+  return { d, bonus, want: Math.round(target * frac), ev: { water: d.waterGoalAt ? wAt : null, workout: d.workout ? wM : null } };
+}
+function z33Player(b, t) {
+  const nowM = nowMin(); const p = { id: 'bot-' + b.id, bot: 1, remote: true, uid: 'bot:' + b.id, name: b.name + ' 🤖', pet: 'robo', startWeight: 100, goalWeight: 100, waterGoal: 2500, coins: 0, freezes: 0, owned: [], equip: { head: null, face: null, neck: null }, menu: { semana: {}, fds: {} }, days: {}, weighins: [], bonus: [], challengeDone: {}, ach: {}, photos: [], lastLevel: 0, pin: '', since: b.since, lvl: b.lvl, mode: b.mode, until: b.until, botEv: {}, want: {} };
+  const from = b.since > S.room.start ? b.since : S.room.start; const end = b.mode === 'week' && b.until && b.until < t ? b.until : t;
+  const BS = z33Bases(from, end);
+  for (const s of range(from, end)) { const x = z33Day(b, s, t, nowM, BS[s] == null ? null : BS[s]); p.days[s] = x.d; p.want[s] = x.want; if (s === t) p.botEv = x.ev; }
+  // O XP de verdade do robô (hábitos, sequência, duelos) é calculado primeiro; o "ritmo" completa o que falta para ficar colado na turma
+  try {
+    const S0 = S.players; S.players = S0.filter(q => !q.bot && q.id !== p.id).concat([p]); CACHE = new Map();
+    const bd = xpInfo(p, end).byDate; S.players = S0; CACHE = new Map();
+    p.bonus = []; for (const s of range(from, end)) { const add = Math.round((p.want[s] || 0) - (bd[s] || 0)); if (add > 0) p.bonus.push({ date: s, xp: add, k: 'ritmo' }); }
+  } catch (e) { }
+  return p;
+}
+// Coloca os robôs da sala na lista de jogadores (sem salvar na nuvem)
+function z33Sync() {
+  try {
+    if (!S || !S.room || !Array.isArray(S.players)) return; const t = T();
+    const bots = z33Bots().filter(b => z33Active(b, t) || (b.mode === 'week' && b.until && b.until < t && b.since <= t && addDays(b.until, 7) >= t && false));
+    const humSig = z33Humans().map(q => q.id + ':' + Object.keys(q.days || {}).length).join(',');
+    const sig = `${S.room.code}|${t}|${Math.floor(nowMin() / 10)}|${bots.map(b => b.id + b.lvl + b.mode + (b.until || '')).join(',')}|${humSig}`;
+    const hum = S.players.filter(q => !q.bot);
+    if (!bots.length) { if (hum.length !== S.players.length) { S.players = hum; CACHE = new Map(); } return; }
+    if (Z33.sig !== sig || !Z33.cache) { const tmp = S.players; S.players = hum; CACHE = new Map(); try { Z33.cache = bots.map(b => z33Player(b, t)); } finally { S.players = tmp; } Z33.sig = sig; }
+    S.players = hum.concat(Z33.cache); CACHE = new Map();
+  } catch (e) { }
+}
+const __z33Render = render; render = function () { z33Sync(); return __z33Render.apply(this, arguments); };
+const __z33RM = renderMain; renderMain = function () { z33Sync(); return __z33RM.apply(this, arguments); };
+if (typeof z18ApplyPlayers === 'function') { const __z33AP = z18ApplyPlayers; z18ApplyPlayers = function () { const r = __z33AP.apply(this, arguments); Z33.sig = ''; z33Sync(); return r; }; }
+const __z33Adopt = zfbAdoptRoom;
+zfbAdoptRoom = function (d) { const r = __z33Adopt.apply(this, arguments); try { if (d && S && S.room && 'bots' in d) { S.room.bots = d.bots || {}; Z33.sig = ''; z33Sync(); } } catch (e) { } return r; };
+// Robôs nunca vão para a nuvem
+const __z33Save = zfbSilentSave; zfbSilentSave = function () { const all = S && S.players; if (all) S.players = all.filter(q => !q.bot); try { return __z33Save.apply(this, arguments); } finally { if (all) S.players = all; } };
+const __z33Save2 = save; save = function () { const all = S && S.players; if (all) S.players = all.filter(q => !q.bot); try { return __z33Save2.apply(this, arguments); } finally { if (S && all) S.players = all.filter(q => !q.bot).concat(all.filter(q => q.bot)); } };
+// Placar da sala: o robô conta a partir do dia em que entrou
+if (typeof z27From === 'function') { const __z33From = z27From; z27From = function (q) { if (q && q.bot) { const st = S.room.start; return q.since > st ? q.since : st; } return __z33From.apply(this, arguments); }; }
+
+/* ---------- Chamar e tirar rival ---------- */
+const z33CanEdit = () => { try { if (!(typeof z18Multi === 'function' && z18Multi() && ZFB.linked)) return true; return typeof z19IsOwner === 'function' ? z19IsOwner() : true; } catch (e) { return true; } };
+function z33Sunday(t) { const w = weekKey(t); return addDays(w, 6); }
+function z33AddOpen() {
+  const act = z33Bots().filter(b => z33Active(b));
+  if (!z33CanEdit()) return toast('Só o dono da sala chama rivais virtuais.', 'violet', '👑');
+  if (act.length >= 2) return toast('A sala já tem 2 rivais virtuais. Tire um para chamar outro.', 'red', '🤖');
+  if (typeof z28Ended === 'function' && z28Ended()) return toast('A temporada acabou. Comece a próxima para chamar rivais.', 'violet', '🏁');
+  session.z33 = session.z33 || { lvl: 'medio', mode: 'week' }; z33AddPaint(true);
+}
+function z33AddPaint(open) {
+  const s = session.z33; const t = T(); const sun = z33Sunday(t);
+  const h = `<div id="z33Add"><h2>🤖 Chamar um rival virtual</h2><div class="sub">Um competidor robô, sempre com o selo 🤖. Ele se baseia no ritmo da sala nas últimas 2 semanas, então a disputa fica apertada.</div>
+    <div class="z33-lv">${Object.entries(Z33_LV).map(([k, L]) => `<button class="${s.lvl === k ? 'on' : ''}" data-act="z33-lv" data-v="${k}"><span class="z33-li">${L.ic}</span><span class="grow"><b>${L.t}</b><small>${L.d}</small></span></button>`).join('')}</div>
+    <div class="h2" style="margin-top:14px">Por quanto tempo?</div>
+    <div class="zseg"><button class="${s.mode === 'week' ? 'on' : ''}" data-act="z33-md" data-v="week">Duelo da semana</button><button class="${s.mode === 'season' ? 'on' : ''}" data-act="z33-md" data-v="season">A temporada toda</button></div>
+    <div class="hint">${s.mode === 'week' ? `Fica até domingo (${fmtDay(sun)}). Se você terminar a semana na frente dele, ganha +30 XP.` : `Fica até o fim da temporada (${fmtDay(S.room.end)}). Disputa o placar geral e pode até ser o campeão. Se ele vencer, o prêmio combinado fica para a próxima temporada.`}</div>
+    <div style="margin-top:12px"><button class="btn" data-act="z33-add-go">Chamar rival ${Z33_LV[s.lvl].ic} ${Z33_LV[s.lvl].t}</button></div></div>`;
+  if (open || !$('#z33Add')) openSheet(h, {}); else $('#z33Add').outerHTML = h;
+}
+function z33AddGo() {
+  const s = session.z33; const L = Z33_LV[s.lvl]; const t = T(); const used = new Set(z33Bots().map(b => b.name));
+  const name = L.names.find(n => !used.has(n)) || L.names[0] + ' ' + (used.size + 1);
+  const id = 'b' + Date.now().toString(36);
+  const b = { id, lvl: s.lvl, name, mode: s.mode, since: t, until: s.mode === 'week' ? z33Sunday(t) : S.room.end, by: (typeof z14Uid === 'function' ? z14Uid() : '') || 'local', at: Date.now() };
+  S.room.bots = Object.assign({}, S.room.bots || {}, { [id]: b }); save();
+  if (typeof zfbRoomUpdate === 'function' && ZFB.linked) zfbRoomUpdate({ ['bots.' + id]: b });
+  if (typeof z18Post === 'function' && typeof zfbOn === 'function' && zfbOn() && ZFB.linked) z18Post(S.room.code, { auto: 1, ic: '🤖', t: `${name} entrou na sala como rival virtual (${L.t}) · ${s.mode === 'week' ? 'duelo até domingo' : 'até o fim da temporada'}`, ts: Date.now() }, 'a-bot-' + id).catch(() => { });
+  Z33.sig = ''; closeSheet(true); renderMain(true); confetti(50); toast(`${name} 🤖 entrou na disputa! Bora?`, 'violet', '🤖');
+}
+function z33Remove(id) {
+  if (!z33CanEdit()) return; const b = (S.room.bots || {})[id]; if (!b) return;
+  const nb = Object.assign({}, S.room.bots); delete nb[id]; S.room.bots = nb; save();
+  if (typeof zfbRoomUpdate === 'function' && ZFB.linked && ZFB.m) zfbRoomUpdate({ ['bots.' + id]: ZFB.m.deleteField() });
+  Z33.sig = ''; closeSheet(true); renderMain(true); toast(`${b.name} saiu da sala.`, 'violet', '🤖');
+}
+// Duelo da semana: quem vencer o robô ganha +30 XP (uma vez)
+function z33Results() {
+  try {
+    const p = me(); if (!p || p.remote) return; const t = T(); p.zch = p.zch || {}; let ch = false; const S0 = S.players;
+    for (const b of z33Bots()) {
+      if (b.mode !== 'week' || !b.until || b.until >= t || b.since > b.until) continue; const k = 'bot|' + b.id; if (p.zch[k] || (p.z33seen || {})[b.id]) continue;
+      const tmp = z33Player(b, b.until); S.players = S0.filter(q => !q.bot).concat([tmp]); CACHE = new Map();
+      const a = typeof z27RX === 'function' ? z27RX(p, b.until, b.since) : xpBetween(p, b.since, b.until); const c = typeof z27RX === 'function' ? z27RX(tmp, b.until, b.since) : xpBetween(tmp, b.since, b.until);
+      S.players = S0; CACHE = new Map();
+      p.z33seen = p.z33seen || {}; p.z33seen[b.id] = t;
+      if (a > c) { p.zch[k] = { date: b.until, xp: 30, cat: 'duelo' }; setTimeout(() => toast(`Você venceu o duelo da semana contra ${b.name} 🤖! +30 XP`, 'gold', '🏆'), 1200); }
+      else setTimeout(() => toast(`${b.name} 🤖 venceu o duelo da semana (${fmtInt(c)} × ${fmtInt(a)} XP). Chama de novo?`, 'violet', '🤖'), 1200);
+      ch = true;
+    }
+    if (ch) save();
+  } catch (e) { }
+}
+setTimeout(() => { try { z33Results(); } catch (e) { } }, 3500);
+
+/* ---------- Telas: minha sala, placar e chat ---------- */
+function z33RoomListHTML() {
+  const t = T(); const act = z33Bots().filter(b => z33Active(b, t)); const can = z33CanEdit();
+  return `<div class="h2">🤖 Rivais virtuais</div><div class="card z33-card" style="margin-top:0">${act.map(b => { const L = Z33_LV[b.lvl]; return `<div class="z33-row"><span class="z33-av">${petSVG('robo', { mood: 'feliz', stage: 1, anim: false })}</span><div class="grow"><b>${esc(b.name)} 🤖</b><small>${L.ic} ${L.t} · ${b.mode === 'week' ? 'duelo até ' + fmtDay(b.until) : 'até o fim da temporada'}${b.warm ? ' · sai quando a sala tiver 3 pessoas' : ''}</small></div>${can ? `<button class="zmini" data-act="z33-rm" data-id="${esc(b.id)}">Tirar</button>` : ''}</div>`; }).join('')}
+    ${act.length < 2 && can ? `<button class="z14-row" data-act="z33-add"><span>🤖</span><span class="grow"><b>Chamar um rival virtual</b><small>Fácil, Médio ou Difícil. Sempre competitivo.</small></span><em>›</em></button>` : ''}${!act.length && !can ? '<div class="sub">O dono da sala pode chamar rivais virtuais.</div>' : ''}
+    <div class="hint">Rival virtual pode ser campeão. Terminar na frente dele no fim da temporada vale XP extra. Ele não ocupa vaga de pessoa.</div></div>`;
+}
+const __z33Room = z14RoomHTML;
+z14RoomHTML = function () { const h = __z33Room.apply(this, arguments); try { const i = h.indexOf('<div class="h2">Quem está na sala</div>'); const add = z33RoomListHTML(); return i > -1 ? h.slice(0, i) + add + h.slice(i) : h + add; } catch (e) { return h; } };
+// Quem está sozinho: atalho para chamar um rival
+if (typeof z31HomeCard === 'function') {
+  const __z33HC = z31HomeCard;
+  z31HomeCard = function () { const h = __z33HC.apply(this, arguments); if (z33Bots().some(b => z33Active(b))) return h; return h + `<button class="z31-home z33-home" data-act="z33-add"><span class="z31-hi">🤖</span><span class="grow"><b>Desafie um rival virtual</b><small>Comece a competir agora, no seu ritmo. Fácil, Médio ou Difícil.</small></span><em>›</em></button>`; };
+}
+// Placar: o robô pode ser campeão (fica marcado como robô)
+if (typeof z28Rows === 'function') {
+  const __z33Rows = z28Rows;
+  z28Rows = function () { const rows = __z33Rows.apply(this, arguments); return rows.map(r => r && (r.bot || String(r.id || '').startsWith('bot-')) ? Object.assign({}, r, { bot: true }) : r); };
+}
+// Chat: o robô comenta o dia dele (só na tela, com o selo 🤖)
+if (typeof z19ListHTML === 'function') {
+  const __z33List = z19ListHTML;
+  z19ListHTML = function () {
+    const code = S.room.code; const orig = Z18.posts[code]; if (!orig) return __z33List.apply(this, arguments);
+    const t = T(); const day0 = new Date(); day0.setHours(0, 0, 0, 0); const ex = [];
+    for (const q of S.players.filter(x => x.bot)) { const ev = q.botEv || {}; const nm = String(q.name).replace(' 🤖', ''); if (ev.water) ex.push({ id: 'bot-w-' + q.id + t, auto: 1, ic: '🤖', t: `${nm} bateu a meta de água. Sua vez!`, ts: day0.getTime() + ev.water * 60000 }); if (ev.workout) ex.push({ id: 'bot-t-' + q.id + t, auto: 1, ic: '🤖', t: `${nm} treinou agora. Bora?`, ts: day0.getTime() + ev.workout * 60000 }); }
+    if (!ex.length) return __z33List.apply(this, arguments);
+    Z18.posts[code] = orig.concat(ex); try { return __z33List.apply(this, arguments); } finally { Z18.posts[code] = orig; }
+  };
+}
+// X1 contra o robô: só desafios medidos pelo app, e ele aceita na hora
+const __z33Send = ACT['z26-send'];
+if (__z33Send) ACT['z26-send'] = function () {
+  const s = session.z26n || {}; const tgt = s.to && s.to !== '*' ? S.players.find(q => q.id === s.to) : null;
+  if (tgt && tgt.bot && s.kind === 'custom') return toast('Rival virtual só topa desafios medidos pelo app (📊).', 'violet', '🤖');
+  const before = Object.keys(S.room.x1 || {}); const r = __z33Send.apply(this, arguments);
+  try { if (tgt && tgt.bot) { const id = Object.keys(S.room.x1 || {}).find(k => !before.includes(k)); const x = id && S.room.x1[id]; if (x && x.to === tgt.id) { x.status = 'accepted'; z10X1Write(x, { ['x1.' + id + '.status']: 'accepted' }); toast(`${String(tgt.name).replace(' 🤖', '')} 🤖 aceitou o X1 na hora!`, 'fire', '⚔️'); renderMain(true); } } } catch (e) { }
+  return r;
+};
+// Sala aberta nova já vem com um rival para esquentar
+const __z33NewOk = ACT['z14-new-ok'];
+ACT['z14-new-ok'] = async function (el) {
+  const pub = !!(session.z14n && session.z14n.pub); const code0 = S.room.code; const r = await __z33NewOk.apply(this, arguments);
+  try { if (pub && S.room.code !== code0) { const id = 'bw' + Date.now().toString(36); const b = { id, lvl: 'medio', name: 'Max Turbo', mode: 'season', since: T(), until: S.room.end, warm: true, by: 'auto', at: Date.now() }; S.room.bots = { [id]: b }; save(); if (typeof zfbRoomUpdate === 'function') zfbRoomUpdate({ ['bots.' + id]: b }); Z33.sig = ''; renderMain(true); } } catch (e) { }
+  return r;
+};
+
+/* =========================================================
+   Novidades por versão
+   ========================================================= */
+const Z33_REL = [
+  { v: '3.9', d: '30/10/2026', it: [['🤖', 'Rivais virtuais', 'Chame um rival Fácil, Médio ou Difícil para a sua sala. Ele acompanha o ritmo da turma, age ao longo do dia e pode até ser campeão.'], ['🏆', 'Troféus da temporada', 'No fim de cada temporada: ouro, prata ou bronze com XP extra, e bônus por terminar na frente dos robôs. Tudo na estante do Perfil.'], ['✨', 'Novidades por versão', 'Ao abrir o app depois de uma atualização, você vê só o que mudou. O histórico completo fica no Perfil.']] },
+  { v: '3.8', d: '29/10/2026', it: [['🔑', 'Continuar com o Google', 'Entre com a sua conta Google, sem criar senha. Quem usa e-mail recebe um link para confirmar.'], ['🌎', 'Salas abertas', 'Sem turma? Entre numa sala aberta e compita com gente nova, do zero. Ou abra a sua.'], ['🗓️', 'Temporadas com nome', 'Cada temporada pode ter nome e data de fim próprios.']] },
+  { v: '3.7', d: '29/10/2026', it: [['🔒', 'Privacidade', 'Política de privacidade, baixar os seus dados e apagar a conta, em Configurações.'], ['🚩', 'Denunciar e bloquear', 'No chat, segure uma mensagem para denunciar ou bloquear. Respostas da IA também podem ser denunciadas.']] },
+  { v: '3.6', d: '29/10/2026', it: [['🎨', 'Cara nova', 'Cores próprias do Zenit: o índigo da noite, o dourado da estrela e o azul do céu.']] },
+  { v: '3.5', d: '27/10/2026', it: [['🏁', 'Final de temporada', 'Cerimônia com pódio, prêmio e os seus números. Depois, o dono começa a próxima temporada.'], ['📸', 'Cards para o story', 'Nível, sequência, treino, X1 e progresso no tamanho do Instagram. Os quilos nunca aparecem.']] },
+  { v: '3.4', d: '27/10/2026', it: [['☁️', 'Igual em todos os aparelhos', 'Tablet e celular com a mesma conta mostram o mesmo progresso.'], ['🏁', 'Placar da sala do zero', 'Na sala só conta o XP feito depois que cada um entrou.'], ['🗑️', 'Cancelar treino', 'Abriu só para olhar? Cancele e o tempo para.']] },
+  { v: '3.3', d: '26/10/2026', it: [['⚔️', 'X1 novo', 'Desafie uma pessoa ou a sala toda, com desafio escrito por você e prova com foto conferida pela IA.']] },
+  { v: '3.2', d: '25/10/2026', it: [['🍽️', 'Comida com IA', 'Meta de calorias própria, saldo do dia, foto do prato e cardápio da semana feito pela IA.']] },
+  { v: '3.1', d: '24/10/2026', it: [['🏋️', 'Treino novo', 'Figuras animadas dos exercícios, relatório de pesos, gráfico de evolução e treino montado pela IA.'], ['🎙️', 'Vozes sem bagunça', 'Uma voz por vez, com aviso quando a cota grátis acaba.']] }
+];
+const z33VNum = v => String(v || '0').split('.').map(Number).reduce((a, n, i) => a + n * Math.pow(1000, 2 - i), 0);
+function z33NewsHTML(since) {
+  const L = Z33_REL.filter(r => !since || z33VNum(r.v) > z33VNum(since));
+  return `<div style="text-align:center"><div style="font-size:44px;line-height:1">✨</div><h2 style="margin-top:6px">${since ? 'O que mudou desde a última vez' : 'Novidades do Zenit'}</h2><div class="sub">${since ? `Você estava na versão ${esc(since)}. Agora é a ${ZV}.` : 'Tudo o que chegou nas últimas versões.'}</div></div>
+    ${L.map(r => `<div class="z33-rel"><div class="z33-rh"><b>Versão ${esc(r.v)}</b><span>${esc(r.d)}</span></div>${r.it.map(([i, t, d]) => `<div class="z33-it"><span>${i}</span><div class="grow"><b>${esc(t)}</b><small>${esc(d)}</small></div></div>`).join('')}</div>`).join('')}
+    <div style="margin-top:14px"><button class="btn" data-act="close">Bora!</button></div>`;
+}
+function z33NewsOpen(since) { openSheet(z33NewsHTML(since), {}); }
+zWhatsNew = function () { z33NewsOpen(null); };
+try { const seen = localStorage.getItem('zenit-news-seen'); Z33.newsBase = seen || (typeof S !== 'undefined' && S && S.zvSeen) || null; if (typeof S !== 'undefined' && S) S.zvSeen = ZV; } catch (e) { }
+function z33NewsAuto() {
+  try {
+    if (!S || !session.pid) { if (++Z33.tries < 60) setTimeout(z33NewsAuto, 3000); return; }
+    const base = Z33.newsBase; const mark = () => { try { localStorage.setItem('zenit-news-seen', ZV); } catch (e) { } };
+    if (!base || base === ZV || z33VNum(base) >= z33VNum(ZV)) return mark();
+    const busy = session.ob || $('#overlay') || $('#zlvup') || $('#zcoach') || $('#zesc') || $('#z28f') || $('#zgym') || $('#zai') || $('#z18m') || $('#sun') || $('#story') || $('#ck') || !(me() || {}).coachDone || (S.settings && S.settings.z30pol !== (typeof Z30_VER !== 'undefined' ? Z30_VER : undefined) && !window.Z30_SKIP);
+    if (busy) { if (++Z33.tries < 80) setTimeout(z33NewsAuto, 3000); return; }
+    mark(); z33NewsOpen(base);
+  } catch (e) { }
+}
+setTimeout(z33NewsAuto, 4000);
+// Perfil: botão de novidades
+const __z33Prof = profileHTML;
+profileHTML = function () { const h = __z33Prof.apply(this, arguments); return h.replace(/(<button class="btn sec" data-act="z28-gal"[^>]*>[^<]*<\/button>)/, `$1<button class="btn sec" data-act="z33-news" style="margin-top:8px">✨ Novidades do Zenit</button>`); };
+
+Object.assign(ACT, {
+  'z33-add': () => { closeSheet(true); z33AddOpen(); },
+  'z33-lv': el => { session.z33.lvl = el.dataset.v; z33AddPaint(); },
+  'z33-md': el => { session.z33.mode = el.dataset.v; z33AddPaint(); },
+  'z33-add-go': () => z33AddGo(),
+  'z33-rm': el => { const id = el.dataset.id; const b = (S.room.bots || {})[id]; openConfirm(`Tirar ${b ? b.name : 'o rival'} da sala?`, 'Tirar', () => z33Remove(id)); },
+  'z33-news': () => z33NewsOpen(null)
+});
+</script>
+<style>
+.z33-lv{display:grid;gap:8px;margin-top:12px}.z33-lv button{display:flex;gap:12px;align-items:center;text-align:left;border:2px solid var(--line);border-radius:16px;padding:12px;background:var(--card);font:inherit;color:inherit;cursor:pointer}
+.z33-lv button.on{border-color:var(--green);background:var(--green-soft)}.z33-li{font-size:24px}.z33-lv b{display:block;font-size:15.5px;font-weight:900}.z33-lv small{display:block;font-size:12.5px;color:var(--ink-2);font-weight:700;margin-top:2px;line-height:1.35}
+.z33-card{padding:6px 12px}.z33-row{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1.5px solid var(--line)}.z33-row b{display:block;font-size:15px;font-weight:900}.z33-row small{display:block;font-size:12px;color:var(--ink-3);font-weight:700}
+.z33-av{width:42px;height:42px;flex:none}.z33-av svg{width:100%;height:100%}
+.z33-rel{border:2px solid var(--line);border-radius:18px;padding:10px 12px;margin-top:12px}.z33-rh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}.z33-rh b{font-size:15px;font-weight:900;color:var(--green)}.z33-rh span{font-size:12px;color:var(--ink-3);font-weight:800}
+.z33-it{display:flex;gap:10px;align-items:flex-start;padding:6px 0}.z33-it>span{font-size:22px;line-height:1.1}.z33-it b{display:block;font-size:14.5px;font-weight:900}.z33-it small{display:block;font-size:12.5px;color:var(--ink-2);font-weight:700;line-height:1.35;margin-top:1px}
+.z33-home{margin-top:8px}
 </style>
 
 </body>
