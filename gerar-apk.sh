@@ -11,7 +11,7 @@ fi
 OWNER="${GITHUB_REPOSITORY_OWNER,,}"
 NAME="${GITHUB_REPOSITORY#*/}"
 if [ "${NAME,,}" = "${OWNER}.github.io" ]; then URL="https://${OWNER}.github.io/"; else URL="https://${OWNER}.github.io/${NAME}/"; fi
-VER=$(grep -o "const ZV = '[0-9.]*'" index.html | head -1 | grep -o "[0-9.]*" || echo "1.0")
+VER=$(grep -oE "const ZV ?= ?['\"][0-9.]+" index.html | head -1 | grep -oE "[0-9.]+$" || echo "1.0")
 CODE=$(( ${GITHUB_RUN_NUMBER:-1} + 100 ))
 echo "Endereço do Zenit: $URL · versão $VER ($CODE)"
 rm -rf apk && mkdir -p apk/www
